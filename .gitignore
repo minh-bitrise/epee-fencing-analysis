@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+dist/
+build/
+*.so
+
+# Node (used for report tooling only)
+node_modules/
+package-lock.json
+package.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Video files (too large for git)
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Model weights (too large for git)
+*.pt
+*.pth
+*.onnx
+
+# Env / secrets
+.env
+*.env
+
+# Misc
+*.log
+tmp/
