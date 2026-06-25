@@ -8,22 +8,26 @@ Run with:
 
 import math
 import pytest
-from run_detection import get_box_centre, box_height_pixels, pixel_distance, normalise_distance
+from run_detection import (
+    get_box_centre,
+    box_height_pixels,
+    pixel_distance,
+    normalise_distance,
+    get_front_foot,
+    LM_LEFT_ANKLE,
+    LM_RIGHT_ANKLE,
+)
 
 
 class TestGetBoxCentre:
     def test_simple_box(self):
-        # box [x1, y1, x2, y2]
-        centre = get_box_centre([0, 0, 100, 100])
-        assert centre == (50.0, 50.0)
+        assert get_box_centre([0, 0, 100, 100]) == (50.0, 50.0)
 
     def test_non_square_box(self):
-        centre = get_box_centre([10, 20, 50, 80])
-        assert centre == (30.0, 50.0)
+        assert get_box_centre([10, 20, 50, 80]) == (30.0, 50.0)
 
     def test_single_pixel_box(self):
-        centre = get_box_centre([5, 5, 5, 5])
-        assert centre == (5.0, 5.0)
+        assert get_box_centre([5, 5, 5, 5]) == (5.0, 5.0)
 
 
 class TestBoxHeightPixels:
@@ -41,43 +45,74 @@ class TestPixelDistance:
     def test_zero_distance(self):
         assert pixel_distance((10, 10), (10, 10)) == 0.0
 
-    def test_horizontal_distance(self):
+    def test_horizontal(self):
         assert pixel_distance((0, 0), (100, 0)) == 100.0
 
-    def test_vertical_distance(self):
+    def test_vertical(self):
         assert pixel_distance((0, 0), (0, 50)) == 50.0
 
-    def test_diagonal_distance(self):
-        # 3-4-5 right triangle
-        result = pixel_distance((0, 0), (3, 4))
-        assert math.isclose(result, 5.0)
+    def test_diagonal_345(self):
+        # classic 3-4-5 right triangle
+        assert math.isclose(pixel_distance((0, 0), (3, 4)), 5.0)
 
     def test_float_coords(self):
-        result = pixel_distance((0.5, 0.5), (3.5, 4.5))
-        assert math.isclose(result, 5.0)
+        assert math.isclose(pixel_distance((0.5, 0.5), (3.5, 4.5)), 5.0)
 
 
 class TestNormaliseDistance:
-    def test_basic_normalisation(self):
-        # if pixel distance equals fencer height, result should be 1.75 m
-        result = normalise_distance(200, 200, real_height_m=1.75)
-        assert math.isclose(result, 1.75)
+    def test_equal_distance_and_height(self):
+        # pixel distance == box height -> result should equal assumed real height
+        assert math.isclose(normalise_distance(200, 200, real_height_m=1.75), 1.75)
 
     def test_zero_height_returns_none(self):
-        # avoids division by zero
         assert normalise_distance(100, 0) is None
 
     def test_close_fencers(self):
-        # fencers close together — distance less than one body height
-        result = normalise_distance(100, 200, real_height_m=1.75)
-        assert math.isclose(result, 0.875)
+        assert math.isclose(normalise_distance(100, 200, real_height_m=1.75), 0.875)
 
     def test_far_fencers(self):
-        # fencers far apart — distance about 2x body height
-        result = normalise_distance(400, 200, real_height_m=1.75)
-        assert math.isclose(result, 3.5)
+        assert math.isclose(normalise_distance(400, 200, real_height_m=1.75), 3.5)
 
     def test_custom_real_height(self):
-        # should work with any assumed height
-        result = normalise_distance(100, 100, real_height_m=2.0)
-        assert math.isclose(result, 2.0)
+        assert math.isclose(normalise_distance(100, 100, real_height_m=2.0), 2.0)
+
+
+class TestGetFrontFoot:
+    """
+    In a side-on view the front foot is the ankle closer to the opponent.
+    Fencer on the LEFT (centre_x=100) facing RIGHT (opponent at x=500):
+      front foot = ankle with the higher x value.
+    Fencer on the RIGHT (centre_x=500) facing LEFT (opponent at x=100):
+      front foot = ankle with the lower x value.
+    """
+
+    def _landmarks(self, left_ankle, right_ankle):
+        return {LM_LEFT_ANKLE: left_ankle, LM_RIGHT_ANKLE: right_ankle}
+
+    def test_left_fencer_front_foot_is_right_ankle(self):
+        # left fencer; right ankle is more towards opponent (higher x)
+        lms = self._landmarks(left_ankle=(80, 400), right_ankle=(120, 400))
+        foot = get_front_foot(lms, fencer_centre_x=100, opponent_centre_x=500)
+        assert foot == (120, 400)
+
+    def test_right_fencer_front_foot_is_left_ankle(self):
+        # right fencer; left ankle is more towards opponent (lower x)
+        lms = self._landmarks(left_ankle=(480, 400), right_ankle=(520, 400))
+        foot = get_front_foot(lms, fencer_centre_x=500, opponent_centre_x=100)
+        assert foot == (480, 400)
+
+    def test_missing_left_ankle_returns_right(self):
+        lms = {LM_RIGHT_ANKLE: (120, 400)}
+        foot = get_front_foot(lms, fencer_centre_x=100, opponent_centre_x=500)
+        assert foot == (120, 400)
+
+    def test_missing_right_ankle_returns_left(self):
+        lms = {LM_LEFT_ANKLE: (80, 400)}
+        foot = get_front_foot(lms, fencer_centre_x=100, opponent_centre_x=500)
+        assert foot == (80, 400)
+
+    def test_no_ankles_returns_none(self):
+        assert get_front_foot({}, fencer_centre_x=100, opponent_centre_x=500) is None
+
+    def test_empty_landmarks_returns_none(self):
+        assert get_front_foot({}, 200, 600) is None

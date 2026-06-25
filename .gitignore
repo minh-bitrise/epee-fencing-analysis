@@ -28,6 +28,7 @@ Thumbs.db
 *.pt
 *.pth
 *.onnx
+*.task
 
 # Env / secrets
 .env
