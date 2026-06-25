@@ -1,23 +1,47 @@
 """
-Unit tests for the fencing detection prototype.
-Tests the pure utility functions that don't require a video or model.
+Unit tests for the fencing detection prototype (v3).
+Tests the pure utility functions and stateful trackers without
+requiring a real video or AI model.
 
 Run with:
     python3 -m pytest test_detection.py -v
 """
 
 import math
+from collections import deque
+
+import numpy as np
 import pytest
+
 from run_detection import (
+    # geometry helpers
     get_box_centre,
+    get_box_bottom_centre,
     box_height_pixels,
     pixel_distance,
     normalise_distance,
+    distance_zone_colour,
+    # pose helpers
     get_front_foot,
+    get_hip_centre,
     LM_LEFT_ANKLE,
     LM_RIGHT_ANKLE,
+    LM_LEFT_HIP,
+    LM_RIGHT_HIP,
+    # trackers and smoothing
+    FencerTracker,
+    PushPullTracker,
+    smooth_distance,
+    # constants
+    COLOUR_CLOSE,
+    COLOUR_MEDIUM,
+    COLOUR_FAR,
+    MAX_FRAME_MOVEMENT_M,
+    PUSH_PULL_NOISE_FLOOR_M,
 )
 
+
+# -------------------- geometry --------------------
 
 class TestGetBoxCentre:
     def test_simple_box(self):
@@ -28,6 +52,19 @@ class TestGetBoxCentre:
 
     def test_single_pixel_box(self):
         assert get_box_centre([5, 5, 5, 5]) == (5.0, 5.0)
+
+
+class TestGetBoxBottomCentre:
+    def test_returns_bottom_y(self):
+        # bottom-centre y should be the bottom edge of the box
+        assert get_box_bottom_centre([0, 0, 100, 200]) == (50.0, 200.0)
+
+    def test_centre_x_unchanged(self):
+        # x should be the same as the regular centre
+        cx, _   = get_box_centre([10, 20, 50, 80])
+        bx, by  = get_box_bottom_centre([10, 20, 50, 80])
+        assert bx == cx
+        assert by == 80
 
 
 class TestBoxHeightPixels:
@@ -42,7 +79,7 @@ class TestBoxHeightPixels:
 
 
 class TestPixelDistance:
-    def test_zero_distance(self):
+    def test_zero(self):
         assert pixel_distance((10, 10), (10, 10)) == 0.0
 
     def test_horizontal(self):
@@ -51,8 +88,7 @@ class TestPixelDistance:
     def test_vertical(self):
         assert pixel_distance((0, 0), (0, 50)) == 50.0
 
-    def test_diagonal_345(self):
-        # classic 3-4-5 right triangle
+    def test_345_triangle(self):
         assert math.isclose(pixel_distance((0, 0), (3, 4)), 5.0)
 
     def test_float_coords(self):
@@ -61,7 +97,6 @@ class TestPixelDistance:
 
 class TestNormaliseDistance:
     def test_equal_distance_and_height(self):
-        # pixel distance == box height -> result should equal assumed real height
         assert math.isclose(normalise_distance(200, 200, real_height_m=1.75), 1.75)
 
     def test_zero_height_returns_none(self):
@@ -77,42 +112,297 @@ class TestNormaliseDistance:
         assert math.isclose(normalise_distance(100, 100, real_height_m=2.0), 2.0)
 
 
+class TestDistanceZoneColour:
+    def test_none_returns_neutral(self):
+        # exact value not critical, but it should be a 3-tuple (BGR)
+        c = distance_zone_colour(None)
+        assert isinstance(c, tuple) and len(c) == 3
+
+    def test_close_zone(self):
+        assert distance_zone_colour(0.5) == COLOUR_CLOSE
+        assert distance_zone_colour(1.0) == COLOUR_CLOSE  # boundary inclusive
+
+    def test_medium_zone(self):
+        assert distance_zone_colour(1.5) == COLOUR_MEDIUM
+        assert distance_zone_colour(1.8) == COLOUR_MEDIUM  # boundary inclusive
+
+    def test_far_zone(self):
+        assert distance_zone_colour(2.5) == COLOUR_FAR
+        assert distance_zone_colour(10.0) == COLOUR_FAR
+
+
+# -------------------- pose helpers --------------------
+
+class TestGetHipCentre:
+    def test_both_hips_present(self):
+        lms = {LM_LEFT_HIP: (100, 400), LM_RIGHT_HIP: (140, 410)}
+        assert get_hip_centre(lms) == (120.0, 405.0)
+
+    def test_only_left_hip(self):
+        assert get_hip_centre({LM_LEFT_HIP: (50, 300)}) == (50, 300)
+
+    def test_only_right_hip(self):
+        assert get_hip_centre({LM_RIGHT_HIP: (90, 320)}) == (90, 320)
+
+    def test_no_hips(self):
+        assert get_hip_centre({}) is None
+
+
 class TestGetFrontFoot:
-    """
-    In a side-on view the front foot is the ankle closer to the opponent.
-    Fencer on the LEFT (centre_x=100) facing RIGHT (opponent at x=500):
-      front foot = ankle with the higher x value.
-    Fencer on the RIGHT (centre_x=500) facing LEFT (opponent at x=100):
-      front foot = ankle with the lower x value.
-    """
+    """Front foot = the ankle nearest the opponent in image x-coordinates."""
 
     def _landmarks(self, left_ankle, right_ankle):
         return {LM_LEFT_ANKLE: left_ankle, LM_RIGHT_ANKLE: right_ankle}
 
-    def test_left_fencer_front_foot_is_right_ankle(self):
-        # left fencer; right ankle is more towards opponent (higher x)
+    def test_left_fencer_front_foot_is_higher_x(self):
         lms = self._landmarks(left_ankle=(80, 400), right_ankle=(120, 400))
-        foot = get_front_foot(lms, fencer_centre_x=100, opponent_centre_x=500)
-        assert foot == (120, 400)
+        # left fencer (x=100), opponent on the right (x=500) -> front foot has higher x
+        assert get_front_foot(lms, 100, 500) == (120, 400)
 
-    def test_right_fencer_front_foot_is_left_ankle(self):
-        # right fencer; left ankle is more towards opponent (lower x)
+    def test_right_fencer_front_foot_is_lower_x(self):
         lms = self._landmarks(left_ankle=(480, 400), right_ankle=(520, 400))
-        foot = get_front_foot(lms, fencer_centre_x=500, opponent_centre_x=100)
-        assert foot == (480, 400)
+        # right fencer (x=500), opponent on the left (x=100) -> front foot has lower x
+        assert get_front_foot(lms, 500, 100) == (480, 400)
 
-    def test_missing_left_ankle_returns_right(self):
-        lms = {LM_RIGHT_ANKLE: (120, 400)}
-        foot = get_front_foot(lms, fencer_centre_x=100, opponent_centre_x=500)
-        assert foot == (120, 400)
+    def test_missing_left_returns_right(self):
+        assert get_front_foot({LM_RIGHT_ANKLE: (120, 400)}, 100, 500) == (120, 400)
 
-    def test_missing_right_ankle_returns_left(self):
-        lms = {LM_LEFT_ANKLE: (80, 400)}
-        foot = get_front_foot(lms, fencer_centre_x=100, opponent_centre_x=500)
-        assert foot == (80, 400)
+    def test_missing_right_returns_left(self):
+        assert get_front_foot({LM_LEFT_ANKLE: (80, 400)}, 100, 500) == (80, 400)
 
     def test_no_ankles_returns_none(self):
-        assert get_front_foot({}, fencer_centre_x=100, opponent_centre_x=500) is None
+        assert get_front_foot({}, 100, 500) is None
 
-    def test_empty_landmarks_returns_none(self):
-        assert get_front_foot({}, 200, 600) is None
+
+# -------------------- FencerTracker --------------------
+
+class TestFencerTracker:
+    """
+    The tracker assigns Fencer 1 = leftmost on the first multi-person
+    frame, then uses spatial continuity to keep that assignment stable
+    even when ByteTrack IDs change.
+    """
+
+    def test_initial_assignment_by_position(self):
+        t = FencerTracker()
+        ids   = np.array([5, 7])
+        # leftmost box first
+        boxes = np.array([[ 50, 100, 150, 400],
+                          [400, 100, 500, 400]])
+        confs = np.array([0.9, 0.8])
+        slots = t.select(ids, boxes, confs)
+
+        assert slots[0] is not None and slots[0][1] == 5   # leftmost
+        assert slots[1] is not None and slots[1][1] == 7   # rightmost
+
+    def test_initial_assignment_independent_of_confidence_order(self):
+        # higher-confidence detection is on the right;
+        # leftmost should still go into slot 0.
+        t = FencerTracker()
+        ids   = np.array([5, 7])
+        boxes = np.array([[400, 100, 500, 400],     # rightmost, conf=0.95
+                          [ 50, 100, 150, 400]])    # leftmost,  conf=0.7
+        confs = np.array([0.95, 0.7])
+        slots = t.select(ids, boxes, confs)
+
+        assert slots[0][1] == 7   # leftmost
+        assert slots[1][1] == 5   # rightmost
+
+    def test_one_detection_initially_goes_to_slot_a(self):
+        t = FencerTracker()
+        slots = t.select(
+            np.array([5]),
+            np.array([[ 50, 100, 150, 400]]),
+            np.array([0.9]),
+        )
+        assert slots[0] is not None and slots[0][1] == 5
+        assert slots[1] is None
+
+    def test_swapped_detection_order_is_corrected(self):
+        # initial frame assigns 5 -> slot0, 7 -> slot1
+        t = FencerTracker()
+        t.select(
+            np.array([5, 7]),
+            np.array([[50, 100, 150, 400], [400, 100, 500, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        # subsequent frame: detections returned in opposite order, slight motion
+        slots = t.select(
+            np.array([7, 5]),
+            np.array([[410, 110, 510, 410], [60, 110, 160, 410]]),
+            np.array([0.85, 0.92]),
+        )
+        # slot 0 should still be the left fencer (now ID 5 box)
+        assert slots[0][1] == 5
+        assert slots[1][1] == 7
+
+    def test_byte_track_id_change_is_tolerated(self):
+        # initialise on IDs 5 and 7
+        t = FencerTracker()
+        t.select(
+            np.array([5, 7]),
+            np.array([[50, 100, 150, 400], [400, 100, 500, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        # next frame: ByteTrack has assigned new IDs 12 and 14 to the same fencers
+        slots = t.select(
+            np.array([12, 14]),
+            np.array([[55, 100, 155, 400], [405, 100, 505, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        # slot 0 stays leftmost (new ID 12), slot 1 stays rightmost (new ID 14)
+        assert slots[0][1] == 12
+        assert slots[1][1] == 14
+
+    def test_single_detection_is_assigned_to_closer_slot(self):
+        t = FencerTracker()
+        # initialise
+        t.select(
+            np.array([5, 7]),
+            np.array([[50, 100, 150, 400], [400, 100, 500, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        # only one detection this frame, near where slot 1 last was
+        slots = t.select(
+            np.array([5]),
+            np.array([[410, 110, 510, 410]]),
+            np.array([0.95]),
+        )
+        # closer to slot 1's last position -> assigned to slot 1
+        assert slots[0] is None
+        assert slots[1] is not None and slots[1][1] == 5
+
+    def test_empty_detections(self):
+        t = FencerTracker()
+        slots = t.select(np.array([], dtype=int), np.empty((0, 4)), np.array([]))
+        assert slots == [None, None]
+
+
+# -------------------- PushPullTracker --------------------
+
+class TestPushPullTracker:
+    """
+    The tracker smooths each fencer's x with a rolling median before
+    computing per-frame movement. Tests use smooth_window=1 (no
+    smoothing) when they want to assert on a precise frame-to-frame
+    delta, and the default window when they want to verify smoothing.
+    """
+
+    def test_initial_state_is_zero(self):
+        p = PushPullTracker()
+        assert p.advance_m == [0.0, 0.0]
+        assert p.retreat_m == [0.0, 0.0]
+
+    def test_first_update_only_records_position(self):
+        p = PushPullTracker(smooth_window=1)
+        p.update(idx=0, fencer_x=100, opponent_x=500, scale_px_per_m=100)
+        assert p.advance_m[0] == 0.0
+        assert p.retreat_m[0] == 0.0
+        assert p.prev_smooth[0] == 100
+
+    def test_advance_when_moving_toward_opponent(self):
+        p = PushPullTracker(smooth_window=1)   # no smoothing for clean assertion
+        p.update(0, 100, 500, 100)
+        # +10 px = +0.1 m advance (above 0.03 noise floor, below 0.15 clamp)
+        p.update(0, 110, 500, 100)
+        assert math.isclose(p.advance_m[0], 0.1, abs_tol=1e-9)
+        assert p.retreat_m[0] == 0.0
+
+    def test_retreat_when_moving_away(self):
+        p = PushPullTracker(smooth_window=1)
+        p.update(0, 100, 500, 100)
+        # -10 px (away from opponent on right) = 0.1 m retreat
+        p.update(0, 90, 500, 100)
+        assert p.advance_m[0] == 0.0
+        assert math.isclose(p.retreat_m[0], 0.1, abs_tol=1e-9)
+
+    def test_advance_works_for_opponent_on_left(self):
+        p = PushPullTracker(smooth_window=1)
+        # this fencer is on the right; opponent on the left
+        p.update(1, 500, 100, 100)
+        # -10 px -> advancing toward opponent on the left
+        p.update(1, 490, 100, 100)
+        assert math.isclose(p.advance_m[1], 0.1, abs_tol=1e-9)
+        assert p.retreat_m[1] == 0.0
+
+    def test_camera_pan_jump_is_ignored(self):
+        p = PushPullTracker(smooth_window=1)
+        p.update(0, 100, 500, 100)
+        # a jump > MAX_FRAME_MOVEMENT_M -> dropped entirely
+        jump_px = (MAX_FRAME_MOVEMENT_M + 0.1) * 100
+        p.update(0, 100 + jump_px, 500, 100)
+        assert p.advance_m[0] == 0.0
+        assert p.retreat_m[0] == 0.0
+
+    def test_noise_floor_ignores_tiny_moves(self):
+        p = PushPullTracker(smooth_window=1)
+        p.update(0, 100, 500, 100)
+        tiny_px = (PUSH_PULL_NOISE_FLOOR_M / 2) * 100
+        p.update(0, 100 + tiny_px, 500, 100)
+        assert p.advance_m[0] == 0.0
+        assert p.retreat_m[0] == 0.0
+
+    def test_accumulates_across_many_frames(self):
+        p = PushPullTracker(smooth_window=1)
+        p.update(0, 100, 500, 100)
+        # +10px per step, each step crosses the noise floor (0.1m > 0.03)
+        for x in (110, 120, 130, 140):
+            p.update(0, x, 500, 100)
+        assert math.isclose(p.advance_m[0], 0.4, abs_tol=1e-9)
+
+    def test_smoothing_reduces_jitter_accumulation(self):
+        """With smoothing on, noisy positions accumulate less motion."""
+        sequence = [100, 105, 95, 102, 98, 103, 97, 101, 99, 100]
+
+        no_smooth   = PushPullTracker(smooth_window=1)
+        with_smooth = PushPullTracker(smooth_window=5)
+        for x in sequence:
+            no_smooth.update(0, x, 500, 100)
+            with_smooth.update(0, x, 500, 100)
+
+        total_no   = no_smooth.advance_m[0]   + no_smooth.retreat_m[0]
+        total_with = with_smooth.advance_m[0] + with_smooth.retreat_m[0]
+        assert total_with < total_no
+
+    def test_zero_scale_is_safe(self):
+        p = PushPullTracker(smooth_window=1)
+        p.update(0, 100, 500, 0)
+        p.update(0, 110, 500, 0)
+        assert p.advance_m[0] == 0.0
+        assert p.retreat_m[0] == 0.0
+
+
+# -------------------- smoothing --------------------
+
+class TestSmoothDistance:
+    def test_single_value(self):
+        buf = deque()
+        assert smooth_distance(buf, 2.0, window=5) == 2.0
+
+    def test_median_of_three(self):
+        buf = deque()
+        smooth_distance(buf, 1.0, window=5)
+        smooth_distance(buf, 3.0, window=5)
+        # median of [1, 3, 2] = 2
+        assert smooth_distance(buf, 2.0, window=5) == 2.0
+
+    def test_window_evicts_old_values(self):
+        buf = deque()
+        for v in (10.0, 10.0, 10.0):
+            smooth_distance(buf, v, window=3)
+        # next value pushes the first 10 out of the window
+        result = smooth_distance(buf, 4.0, window=3)
+        # buffer is now [10, 10, 4]; median = 10
+        assert result == 10.0
+        # one more push and it becomes [10, 4, 4]; median = 4
+        result = smooth_distance(buf, 4.0, window=3)
+        assert result == 4.0
+
+    def test_robust_to_outlier(self):
+        # one extreme value should not move the median much
+        buf = deque()
+        for v in (2.0, 2.1, 2.0, 1.9):
+            smooth_distance(buf, v, window=5)
+        result = smooth_distance(buf, 99.0, window=5)
+        # median is much closer to 2 than the mean would be (~21.8)
+        assert 1.5 < result < 2.5

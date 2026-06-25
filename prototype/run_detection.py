@@ -1,27 +1,36 @@
 """
-Epee Fencing Bout Analysis - Prototype v2
+Epee Fencing Bout Analysis - Prototype v3
 ==========================================
 Detects and tracks two fencers using YOLOv8 + ByteTrack, then runs
 MediaPipe Pose on each fencer crop to extract body keypoints.
 
-Distance is measured front-foot to front-foot (the most tactically
-relevant measure in epee fencing). Falls back to bounding-box-centre
-distance if pose estimation fails on a frame.
+Improvements over v2:
+  - Fencer identity is locked onto the first two persistent track IDs,
+    so "Fencer 1" / "Fencer 2" labels stay stable for the whole bout.
+  - Cumulative advance ("push") and retreat ("pull") tracked per fencer.
+  - Displayed distance is rolling-median smoothed (raw values still in CSV).
+  - Distance overlay colour-coded by tactical zone (close / medium / far).
+  - Bounding-box fallback uses bottom-centre (feet proxy), not box centre.
+  - Per-frame movement clamped at a biomechanical limit to reduce the
+    impact of camera panning on the push/pull metric.
 
 Outputs:
-  - annotated video (boxes, fencer IDs, pose keypoints, distance overlay)
-  - CSV of frame-by-frame distance data
+  - annotated video (boxes, fencer IDs, pose keypoints, distance overlay,
+    live push/pull readout)
+  - CSV of frame-by-frame distance, smoothed distance, and per-fencer
+    cumulative push / pull
   - distance-over-time plot (PNG)
 
 Usage:
-    python run_detection.py --video path/to/bout.mp4
-    python run_detection.py --video path/to/bout.mp4 --output results/
+    python3 run_detection.py --video path/to/bout.mp4
+    python3 run_detection.py --video path/to/bout.mp4 --output results/
 """
 
 import argparse
 import csv
 import math
 import os
+from collections import deque
 
 import cv2
 import matplotlib.pyplot as plt
@@ -34,13 +43,41 @@ from ultralytics import YOLO
 
 # --- config -----------------------------------------------------------
 MODEL_NAME       = "yolov8n.pt"
-POSE_MODEL_PATH  = "pose_landmarker.task"   # downloaded MediaPipe model file
+POSE_MODEL_PATH  = "pose_landmarker.task"
 CONF_THRESH      = 0.4
 IOU_THRESH       = 0.5
 MAX_FENCERS      = 2
-REAL_HEIGHT_M    = 1.75       # assumed average fencer height for normalisation
+REAL_HEIGHT_M    = 1.75
 
-COLOURS = [(0, 200, 255), (0, 255, 100)]  # BGR per fencer
+# pose estimation is the expensive step; run it every Nth frame and fall
+# back to bounding-box-bottom-centre distance on the in-between frames.
+# at 60fps and stride=3 this still gives ~20 pose samples per second.
+DEFAULT_POSE_STRIDE = 3
+
+# rolling-median window for the distance value shown on screen
+SMOOTH_WINDOW    = 5
+
+# tactical zones for the coloured distance overlay (metres)
+DIST_CLOSE_M     = 1.0    # within touch range
+DIST_MEDIUM_M    = 1.8    # engagement range
+COLOUR_CLOSE     = (0,   0,   255)    # red    (close, touch range)
+COLOUR_MEDIUM    = (0,   165, 255)    # orange (engagement range)
+COLOUR_FAR       = (0,   220, 100)    # green  (safe distance)
+
+# max plausible per-frame fencer motion in metres
+# (at 60fps, > 0.15 m/frame = > 9 m/s which exceeds the fastest lunges)
+# anything beyond this is treated as camera motion or detection jitter
+MAX_FRAME_MOVEMENT_M = 0.15
+
+# minimum movement (m) to count toward push/pull (ignore detection jitter)
+PUSH_PULL_NOISE_FLOOR_M = 0.03
+
+# rolling median window applied to each fencer's reference x before
+# computing frame-to-frame movement, to suppress bounding-box jitter
+PUSH_PULL_SMOOTH_WINDOW = 5
+
+# fencer colours (BGR)
+COLOURS = [(0, 200, 255), (0, 255, 100)]
 
 # MediaPipe landmark indices
 LM_LEFT_ANKLE     = 27
@@ -51,7 +88,7 @@ LM_LEFT_SHOULDER  = 11
 LM_RIGHT_SHOULDER = 12
 # ----------------------------------------------------------------------
 
-# lazy-loaded pose landmarker (created once inside run(), not at import time)
+# lazy-loaded pose landmarker (created on first use, not at import time)
 _pose_landmarker = None
 
 
@@ -71,10 +108,18 @@ def _get_pose_landmarker():
     return _pose_landmarker
 
 
+# --- geometry helpers -------------------------------------------------
+
 def get_box_centre(box):
     """Return the (x, y) centre of a bounding box [x1, y1, x2, y2]."""
     x1, y1, x2, y2 = box
     return ((x1 + x2) / 2, (y1 + y2) / 2)
+
+
+def get_box_bottom_centre(box):
+    """Return (x, y) of the bottom-centre of a bounding box — a feet-position proxy."""
+    x1, _, x2, y2 = box
+    return ((x1 + x2) / 2, y2)
 
 
 def box_height_pixels(box):
@@ -90,14 +135,27 @@ def pixel_distance(c1, c2):
 
 def normalise_distance(dist_px, ref_height_px, real_height_m=REAL_HEIGHT_M):
     """
-    Convert a pixel distance to an estimated real-world distance in metres.
-    Uses the average fencer bounding-box height as a scale reference.
+    Convert a pixel distance to an estimated real-world distance in metres,
+    using the average fencer bounding-box height as a scale reference.
     Returns None if ref_height_px is zero (avoids division by zero).
     """
     if ref_height_px == 0:
         return None
     return (dist_px / ref_height_px) * real_height_m
 
+
+def distance_zone_colour(dist_m):
+    """Pick an overlay colour based on the tactical range of the current distance."""
+    if dist_m is None:
+        return (200, 200, 200)
+    if dist_m <= DIST_CLOSE_M:
+        return COLOUR_CLOSE
+    if dist_m <= DIST_MEDIUM_M:
+        return COLOUR_MEDIUM
+    return COLOUR_FAR
+
+
+# --- pose --------------------------------------------------------------
 
 def get_pose_landmarks(frame_bgr, box):
     """
@@ -123,24 +181,33 @@ def get_pose_landmarks(frame_bgr, box):
 
     landmarker = _get_pose_landmarker()
     result = landmarker.detect(mp_image)
-
     if not result.pose_landmarks:
         return {}
 
     crop_h, crop_w = crop.shape[:2]
-    landmarks = {}
-    for idx, lm in enumerate(result.pose_landmarks[0]):
-        abs_x = cx1 + lm.x * crop_w
-        abs_y = cy1 + lm.y * crop_h
-        landmarks[idx] = (abs_x, abs_y)
-    return landmarks
+    return {
+        idx: (cx1 + lm.x * crop_w, cy1 + lm.y * crop_h)
+        for idx, lm in enumerate(result.pose_landmarks[0])
+    }
 
 
-def get_front_foot(landmarks, fencer_centre_x, opponent_centre_x):
+def get_hip_centre(landmarks):
+    """Return the midpoint between left and right hips, or None if unavailable."""
+    lh = landmarks.get(LM_LEFT_HIP)
+    rh = landmarks.get(LM_RIGHT_HIP)
+    if lh is None and rh is None:
+        return None
+    if lh is None:
+        return rh
+    if rh is None:
+        return lh
+    return ((lh[0] + rh[0]) / 2, (lh[1] + rh[1]) / 2)
+
+
+def get_front_foot(landmarks, fencer_ref_x, opponent_ref_x):
     """
-    Determine which ankle is the 'front foot' (the one facing the opponent).
-    In a side-on view, the front foot is the ankle closer to the opponent.
-    Returns the (x, y) of the front ankle, or None if landmarks unavailable.
+    Determine which ankle is the 'front foot' (closest to the opponent).
+    Returns the (x, y) of the front ankle, or None if no ankles found.
     """
     left_ankle  = landmarks.get(LM_LEFT_ANKLE)
     right_ankle = landmarks.get(LM_RIGHT_ANKLE)
@@ -152,82 +219,256 @@ def get_front_foot(landmarks, fencer_centre_x, opponent_centre_x):
     if right_ankle is None:
         return left_ankle
 
-    # front foot = whichever ankle is closer to the opponent's side
-    if opponent_centre_x > fencer_centre_x:
-        # opponent is to the right — front foot is the one with higher x
+    if opponent_ref_x > fencer_ref_x:
+        # opponent to the right -> front foot has the higher x
         return left_ankle if left_ankle[0] > right_ankle[0] else right_ankle
     else:
-        # opponent is to the left — front foot is the one with lower x
+        # opponent to the left -> front foot has the lower x
         return left_ankle if left_ankle[0] < right_ankle[0] else right_ankle
 
 
-def draw_overlay(frame, track_data, pose_data, dist_m, dist_method, frame_idx, fps):
-    """Draw bounding boxes, pose keypoints, and distance overlay on a frame."""
-    for i, (box, track_id) in enumerate(track_data):
-        x1, y1, x2, y2 = [int(v) for v in box]
-        colour = COLOURS[i % len(COLOURS)]
-        label  = f"Fencer {track_id}"
+# --- fencer identity --------------------------------------------------
 
-        # bounding box
+class FencerTracker:
+    """
+    Maintains stable Fencer 1 / Fencer 2 slots by spatial continuity
+    rather than by ByteTrack ID alone, which is unreliable across
+    occlusions and rapid motion.
+
+    On the first frame with at least two person detections, the
+    leftmost is assigned to slot 0 (Fencer 1) and the rightmost to
+    slot 1 (Fencer 2). On subsequent frames, the top-2 most confident
+    person detections are matched to slots by minimising total
+    distance from each slot's last known position.
+
+    select() always returns a length-2 list (slots [A, B]); a slot
+    is None if no detection was matched to it in this frame.
+    """
+
+    def __init__(self):
+        self.last_pos = [None, None]   # last (x, y) centre for each slot
+
+    def select(self, ids, xyxys, confs, max_fencers=MAX_FENCERS):
+        result = [None, None]
+        if len(ids) == 0:
+            return result
+
+        # take the two most confident person detections this frame
+        order   = np.argsort(confs)[::-1][:max_fencers]
+        boxes   = [xyxys[i]    for i in order]
+        chosen_ids = [int(ids[i]) for i in order]
+        centres = [get_box_centre(b) for b in boxes]
+
+        # case 1: not initialised yet
+        if self.last_pos[0] is None and self.last_pos[1] is None:
+            if len(boxes) >= 2:
+                # leftmost -> slot 0, rightmost -> slot 1
+                if centres[0][0] <= centres[1][0]:
+                    result[0] = (boxes[0], chosen_ids[0])
+                    result[1] = (boxes[1], chosen_ids[1])
+                else:
+                    result[0] = (boxes[1], chosen_ids[1])
+                    result[1] = (boxes[0], chosen_ids[0])
+            elif len(boxes) == 1:
+                # only one fencer visible; tentatively place in slot 0
+                result[0] = (boxes[0], chosen_ids[0])
+            for s in range(2):
+                if result[s] is not None:
+                    self.last_pos[s] = get_box_centre(result[s][0])
+            return result
+
+        # case 2: one detection only — assign to the closer slot
+        if len(boxes) == 1:
+            c = centres[0]
+            d0 = pixel_distance(c, self.last_pos[0]) if self.last_pos[0] else float("inf")
+            d1 = pixel_distance(c, self.last_pos[1]) if self.last_pos[1] else float("inf")
+            slot = 0 if d0 <= d1 else 1
+            result[slot] = (boxes[0], chosen_ids[0])
+            self.last_pos[slot] = c
+            return result
+
+        # case 3: two detections — pick the assignment with lower total cost
+        # (a tiny version of the Hungarian algorithm for 2 items)
+        if self.last_pos[0] is not None and self.last_pos[1] is not None:
+            cost_straight = (pixel_distance(centres[0], self.last_pos[0]) +
+                             pixel_distance(centres[1], self.last_pos[1]))
+            cost_swapped  = (pixel_distance(centres[0], self.last_pos[1]) +
+                             pixel_distance(centres[1], self.last_pos[0]))
+            if cost_straight <= cost_swapped:
+                result[0] = (boxes[0], chosen_ids[0])
+                result[1] = (boxes[1], chosen_ids[1])
+            else:
+                result[0] = (boxes[1], chosen_ids[1])
+                result[1] = (boxes[0], chosen_ids[0])
+            self.last_pos[0] = get_box_centre(result[0][0])
+            self.last_pos[1] = get_box_centre(result[1][0])
+            return result
+
+        # case 4: only one slot has a history — assign closer detection there,
+        # then put the remaining one into the empty slot.
+        known_slot   = 0 if self.last_pos[0] is not None else 1
+        unknown_slot = 1 - known_slot
+        d0 = pixel_distance(centres[0], self.last_pos[known_slot])
+        d1 = pixel_distance(centres[1], self.last_pos[known_slot])
+        if d0 <= d1:
+            result[known_slot]   = (boxes[0], chosen_ids[0])
+            result[unknown_slot] = (boxes[1], chosen_ids[1])
+        else:
+            result[known_slot]   = (boxes[1], chosen_ids[1])
+            result[unknown_slot] = (boxes[0], chosen_ids[0])
+        self.last_pos[0] = get_box_centre(result[0][0])
+        self.last_pos[1] = get_box_centre(result[1][0])
+        return result
+
+
+# --- push / pull (advance / retreat) tracking -------------------------
+
+class PushPullTracker:
+    """
+    Accumulates how far each fencer has advanced (pushed forward toward
+    the opponent) and retreated (moved backward) over the bout, in metres.
+
+    Each fencer's reference x is first smoothed with a rolling median
+    window to suppress bounding-box jitter; movement is then computed
+    against the previous smoothed value. Per-frame movements greater
+    than MAX_FRAME_MOVEMENT_M (treated as camera motion) or smaller
+    than PUSH_PULL_NOISE_FLOOR_M (treated as noise) are ignored.
+    """
+
+    def __init__(self, n_fencers=2, smooth_window=PUSH_PULL_SMOOTH_WINDOW):
+        self.smooth_window = smooth_window
+        self.x_history     = [deque(maxlen=smooth_window) for _ in range(n_fencers)]
+        self.prev_smooth   = [None] * n_fencers
+        self.advance_m     = [0.0]  * n_fencers
+        self.retreat_m     = [0.0]  * n_fencers
+
+    def update(self, idx, fencer_x, opponent_x, scale_px_per_m):
+        if fencer_x is None or scale_px_per_m == 0:
+            return
+
+        self.x_history[idx].append(fencer_x)
+        smooth_x = float(np.median(self.x_history[idx]))
+
+        prev = self.prev_smooth[idx]
+        self.prev_smooth[idx] = smooth_x
+        if prev is None:
+            return
+
+        dx_px = smooth_x - prev
+
+        # signed advance: positive = moving toward opponent
+        if opponent_x is not None and opponent_x < prev:
+            advance_px = -dx_px
+        else:
+            advance_px = dx_px
+
+        advance_m = advance_px / scale_px_per_m
+
+        if abs(advance_m) > MAX_FRAME_MOVEMENT_M:
+            return
+        if abs(advance_m) < PUSH_PULL_NOISE_FLOOR_M:
+            return
+
+        if advance_m > 0:
+            self.advance_m[idx] += advance_m
+        else:
+            self.retreat_m[idx] += -advance_m
+
+
+# --- smoothing --------------------------------------------------------
+
+def smooth_distance(buffer, new_value, window=SMOOTH_WINDOW):
+    """
+    Append new_value to a sliding buffer (mutated in place) and return
+    the rolling median of the most recent `window` values.
+    """
+    buffer.append(new_value)
+    if len(buffer) > window:
+        buffer.popleft()
+    return float(np.median(buffer))
+
+
+# --- drawing ----------------------------------------------------------
+
+def draw_overlay(frame, slots, pose_data, dist_display_m, dist_raw_m,
+                 dist_method, push_pull, frame_idx, fps):
+    """Draw bounding boxes, pose keypoints, distance overlay, and push/pull stats."""
+
+    h, w = frame.shape[:2]
+
+    # bounding boxes + pose dots + front foot markers
+    for slot_idx, slot in enumerate(slots):
+        if slot is None:
+            continue
+        box, track_id = slot
+        x1, y1, x2, y2 = [int(v) for v in box]
+        colour = COLOURS[slot_idx]
+        label  = f"Fencer {slot_idx + 1}"
+
         cv2.rectangle(frame, (x1, y1), (x2, y2), colour, 2)
 
-        # label
         (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
         cv2.rectangle(frame, (x1, y1 - th - 8), (x1 + tw + 4, y1), colour, -1)
         cv2.putText(frame, label, (x1 + 2, y1 - 4),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
 
-        # draw key pose landmarks if available
-        if i < len(pose_data) and pose_data[i]:
-            lms = pose_data[i]
-            key_points = [
-                LM_LEFT_ANKLE, LM_RIGHT_ANKLE,
-                LM_LEFT_HIP, LM_RIGHT_HIP,
-                LM_LEFT_SHOULDER, LM_RIGHT_SHOULDER,
-            ]
+        # pose keypoints
+        lms = pose_data[slot_idx] if slot_idx < len(pose_data) else None
+        if lms:
+            key_points = [LM_LEFT_ANKLE, LM_RIGHT_ANKLE,
+                          LM_LEFT_HIP, LM_RIGHT_HIP,
+                          LM_LEFT_SHOULDER, LM_RIGHT_SHOULDER]
             for lm_idx in key_points:
                 if lm_idx in lms:
                     px, py = int(lms[lm_idx][0]), int(lms[lm_idx][1])
                     cv2.circle(frame, (px, py), 4, colour, -1)
 
-            # draw front foot marker (larger dot)
-            centres = [get_box_centre(t[0]) for t in track_data]
-            opp_idx = 1 - i
-            if opp_idx < len(centres):
-                front = get_front_foot(lms, centres[i][0], centres[opp_idx][0])
-                if front:
-                    cv2.circle(frame, (int(front[0]), int(front[1])), 7, (255, 255, 255), 2)
-
-    # distance overlay (top-left)
-    method_label = "pose" if dist_method == "pose" else "bbox"
-    if dist_m is not None:
-        dist_text = f"Distance ({method_label}): {dist_m:.2f} m"
+    # distance overlay (top-left), colour-coded by zone
+    zone_colour = distance_zone_colour(dist_display_m)
+    if dist_display_m is not None:
+        method_label = "pose" if dist_method == "pose" else "bbox"
+        dist_text = f"Distance ({method_label}): {dist_display_m:.2f} m"
     else:
         dist_text = "Distance: --"
 
-    time_sec  = frame_idx / fps if fps > 0 else 0
-    time_text = f"Time: {time_sec:.1f}s"
-
-    cv2.putText(frame, dist_text, (12, 32),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-    cv2.putText(frame, time_text, (12, 62),
+    cv2.putText(frame, dist_text, (12, 36),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.9, zone_colour, 2)
+    cv2.putText(frame, f"Time: {frame_idx / fps:.1f} s", (12, 66),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+
+    # push / pull readout (top-right), per fencer
+    for i in range(2):
+        adv = push_pull.advance_m[i]
+        ret = push_pull.retreat_m[i]
+        line1 = f"Fencer {i + 1}"
+        line2 = f"  push: {adv:5.2f} m"
+        line3 = f"  pull: {ret:5.2f} m"
+        y0 = 28 + i * 96
+        cv2.putText(frame, line1, (w - 240, y0),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLOURS[i], 2)
+        cv2.putText(frame, line2, (w - 240, y0 + 26),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (220, 220, 220), 1)
+        cv2.putText(frame, line3, (w - 240, y0 + 52),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (220, 220, 220), 1)
 
     return frame
 
 
 def save_plot(times, distances, methods, output_path):
-    """Save a distance-over-time chart, colouring pose vs bbox frames differently."""
-    pose_t  = [t for t, m in zip(times, methods) if m == "pose"]
-    pose_d  = [d for d, m in zip(distances, methods) if m == "pose"]
-    bbox_t  = [t for t, m in zip(times, methods) if m == "bbox"]
-    bbox_d  = [d for d, m in zip(distances, methods) if m == "bbox"]
+    """Save a distance-over-time chart, with pose vs bbox samples coloured separately."""
+    pose_t = [t for t, m in zip(times, methods) if m == "pose"]
+    pose_d = [d for d, m in zip(distances, methods) if m == "pose"]
+    bbox_t = [t for t, m in zip(times, methods) if m == "bbox"]
+    bbox_d = [d for d, m in zip(distances, methods) if m == "bbox"]
 
     fig, ax = plt.subplots(figsize=(12, 4))
     if pose_t:
         ax.scatter(pose_t, pose_d, s=2, color="#2196F3", label="Pose (front foot)", alpha=0.7)
     if bbox_t:
-        ax.scatter(bbox_t, bbox_d, s=2, color="#FF9800", label="Fallback (bbox centre)", alpha=0.5)
+        ax.scatter(bbox_t, bbox_d, s=2, color="#FF9800", label="Fallback (bbox feet)", alpha=0.5)
+    # also draw zone thresholds for context
+    ax.axhline(DIST_CLOSE_M,  color="red",    linestyle="--", linewidth=0.8, alpha=0.5)
+    ax.axhline(DIST_MEDIUM_M, color="orange", linestyle="--", linewidth=0.8, alpha=0.5)
     ax.set_xlabel("Time (seconds)")
     ax.set_ylabel("Estimated distance (metres)")
     ax.set_title("Inter-fencer Distance Over Time (front foot to front foot)")
@@ -239,7 +480,9 @@ def save_plot(times, distances, methods, output_path):
     print(f"  Plot saved -> {output_path}")
 
 
-def run(video_path, output_dir):
+# --- main pipeline ----------------------------------------------------
+
+def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE):
     os.makedirs(output_dir, exist_ok=True)
 
     base      = os.path.splitext(os.path.basename(video_path))[0]
@@ -263,6 +506,10 @@ def run(video_path, output_dir):
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(out_video, fourcc, fps, (width, height))
 
+    fencer_tracker = FencerTracker()
+    push_pull      = PushPullTracker(n_fencers=2)
+    dist_buffer    = deque()
+
     csv_rows  = []
     times     = []
     distances = []
@@ -278,71 +525,99 @@ def run(video_path, output_dir):
             break
 
         results = model.track(
-            frame,
-            persist=True,
-            conf=CONF_THRESH,
-            iou=IOU_THRESH,
-            classes=[0],
-            verbose=False,
+            frame, persist=True,
+            conf=CONF_THRESH, iou=IOU_THRESH,
+            classes=[0], verbose=False,
         )
 
-        track_data = []
+        # gather detections this frame
+        ids   = np.array([], dtype=int)
+        xyxys = np.empty((0, 4))
+        confs = np.array([])
         if results[0].boxes is not None and results[0].boxes.id is not None:
-            boxes  = results[0].boxes
-            ids    = boxes.id.cpu().numpy().astype(int)
-            xyxys  = boxes.xyxy.cpu().numpy()
-            confs  = boxes.conf.cpu().numpy()
-            order  = np.argsort(confs)[::-1][:MAX_FENCERS]
-            for idx in order:
-                track_data.append((xyxys[idx], ids[idx]))
+            ids   = results[0].boxes.id.cpu().numpy().astype(int)
+            xyxys = results[0].boxes.xyxy.cpu().numpy()
+            confs = results[0].boxes.conf.cpu().numpy()
 
-        # run pose on each fencer crop
-        pose_data = []
-        for box, _ in track_data:
-            lms = get_pose_landmarks(frame, box)
-            pose_data.append(lms)
+        # map detections to stable Fencer 1 / Fencer 2 slots
+        slots = fencer_tracker.select(ids, xyxys, confs)
 
-        # compute distance
-        dist_m  = None
-        method  = None
+        # run pose on each slot, but only every `pose_stride` frames
+        # to keep total wall-clock time manageable on long videos
+        pose_data = [None, None]
+        run_pose_this_frame = (frame_idx % pose_stride == 0)
+        if run_pose_this_frame:
+            for i, slot in enumerate(slots):
+                if slot is not None:
+                    pose_data[i] = get_pose_landmarks(frame, slot[0])
 
-        if len(track_data) == 2:
-            c0 = get_box_centre(track_data[0][0])
-            c1 = get_box_centre(track_data[1][0])
-            h0 = box_height_pixels(track_data[0][0])
-            h1 = box_height_pixels(track_data[1][0])
-            avg_height = (h0 + h1) / 2
+        # compute distance + update push/pull when both fencers visible
+        dist_raw_m  = None
+        dist_method = None
+        if slots[0] is not None and slots[1] is not None:
+            box0, _ = slots[0]
+            box1, _ = slots[1]
 
-            # try pose-based front-foot distance first
-            front0 = get_front_foot(pose_data[0], c0[0], c1[0]) if pose_data[0] else None
-            front1 = get_front_foot(pose_data[1], c1[0], c0[0]) if pose_data[1] else None
+            h0 = box_height_pixels(box0)
+            h1 = box_height_pixels(box1)
+            avg_height_px   = (h0 + h1) / 2
+            scale_px_per_m  = avg_height_px / REAL_HEIGHT_M if avg_height_px > 0 else 0
+
+            # per-fencer reference x: prefer mid-hip from pose, else box bottom-centre
+            ref0 = get_hip_centre(pose_data[0]) if pose_data[0] else None
+            ref1 = get_hip_centre(pose_data[1]) if pose_data[1] else None
+            if ref0 is None:
+                ref0 = get_box_bottom_centre(box0)
+            if ref1 is None:
+                ref1 = get_box_bottom_centre(box1)
+
+            # front-foot distance if pose available on both; else feet-of-bbox
+            front0 = get_front_foot(pose_data[0], ref0[0], ref1[0]) if pose_data[0] else None
+            front1 = get_front_foot(pose_data[1], ref1[0], ref0[0]) if pose_data[1] else None
 
             if front0 and front1:
-                dist_px = pixel_distance(front0, front1)
-                dist_m  = normalise_distance(dist_px, avg_height)
-                method  = "pose"
+                dist_px     = pixel_distance(front0, front1)
+                dist_raw_m  = normalise_distance(dist_px, avg_height_px)
+                dist_method = "pose"
                 pose_success += 1
             else:
-                # fallback to bounding box centres
-                dist_px = pixel_distance(c0, c1)
-                dist_m  = normalise_distance(dist_px, avg_height)
-                method  = "bbox"
+                # fallback: bbox bottom-centres (feet proxy) — more accurate than centre
+                p0 = get_box_bottom_centre(box0)
+                p1 = get_box_bottom_centre(box1)
+                dist_px     = pixel_distance(p0, p1)
+                dist_raw_m  = normalise_distance(dist_px, avg_height_px)
+                dist_method = "bbox"
 
-        frame = draw_overlay(frame, track_data, pose_data, dist_m, method, frame_idx, fps)
+            # update push/pull using each fencer's reference x and the scale
+            push_pull.update(0, ref0[0], ref1[0], scale_px_per_m)
+            push_pull.update(1, ref1[0], ref0[0], scale_px_per_m)
+
+        # smoothed value for the on-screen overlay
+        dist_display_m = None
+        if dist_raw_m is not None:
+            dist_display_m = smooth_distance(dist_buffer, dist_raw_m)
+
+        frame = draw_overlay(frame, slots, pose_data,
+                             dist_display_m, dist_raw_m, dist_method,
+                             push_pull, frame_idx, fps)
         writer.write(frame)
 
         time_sec = frame_idx / fps
         csv_rows.append({
-            "frame":            frame_idx,
-            "time_s":           round(time_sec, 3),
-            "distance_m":       round(dist_m, 3) if dist_m is not None else "",
-            "method":           method or "",
-            "fencers_detected": len(track_data),
+            "frame":             frame_idx,
+            "time_s":            round(time_sec, 3),
+            "distance_raw_m":    round(dist_raw_m, 3)     if dist_raw_m     is not None else "",
+            "distance_smooth_m": round(dist_display_m, 3) if dist_display_m is not None else "",
+            "method":            dist_method or "",
+            "f1_advance_m":      round(push_pull.advance_m[0], 3),
+            "f1_retreat_m":      round(push_pull.retreat_m[0], 3),
+            "f2_advance_m":      round(push_pull.advance_m[1], 3),
+            "f2_retreat_m":      round(push_pull.retreat_m[1], 3),
         })
-        if dist_m is not None:
+        if dist_raw_m is not None:
             times.append(time_sec)
-            distances.append(dist_m)
-            methods.append(method)
+            distances.append(dist_raw_m)
+            methods.append(dist_method)
 
         frame_idx += 1
         if frame_idx % 100 == 0:
@@ -353,26 +628,32 @@ def run(video_path, output_dir):
     print(f"  Annotated video saved -> {out_video}")
 
     with open(out_csv, "w", newline="") as f:
-        writer_csv = csv.DictWriter(
-            f, fieldnames=["frame", "time_s", "distance_m", "method", "fencers_detected"])
+        writer_csv = csv.DictWriter(f, fieldnames=[
+            "frame", "time_s",
+            "distance_raw_m", "distance_smooth_m", "method",
+            "f1_advance_m", "f1_retreat_m",
+            "f2_advance_m", "f2_retreat_m",
+        ])
         writer_csv.writeheader()
         writer_csv.writerows(csv_rows)
     print(f"  CSV saved -> {out_csv}")
 
     if distances:
         save_plot(times, distances, methods, out_plot)
-
-    if distances:
         pose_pct = (pose_success / len(distances)) * 100
         print("\n--- Summary ---")
-        print(f"  Frames processed:          {frame_idx}")
-        print(f"  Frames with 2 fencers:     {len(distances)}")
-        print(f"  Pose-based distance:       {pose_success} frames ({pose_pct:.1f}%)")
-        print(f"  Fallback (bbox) distance:  {len(distances) - pose_success} frames")
-        print(f"  Mean distance:             {np.mean(distances):.2f} m")
-        print(f"  Min distance:              {np.min(distances):.2f} m")
-        print(f"  Max distance:              {np.max(distances):.2f} m")
-        print(f"  Std deviation:             {np.std(distances):.2f} m")
+        print(f"  Frames processed:           {frame_idx}")
+        print(f"  Frames with both fencers:   {len(distances)}")
+        print(f"  Pose-based distance:        {pose_success} ({pose_pct:.1f}%)")
+        print(f"  Fallback (bbox) distance:   {len(distances) - pose_success}")
+        print(f"  Mean distance:              {np.mean(distances):.2f} m")
+        print(f"  Min  distance:              {np.min(distances):.2f} m")
+        print(f"  Max  distance:              {np.max(distances):.2f} m")
+        print(f"  Std deviation:              {np.std(distances):.2f} m")
+        print(f"  Fencer 1   total advance:   {push_pull.advance_m[0]:.2f} m")
+        print(f"  Fencer 1   total retreat:   {push_pull.retreat_m[0]:.2f} m")
+        print(f"  Fencer 2   total advance:   {push_pull.advance_m[1]:.2f} m")
+        print(f"  Fencer 2   total retreat:   {push_pull.retreat_m[1]:.2f} m")
     else:
         print("  No distance data recorded.")
 
@@ -381,8 +662,11 @@ def main():
     parser = argparse.ArgumentParser(description="Fencing bout fencer detection and distance analysis")
     parser.add_argument("--video",  required=True, help="Path to input video file")
     parser.add_argument("--output", default="results", help="Output folder (default: results/)")
+    parser.add_argument("--pose-stride", type=int, default=DEFAULT_POSE_STRIDE,
+                        help=f"Run pose estimation every Nth frame (default {DEFAULT_POSE_STRIDE}, "
+                             f"set to 1 for every frame)")
     args = parser.parse_args()
-    run(args.video, args.output)
+    run(args.video, args.output, pose_stride=args.pose_stride)
 
 
 if __name__ == "__main__":
