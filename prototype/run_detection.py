@@ -390,13 +390,22 @@ def smooth_distance(buffer, new_value, window=SMOOTH_WINDOW):
 
 # --- drawing ----------------------------------------------------------
 
+def _draw_panel(frame, x, y, w, h, alpha=0.55):
+    """Draw a semi-transparent dark panel for overlay text legibility."""
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (x, y), (x + w, y + h), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+    # thin outline so the panel reads cleanly against any background
+    cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 255, 255), 1)
+
+
 def draw_overlay(frame, slots, pose_data, dist_display_m, dist_raw_m,
                  dist_method, push_pull, frame_idx, fps):
     """Draw bounding boxes, pose keypoints, distance overlay, and push/pull stats."""
 
     h, w = frame.shape[:2]
 
-    # bounding boxes + pose dots + front foot markers
+    # bounding boxes + pose dots
     for slot_idx, slot in enumerate(slots):
         if slot is None:
             continue
@@ -412,44 +421,54 @@ def draw_overlay(frame, slots, pose_data, dist_display_m, dist_raw_m,
         cv2.putText(frame, label, (x1 + 2, y1 - 4),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
 
-        # pose keypoints
         lms = pose_data[slot_idx] if slot_idx < len(pose_data) else None
         if lms:
-            key_points = [LM_LEFT_ANKLE, LM_RIGHT_ANKLE,
-                          LM_LEFT_HIP, LM_RIGHT_HIP,
-                          LM_LEFT_SHOULDER, LM_RIGHT_SHOULDER]
-            for lm_idx in key_points:
+            for lm_idx in (LM_LEFT_ANKLE, LM_RIGHT_ANKLE,
+                           LM_LEFT_HIP, LM_RIGHT_HIP,
+                           LM_LEFT_SHOULDER, LM_RIGHT_SHOULDER):
                 if lm_idx in lms:
                     px, py = int(lms[lm_idx][0]), int(lms[lm_idx][1])
                     cv2.circle(frame, (px, py), 4, colour, -1)
 
-    # distance overlay (top-left), colour-coded by zone
-    zone_colour = distance_zone_colour(dist_display_m)
+    # ----- HUD panel along the bottom of the frame -----
+    panel_h     = 116
+    panel_y     = h - panel_h - 16
+    panel_w     = w - 32
+    panel_x     = 16
+    _draw_panel(frame, panel_x, panel_y, panel_w, panel_h, alpha=0.6)
+
+    inner_top = panel_y + 12
+    col_w     = panel_w // 3
+
+    # column 1: time + distance
+    time_text = f"Time: {frame_idx / fps:5.1f} s"
     if dist_display_m is not None:
         method_label = "pose" if dist_method == "pose" else "bbox"
-        dist_text = f"Distance ({method_label}): {dist_display_m:.2f} m"
+        dist_text    = f"{dist_display_m:.2f} m  ({method_label})"
     else:
-        dist_text = "Distance: --"
+        dist_text    = "-- m"
+    zone_colour = distance_zone_colour(dist_display_m)
 
-    cv2.putText(frame, dist_text, (12, 36),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.9, zone_colour, 2)
-    cv2.putText(frame, f"Time: {frame_idx / fps:.1f} s", (12, 66),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+    col1_x = panel_x + 16
+    cv2.putText(frame, time_text, (col1_x, inner_top + 22),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (230, 230, 230), 2)
+    cv2.putText(frame, "Distance:", (col1_x, inner_top + 56),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+    cv2.putText(frame, dist_text, (col1_x, inner_top + 92),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.0, zone_colour, 2)
 
-    # push / pull readout (top-right), per fencer
+    # columns 2 & 3: per-fencer push / pull
     for i in range(2):
+        col_x = panel_x + 16 + col_w * (i + 1)
         adv = push_pull.advance_m[i]
         ret = push_pull.retreat_m[i]
-        line1 = f"Fencer {i + 1}"
-        line2 = f"  push: {adv:5.2f} m"
-        line3 = f"  pull: {ret:5.2f} m"
-        y0 = 28 + i * 96
-        cv2.putText(frame, line1, (w - 240, y0),
+
+        cv2.putText(frame, f"Fencer {i + 1}", (col_x, inner_top + 22),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLOURS[i], 2)
-        cv2.putText(frame, line2, (w - 240, y0 + 26),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (220, 220, 220), 1)
-        cv2.putText(frame, line3, (w - 240, y0 + 52),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (220, 220, 220), 1)
+        cv2.putText(frame, f"push  {adv:6.2f} m", (col_x, inner_top + 56),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (230, 230, 230), 2)
+        cv2.putText(frame, f"pull  {ret:6.2f} m", (col_x, inner_top + 92),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (230, 230, 230), 2)
 
     return frame
 
