@@ -94,10 +94,9 @@ video.
 >
 > *(Point at the right-hand stats)*
 > *"On the right are the running totals: how much each fencer has pushed forward toward the
-> opponent, and how much they've pulled back, both in metres. This is the number I'm most
-> proud of, honestly, because it's one I genuinely couldn't work out by eye as a fencer
-> myself, and it's one of the most tactically informative things you can know about your own
-> footwork over a bout."*
+> opponent, and how much they've pulled back, both in metres. This is something I genuinely
+> couldn't work out by eye as a fencer myself, and it's one of the most tactically informative
+> things you can know about your own footwork over a bout."*
 
 ---
 
@@ -117,14 +116,14 @@ video.
 **Shot:** Pre-cued frame from one of the test clips that shows a failure - for example
 the moment the referee is captured as Fencer 2 in clip 2.
 
-> *"I do want to be upfront about what the prototype gets wrong, because I think the failures
-> are as informative as the successes. Two failure modes came up reproducibly when I tested
-> on real footage. The first is wrong-target capture: when a background person, typically the
-> centre referee, passes close to a fencer's last known position, the matcher can lock onto
-> them - you can see that happening in this frame. The second is close-range flicker: when the
-> two fencers cross or clinch within touch range, the detector sometimes merges them into one
-> box, and on separation the labels can briefly swap. Both of these are well-known
-> data-association problems in single-camera tracking, and I documented them in the report."*
+> *"I want to be honest about what the prototype gets wrong. Two failure modes came up
+> reproducibly when I tested on real footage. The first is wrong-target capture: when a
+> background person, typically the centre referee, passes close to a fencer's last known
+> position, the matcher can lock onto them - you can see that happening in this frame. The
+> second is close-range flicker: when the two fencers cross or clinch within touch range, the
+> detector sometimes merges them into one box, and on separation the labels can briefly swap.
+> Both of these are well-known data-association problems in single-camera tracking, and I
+> documented them in the report."*
 
 ---
 
@@ -132,12 +131,12 @@ the moment the referee is captured as Fencer 2 in clip 2.
 
 **Shot:** Back on the annotated video, or on a simple list of the four actions.
 
-> *"And honestly, this is exactly why I designed the system as AI-assisted rather than fully
-> automatic. In the full application, the annotation interface will let the user confirm
-> touches, which automatically excludes the walkback and reset periods from the metrics, and
-> that's precisely where most of these failures happen. The user will also be able to mark a
-> short segment as unreliable, or click on the correct fencer to re-anchor a slot. So the
-> user is fixing a few high-level boundaries, not correcting frames one by one."*
+> *"And this is exactly why I designed the system as AI-assisted rather than fully automatic.
+> In the full application, the annotation interface will let the user confirm touches, which
+> automatically excludes the walkback and reset periods from the metrics, and that's precisely
+> where most of these failures happen. The user will also be able to mark a short segment as
+> unreliable, or click on the correct fencer to re-anchor a slot. So the user is fixing a few
+> high-level boundaries, not correcting frames one by one."*
 
 ---
 
