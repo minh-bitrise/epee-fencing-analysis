@@ -31,12 +31,13 @@ The aim is to hit four marking criteria explicitly:
 
 **Shot:** Title slide or the first frame of the annotated video, paused.
 
-> *"My name is Nguyen Anh Minh and this is the feature-prototype demonstration for my CM3020
-> Artificial Intelligence final project, on AI-assisted analysis of epee fencing bouts. The
-> project template is Project Idea 1 - Orchestrating AI Models to Achieve a Goal. The aim of the
-> full project is a web application that takes a recorded bout video and turns it into useful
-> tactical information for fencers and coaches. This demo shows the prototype: the part of the
-> AI pipeline I have built so far."*
+> *"Hi, my name is Nguyen Anh Minh, and in this demo I'll walk you through the feature
+> prototype for my CM3020 Artificial Intelligence final project: an AI-assisted analysis tool
+> for epee fencing bouts. The project template I'm working under is Project Idea 1,
+> Orchestrating AI Models to Achieve a Goal. What I'm aiming for in the full project is a web
+> application that takes a recorded bout video and turns it into useful tactical information
+> for fencers and coaches. What I'll show you today is the part of the AI pipeline I've built
+> so far."*
 
 ---
 
@@ -44,11 +45,12 @@ The aim is to hit four marking criteria explicitly:
 
 **Shot:** Still on the title or the paused first frame.
 
-> *"Fencing video review is currently manual, slow, and inconsistent, and most of the
-> tactically interesting numbers - the distance between fencers over time, how much each fencer
-> pushed forward versus retreated, the engagement distance at the moment of a touch - are
-> effectively impossible to measure by eye. The prototype shows that an AI pipeline can produce
-> exactly those numbers automatically."*
+> *"The reason I picked this problem is that fencing video review, at the amateur and club
+> level I come from myself, is still done by hand. It's slow, it's inconsistent, and most of
+> the tactically interesting numbers - the distance between the two fencers over time, how much
+> each fencer pushed forward versus retreated, the engagement distance at the moment of a
+> touch - are effectively impossible to measure by eye. What I want to show in this prototype
+> is that an AI pipeline can produce exactly those numbers automatically."*
 
 ---
 
@@ -57,14 +59,13 @@ The aim is to hit four marking criteria explicitly:
 **Shot:** Brief diagram or bullets on screen, OR just the video paused. Keep the
 visual simple - the voice does the work here.
 
-> *"The prototype is a Python pipeline that does four things, per frame of video. First, it
-> uses YOLOv8 with ByteTrack to detect and follow people on screen. Second, it identifies
-> which two of those are the actual fencers using a custom matcher that maintains a stable
-> Fencer 1 and Fencer 2 identity by spatial continuity, and rejects obvious bystanders by a
-> spatial gate and a size gate. Third, it runs MediaPipe pose estimation on each fencer to find
-> body keypoints, including the ankles. And fourth, it measures front-foot to front-foot
-> distance, normalised to metres, and accumulates how much each fencer has moved toward and
-> away from the opponent."*
+> *"What I built is a Python pipeline that does four things, per frame of video. First, I use
+> YOLOv8 with ByteTrack to detect and follow people on screen. Second, I run those detections
+> through a custom matcher I wrote that keeps a stable Fencer 1 and Fencer 2 identity by
+> spatial continuity, and that filters out obvious bystanders using a spatial gate and a size
+> gate. Third, I run MediaPipe pose estimation on each fencer to extract body keypoints,
+> including the ankles. And fourth, I measure front-foot to front-foot distance, normalised to
+> metres, and accumulate how much each fencer has moved toward and away from the opponent."*
 
 ---
 
@@ -75,26 +76,28 @@ screen. Let the visuals do the demonstration - this is the most important sectio
 video.
 
 > *(As the boxes appear)*
-> *"Each fencer has a coloured box - orange for Fencer 1, green for Fencer 2 - with their
-> label sticking with them as they move. The small dots are the pose keypoints: the ankles,
-> hips and shoulders the system is using for distance and for footwork analysis."*
+> *"You can see each fencer has a coloured box: orange for Fencer 1, green for Fencer 2, and
+> the labels stick with them as they move along the piste. The small dots inside each box are
+> the pose keypoints I'm extracting: ankles, hips, and shoulders - those are what I use for
+> distance and for footwork analysis."*
 >
 > *(As the bottom HUD updates)*
-> *"At the bottom of the frame is the readout. On the left, the current distance between the
-> two fencers, colour-coded: green when they are at safe distance, orange when they are inside
-> the engagement range of about 1.8 metres, and red when they are within touch range. The
-> word `pose` or `bbox` next to the value tells you whether this frame used pose-based or
-> bounding-box-based measurement."*
+> *"At the bottom of the frame is the readout I designed. On the left is the current distance
+> between the two fencers, colour-coded by tactical range: green when they're at safe
+> distance, orange when they're inside the engagement range of about 1.8 metres, and red when
+> they're within touch range. The `pose` or `bbox` label next to the number tells you whether
+> the system used the pose-based measurement on that frame or the bounding-box fallback."*
 >
 > *(Pause as fencers close in and the distance turns red)*
-> *"Watch the colour change - they are closing the distance into touch range here. This is the
-> kind of moment a coach wants to find quickly when reviewing a bout."*
+> *"Watch the colour change here - they're closing into touch range. This is exactly the kind
+> of moment a coach wants to be able to jump to quickly when reviewing a bout."*
 >
 > *(Point at the right-hand stats)*
-> *"On the right, the running totals: how much each fencer has pushed forward toward the
-> opponent, and how much they have pulled back, both in metres. This number is impossible to
-> work out by eye and it is one of the most tactically informative things a fencer can know
-> about their own footwork over a bout."*
+> *"On the right are the running totals: how much each fencer has pushed forward toward the
+> opponent, and how much they've pulled back, both in metres. This is the number I'm most
+> proud of, honestly, because it's one I genuinely couldn't work out by eye as a fencer
+> myself, and it's one of the most tactically informative things you can know about your own
+> footwork over a bout."*
 
 ---
 
@@ -102,10 +105,10 @@ video.
 
 **Shot:** Cut briefly to the distance-over-time plot, then to the CSV.
 
-> *"The pipeline also produces a per-frame CSV with raw and smoothed distance, the method
-> used, and the running push and pull totals for each fencer. And a distance-over-time chart
-> that lets you see engagement patterns at a glance. These are the building blocks of the full
-> system's dashboard."*
+> *"On top of the annotated video, the pipeline also writes out a per-frame CSV with raw and
+> smoothed distance, the method used, and the running push and pull totals for each fencer.
+> Plus a distance-over-time chart so you can see engagement patterns at a glance. These are
+> what I'll build the full system's dashboard on top of."*
 
 ---
 
@@ -114,13 +117,14 @@ video.
 **Shot:** Pre-cued frame from one of the test clips that shows a failure - for example
 the moment the referee is captured as Fencer 2 in clip 2.
 
-> *"I want to be honest about what the prototype gets wrong. Two failure modes came up
-> reproducibly in testing. The first is wrong-target capture: when a background person like the
-> centre referee passes close to a fencer's last known position, the matcher can lock onto
-> them, as you can see here. The second is close-range flicker: when the two fencers cross or
-> clinch within touch range, the detector sometimes merges them into one box, and on
-> separation the labels can briefly swap. Both are well-known data-association problems in
-> single-camera tracking and are documented in the report."*
+> *"I do want to be upfront about what the prototype gets wrong, because I think the failures
+> are as informative as the successes. Two failure modes came up reproducibly when I tested
+> on real footage. The first is wrong-target capture: when a background person, typically the
+> centre referee, passes close to a fencer's last known position, the matcher can lock onto
+> them - you can see that happening in this frame. The second is close-range flicker: when the
+> two fencers cross or clinch within touch range, the detector sometimes merges them into one
+> box, and on separation the labels can briefly swap. Both of these are well-known
+> data-association problems in single-camera tracking, and I documented them in the report."*
 
 ---
 
@@ -128,12 +132,12 @@ the moment the referee is captured as Fencer 2 in clip 2.
 
 **Shot:** Back on the annotated video, or on a simple list of the four actions.
 
-> *"And this is exactly why the system is AI-assisted rather than fully automatic. The full
-> application's annotation interface lets the user confirm touches, which automatically
-> excludes walkback and reset periods from the metrics - which is where most of these failures
-> happen. The user can also mark a short segment as unreliable, or click on the correct fencer
-> to re-anchor a slot. So the user fixes a few high-level boundaries; they don't correct frames
-> one by one."*
+> *"And honestly, this is exactly why I designed the system as AI-assisted rather than fully
+> automatic. In the full application, the annotation interface will let the user confirm
+> touches, which automatically excludes the walkback and reset periods from the metrics, and
+> that's precisely where most of these failures happen. The user will also be able to mark a
+> short segment as unreliable, or click on the correct fencer to re-anchor a slot. So the
+> user is fixing a few high-level boundaries, not correcting frames one by one."*
 
 ---
 
@@ -141,9 +145,9 @@ the moment the referee is captured as Fencer 2 in clip 2.
 
 **Shot:** Final frame or simple closing slide.
 
-> *"That is the feature prototype: detection, tracking, pose, distance, and cumulative push
-> and pull, with the failure modes acknowledged and the design's response to them in place.
-> Thank you for watching."*
+> *"And that's the prototype: detection, tracking, pose, distance, and cumulative push and
+> pull, with the failure modes acknowledged and a clear design response to them. Thanks for
+> watching."*
 
 ---
 
