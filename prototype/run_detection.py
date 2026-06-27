@@ -241,12 +241,51 @@ class FencerTracker:
     person detections are matched to slots by minimising total
     distance from each slot's last known position.
 
+    Each candidate assignment must additionally pass two gates,
+    designed to keep background bystanders out of the fencer slots:
+
+      * spatial gate — the candidate centre must be within
+        GATE_DISTANCE_RATIO box-heights of the slot's last known
+        centre (rejects detections that have jumped across the frame).
+      * size gate — the candidate box height must be within
+        [MIN_SIZE_RATIO, MAX_SIZE_RATIO] of the slot's last accepted
+        height (rejects much smaller background people further from
+        the camera).
+
+    If a candidate fails its gate, that slot is left empty for the
+    frame (no fake label) rather than swapping in a bystander.
+
     select() always returns a length-2 list (slots [A, B]); a slot
     is None if no detection was matched to it in this frame.
     """
 
+    GATE_DISTANCE_RATIO = 3.5   # max jump from last position, in box-heights
+    MIN_SIZE_RATIO      = 0.4   # candidate height must be >= this * last height
+    MAX_SIZE_RATIO      = 2.2   # candidate height must be <= this * last height
+
     def __init__(self):
-        self.last_pos = [None, None]   # last (x, y) centre for each slot
+        self.last_pos = [None, None]   # last (x, y) centre per slot
+        self.last_h   = [None, None]   # last accepted box height per slot
+
+    def _passes_gate(self, slot_idx, new_centre, new_height):
+        """Return True if a candidate is consistent with the slot's history."""
+        if self.last_pos[slot_idx] is None or self.last_h[slot_idx] is None:
+            return True  # no history yet, accept
+        ref_h = self.last_h[slot_idx]
+        if ref_h <= 0 or new_height <= 0:
+            return False
+        if pixel_distance(new_centre, self.last_pos[slot_idx]) > self.GATE_DISTANCE_RATIO * ref_h:
+            return False
+        ratio = new_height / ref_h
+        if ratio < self.MIN_SIZE_RATIO or ratio > self.MAX_SIZE_RATIO:
+            return False
+        return True
+
+    def _commit(self, result, slot, box, tid):
+        """Record a successful match into the slot and update history."""
+        result[slot] = (box, tid)
+        self.last_pos[slot] = get_box_centre(box)
+        self.last_h[slot]   = box_height_pixels(box)
 
     def select(self, ids, xyxys, confs, max_fencers=MAX_FENCERS):
         result = [None, None]
@@ -254,70 +293,58 @@ class FencerTracker:
             return result
 
         # take the two most confident person detections this frame
-        order   = np.argsort(confs)[::-1][:max_fencers]
-        boxes   = [xyxys[i]    for i in order]
-        chosen_ids = [int(ids[i]) for i in order]
-        centres = [get_box_centre(b) for b in boxes]
+        order      = np.argsort(confs)[::-1][:max_fencers]
+        boxes      = [xyxys[i]              for i in order]
+        chosen_ids = [int(ids[i])           for i in order]
+        centres    = [get_box_centre(b)     for b in boxes]
+        heights    = [box_height_pixels(b)  for b in boxes]
 
-        # case 1: not initialised yet
+        # case 1: not initialised yet — no gates, just establish slots
         if self.last_pos[0] is None and self.last_pos[1] is None:
             if len(boxes) >= 2:
-                # leftmost -> slot 0, rightmost -> slot 1
                 if centres[0][0] <= centres[1][0]:
-                    result[0] = (boxes[0], chosen_ids[0])
-                    result[1] = (boxes[1], chosen_ids[1])
+                    self._commit(result, 0, boxes[0], chosen_ids[0])
+                    self._commit(result, 1, boxes[1], chosen_ids[1])
                 else:
-                    result[0] = (boxes[1], chosen_ids[1])
-                    result[1] = (boxes[0], chosen_ids[0])
+                    self._commit(result, 0, boxes[1], chosen_ids[1])
+                    self._commit(result, 1, boxes[0], chosen_ids[0])
             elif len(boxes) == 1:
-                # only one fencer visible; tentatively place in slot 0
-                result[0] = (boxes[0], chosen_ids[0])
-            for s in range(2):
-                if result[s] is not None:
-                    self.last_pos[s] = get_box_centre(result[s][0])
+                self._commit(result, 0, boxes[0], chosen_ids[0])
             return result
 
-        # case 2: one detection only — assign to the closer slot
+        # case 2: one detection — assign to the closer slot, then gate
         if len(boxes) == 1:
-            c = centres[0]
+            c, hgt = centres[0], heights[0]
             d0 = pixel_distance(c, self.last_pos[0]) if self.last_pos[0] else float("inf")
             d1 = pixel_distance(c, self.last_pos[1]) if self.last_pos[1] else float("inf")
             slot = 0 if d0 <= d1 else 1
-            result[slot] = (boxes[0], chosen_ids[0])
-            self.last_pos[slot] = c
+            if self._passes_gate(slot, c, hgt):
+                self._commit(result, slot, boxes[0], chosen_ids[0])
             return result
 
-        # case 3: two detections — pick the assignment with lower total cost
-        # (a tiny version of the Hungarian algorithm for 2 items)
+        # case 3: two detections, both slots have history
+        # pick the cheaper assignment, then gate each match independently
         if self.last_pos[0] is not None and self.last_pos[1] is not None:
             cost_straight = (pixel_distance(centres[0], self.last_pos[0]) +
                              pixel_distance(centres[1], self.last_pos[1]))
             cost_swapped  = (pixel_distance(centres[0], self.last_pos[1]) +
                              pixel_distance(centres[1], self.last_pos[0]))
-            if cost_straight <= cost_swapped:
-                result[0] = (boxes[0], chosen_ids[0])
-                result[1] = (boxes[1], chosen_ids[1])
-            else:
-                result[0] = (boxes[1], chosen_ids[1])
-                result[1] = (boxes[0], chosen_ids[0])
-            self.last_pos[0] = get_box_centre(result[0][0])
-            self.last_pos[1] = get_box_centre(result[1][0])
+            pairs = [(0, 0), (1, 1)] if cost_straight <= cost_swapped else [(0, 1), (1, 0)]
+            for det_idx, slot_idx in pairs:
+                if self._passes_gate(slot_idx, centres[det_idx], heights[det_idx]):
+                    self._commit(result, slot_idx, boxes[det_idx], chosen_ids[det_idx])
             return result
 
-        # case 4: only one slot has a history — assign closer detection there,
-        # then put the remaining one into the empty slot.
-        known_slot   = 0 if self.last_pos[0] is not None else 1
-        unknown_slot = 1 - known_slot
-        d0 = pixel_distance(centres[0], self.last_pos[known_slot])
-        d1 = pixel_distance(centres[1], self.last_pos[known_slot])
-        if d0 <= d1:
-            result[known_slot]   = (boxes[0], chosen_ids[0])
-            result[unknown_slot] = (boxes[1], chosen_ids[1])
-        else:
-            result[known_slot]   = (boxes[1], chosen_ids[1])
-            result[unknown_slot] = (boxes[0], chosen_ids[0])
-        self.last_pos[0] = get_box_centre(result[0][0])
-        self.last_pos[1] = get_box_centre(result[1][0])
+        # case 4: only one slot has history — assign closer detection there
+        # (gated), and the other to the empty slot (no gate possible).
+        known   = 0 if self.last_pos[0] is not None else 1
+        unknown = 1 - known
+        d0 = pixel_distance(centres[0], self.last_pos[known])
+        d1 = pixel_distance(centres[1], self.last_pos[known])
+        best_for_known, other = (0, 1) if d0 <= d1 else (1, 0)
+        if self._passes_gate(known, centres[best_for_known], heights[best_for_known]):
+            self._commit(result, known, boxes[best_for_known], chosen_ids[best_for_known])
+        self._commit(result, unknown, boxes[other], chosen_ids[other])
         return result
 
 

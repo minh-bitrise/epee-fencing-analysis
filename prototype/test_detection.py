@@ -277,6 +277,68 @@ class TestFencerTracker:
         slots = t.select(np.array([], dtype=int), np.empty((0, 4)), np.array([]))
         assert slots == [None, None]
 
+    def test_far_away_bystander_is_rejected(self):
+        """A new detection far from the slot's last position must not steal it."""
+        t = FencerTracker()
+        # lock both fencers
+        t.select(
+            np.array([5, 7]),
+            np.array([[ 50, 100, 150, 400],     # h=300, centre=(100,250)
+                      [400, 100, 500, 400]]),   # h=300, centre=(450,250)
+            np.array([0.9, 0.8]),
+        )
+        # next frame: fencer 1 disappears, a bystander appears very far away
+        # bystander is well beyond GATE_DISTANCE_RATIO * box height of slot 0
+        # -> should be rejected; slot 0 stays empty
+        slots = t.select(
+            np.array([9, 7]),
+            np.array([[1500, 100, 1600, 400],   # bystander, far right
+                      [ 405, 100,  505, 400]]), # real fencer 2, near last pos
+            np.array([0.95, 0.85]),
+        )
+        assert slots[0] is None             # bystander rejected
+        assert slots[1] is not None         # real fencer 2 still tracked
+        assert slots[1][1] == 7
+
+    def test_much_smaller_bystander_is_rejected(self):
+        """A new detection much smaller than the last accepted box must not steal a slot."""
+        t = FencerTracker()
+        t.select(
+            np.array([5, 7]),
+            np.array([[ 50, 100, 150, 400],     # h=300
+                      [400, 100, 500, 400]]),   # h=300
+            np.array([0.9, 0.8]),
+        )
+        # slot 0 candidate is a small box (h=100) near slot 0's last position
+        # 100/300 = 0.33, below MIN_SIZE_RATIO (0.5) -> rejected
+        slots = t.select(
+            np.array([9, 7]),
+            np.array([[ 60, 300, 110, 400],     # small bystander near slot 0
+                      [405, 100, 505, 400]]),   # real fencer 2
+            np.array([0.95, 0.8]),
+        )
+        assert slots[0] is None
+        assert slots[1] is not None
+
+    def test_normal_motion_still_passes_gate(self):
+        """Realistic frame-to-frame motion must not be rejected by the gates."""
+        t = FencerTracker()
+        t.select(
+            np.array([5, 7]),
+            np.array([[ 50, 100, 150, 400],
+                      [400, 100, 500, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        # both fencers drift ~20 px (well inside gates), boxes same size
+        slots = t.select(
+            np.array([5, 7]),
+            np.array([[ 70, 100, 170, 400],
+                      [420, 100, 520, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        assert slots[0] is not None
+        assert slots[1] is not None
+
 
 # -------------------- PushPullTracker --------------------
 

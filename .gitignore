@@ -41,4 +41,4 @@ tmp/
 # Prototype data (too large for git — keep locally)
 prototype/results/
 prototype/fencing_raw*
-prototype/fencing_clip.mp4
+prototype/fencing_clip*.mp4
