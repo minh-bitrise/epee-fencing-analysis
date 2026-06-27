@@ -442,18 +442,255 @@ reduce the number of contributing samples.
 
 ## 9. Discussion and known limitations
 
-*(This section currently mirrors `TODO.md` Part A3 and the failure-modes paragraph in A4a.
-It will be re-written and expanded for the final submission, with concrete frame timestamps
-and screenshots from the two test clips.)*
+This section documents every observed limitation of the prototype and the design decisions
+that drive how the full system accommodates them. It is deliberately exhaustive at this
+stage; some material will be trimmed and re-balanced for the final submission, but the
+intention is that everything be recorded now while the engineering reasoning is fresh.
 
-In summary, the prototype's two main observed failure modes are wrong-target capture by
-background people (typically the centre referee) and close-range identity flicker when the
-detector merges the two fencers during a clinch. Both are classic data-association failures
-in single-camera multi-object tracking. Both are predicted in the design as the reason the
-system is AI-assisted rather than fully automatic; both are accommodated by the planned
-annotation workflow rather than treated as bugs in the prototype. The deeper algorithmic
-fixes - piste-region detection, motion modelling, and appearance re-ID - are tracked as
-future work (section 10).
+### 9.1 Observed failure modes
+
+Prototype evaluation on two independently sourced FIE-level bout clips reproducibly revealed
+two specific failure modes. Both are well-known data-association problems in single-camera
+multi-object tracking and both are predicted in the design chapter as the reason the system
+is AI-assisted rather than fully automatic. Their presence in the prototype is therefore not
+a contradiction of the design but evidence supporting it.
+
+**Failure mode 1: wrong-target capture by background people.** The tracker maintains stable
+identity for each fencer by spatial continuity, gated by (a) a maximum allowed jump from the
+slot's last known centre, expressed as a multiple of the slot's last accepted bounding-box
+height, and (b) a plausible band on the bounding-box height itself. The gates correctly
+reject the obvious cases - bystanders walking far across the frame, small distant figures in
+the audience - and reduced the maximum observed inter-fencer distance on the first test clip
+from 11.27 m (un-gated) to 6.60 m (gated) by filtering false matches that were inflating the
+estimate. However, when a non-fencer such as the centre referee or a fencer on an adjacent
+piste passes through a tracked slot's last known position, the candidate detection is close
+enough and similar enough in size to pass both gates. Once accepted, the slot's history
+updates to that wrong target; the next frame compares against the updated history; and the
+slot remains locked on the wrong person until the gate eventually fails - sometimes for
+several seconds. This was reproducibly observed in the second clip, where the centre referee
+stepped into Fencer 2's last position during a walkback and the tracker followed the referee
+rather than the fencer until they separated.
+
+**Failure mode 2: close-range identity flicker.** When the two fencers cross or clinch within
+touch range, the YOLO detector frequently merges them into a single bounding box rather than
+returning two. The tracker then has only one detection to allocate, the other slot receives no
+update for those frames, and when the fencers separate again the two new boxes can be
+mis-assigned (in particular if the cost-minimising assignment happens to be the swapped
+one). During those chaotic moments background detections (referee, adjacent-piste fencers,
+audience members near the camera) are also more likely to be admitted, because the slot whose
+own fencer was momentarily lost is hungry for any nearby candidate.
+
+### 9.2 Algorithmic fixes deferred to the full system
+
+The deeper fixes for both failure modes are scoped to the full system rather than to the
+prototype:
+
+- **Piste-region detection.** The piste is visually distinctive in fencing footage (a
+  rectangular, coloured area surrounded by a contrasting border). Detecting it once per
+  video, by Hough-line analysis, colour segmentation, or first-frame manual selection, and
+  rejecting any detection that does not overlap with it, would eliminate referees standing
+  in front of the strip, audience members, and fencers on adjacent pistes in a single step.
+  This is the most likely first deeper fix because the piste is the natural region of
+  interest for the whole problem.
+- **Motion / velocity model.** Track each slot's velocity, not just its position, and require
+  candidates to be consistent with predicted motion. This catches the "moving fencer vs
+  stationary referee" case that pure-position matching cannot, because the referee fails the
+  velocity test even if they pass the spatial gate. This also helps the close-range flicker
+  case: the system remembers the direction of motion immediately before the clinch and
+  prefers the post-separation detection consistent with that direction.
+- **Appearance / re-identification embedding.** A small person re-ID model could verify that
+  a candidate looks like the same person previously tracked (e.g. white uniform vs the
+  referee's dark suit). Heaviest of the three but the most general; useful in combination
+  with the lighter techniques above.
+
+### 9.3 The assisted-annotation workflow as the design's answer
+
+The prototype's failures do not undermine the project concept. They are exactly the
+situations the proposed assisted-annotation workflow is designed to handle, by exposing a
+small number of high-level user actions that resolve each observed problem with one or two
+interactions rather than per-frame correction.
+
+The actions the planned UI must expose are:
+
+1. **Confirm or correct AI-suggested touches.** Each touch the system suggests can be
+   accepted, adjusted to a different timestamp, re-assigned to the other fencer, or rejected.
+   Confirming touches has a structural effect on the rest of the analysis: it establishes the
+   boundaries of each in-play exchange, so that **reset and walkback periods are
+   automatically excluded from aggregate metrics**. These are precisely the situations in
+   which the centre referee enters the frame and triggers the bystander failure, so the
+   single act of confirming touches removes most bystander-contaminated data from the
+   aggregates without the user having to think about tracking at all.
+2. **Add a touch the AI missed.** Manual entry of timestamp and scoring fencer, with an
+   optional action label, for cases where the AI's suggestion engine misses an event.
+3. **Mark a segment as tracking-unreliable.** The user selects a short time range on the
+   timeline and excludes it from aggregate calculations while the raw per-frame data is
+   preserved. This is the user's response to close-range flicker: a few seconds of confused
+   data are simply taken out of the totals.
+4. **Re-anchor a slot.** When tracking is wrong but not chaotically so, the user scrubs to a
+   problem frame, indicates which fencer the system has confused (typically with a click on
+   the correct fencer in the video), and the tracker resets its slot history to the user's
+   selection. From that frame onwards, tracking continues with the corrected anchor.
+
+The unifying principle behind all four actions is that the user never has to correct the
+system frame by frame. Each action operates at the level at which the user already thinks
+about a bout - exchanges, touches, segments, who is who - and propagates downward to fix
+many frames' worth of derived metrics in one interaction.
+
+### 9.4 Distance estimation: design decisions and limitations
+
+Distance is the single most important derived metric in the system, both as the headline
+indicator on the dashboard and as the input to several other metrics (engagement distance,
+tempo bands, push/pull). The choices made for it during the prototype are:
+
+- **Measured front-foot to front-foot when pose is available.** This is the tactically
+  meaningful definition of distance in fencing - coaches refer to "distance" as the gap
+  between front feet in en-garde - rather than centre-of-mass separation. The pose pipeline
+  identifies the front foot as the ankle whose x-coordinate is nearer to the opponent's
+  reference x, where the opponent's reference x is the opponent's mid-hip if pose is
+  available for the opponent and the bottom-centre of their bounding box otherwise.
+- **Fallback to bounding-box bottom-centre when pose is unavailable.** This was a deliberate
+  change from an earlier centre-of-box fallback: the centre of a bounding box is
+  contaminated by arm and weapon extension, which can move the centre even when the fencer's
+  body has not moved, whereas the bottom-centre is approximately at foot level and is
+  considerably more stable.
+- **Normalised to metres using fencer height as a scale reference.** The system assumes an
+  average fencer height of 1.75 m and uses the mean of the two fencers' bounding-box heights
+  as the pixel-to-metre scale for that frame. This is approximate - actual heights vary,
+  camera angle distorts the projection, perspective changes as fencers move toward and away
+  from the camera - but it is sufficient to produce values consistent with expected
+  engagement ranges (1.5-3 m for active fencing) and, importantly, it is *consistent enough
+  for relative comparison across a single bout*, which is the main use case.
+- **Rolling-median smoothing for the displayed value.** The raw frame-to-frame distance is
+  noisy because the underlying bounding-box edges and pose landmarks both have small
+  fluctuations even when the fencers are essentially stationary. A rolling-median smoother
+  with a window of five frames is applied to the displayed number; the raw values are still
+  written to the CSV for any downstream analysis that wants them.
+- **Colour-coded tactical zones.** The on-screen distance value is shown in red (≤1.0 m,
+  touch range), orange (≤1.8 m, engagement range), or green (further out), which gives an
+  immediate visual signal about the current tactical situation as the video plays.
+
+Known limitations of the distance estimate that follow from these choices:
+
+- It is **only metrically accurate to within roughly one fencer-height** because the scale
+  reference is itself approximate. It should be reported in the UI as an *estimated*
+  distance, not a precise measurement.
+- It assumes **a roughly side-on camera view**. Substantial camera angle relative to the
+  piste will systematically distort the metric value. Large camera pans are clamped out
+  separately for the push/pull metric but the distance value itself is computed per-frame
+  and is therefore sensitive to camera motion within a single frame.
+- It does not yet **distinguish between in-play distance and reset distance**. This is by
+  design at the prototype stage; in the full system, distance is averaged and analysed only
+  over in-play segments determined by the user's confirmed touches (see 9.3 action 1).
+- It is **front-foot-to-front-foot only in a horizontal/2D sense**; depth differences
+  between the two fencers (one closer to the camera than the other) are not modelled
+  because we only have a single camera. This is acceptable for a side-on view where both
+  fencers lie on the same plane.
+
+### 9.5 Identity and matching: design decisions and limitations
+
+The `FencerTracker` design - spatial continuity rather than strict ByteTrack-ID matching,
+with spatial and size gates - is the result of three distinct iterations during development
+(documented in section 6.6) and represents a deliberate engineering tradeoff between
+robustness to ID changes and rejection of obvious bystanders. The current gate settings
+(`GATE_DISTANCE_RATIO=3.5`, `MIN_SIZE_RATIO=0.4`, `MAX_SIZE_RATIO=2.2`) were chosen
+empirically to give ~82% detection coverage on the first test clip while still meaningfully
+reducing wrong-target captures (max distance from 11.27 m to 6.60 m). Tighter settings
+improved bystander rejection but dropped coverage below 60%; looser settings restored
+coverage but admitted obvious bystanders. The choice was made to err slightly on the side of
+admitting borderline cases (because aggregate metrics will be cleaned up by the
+assisted-annotation workflow anyway) rather than to err on the side of dropping coverage.
+
+### 9.6 Push / pull metric: design decisions and limitations
+
+The push / pull metric records, in metres, how much each fencer has moved toward the
+opponent ("push") and away from the opponent ("pull") over the bout. It exists because the
+preliminary report's introduction promises metrics that are essentially impossible to
+measure by hand; push and pull are the clearest such example.
+
+Design decisions made for this metric:
+
+- **Smoothed reference x.** Each fencer's horizontal position is smoothed with a rolling
+  median (default window 5) before frame-to-frame movement is computed. Without this,
+  bounding-box edge jitter accumulated into clearly inflated totals: an early test run
+  produced 216 m of push and 214 m of pull per fencer in a 3-minute bout, which is
+  physically impossible given a 14 m piste and represents jitter being summed by the
+  accumulator.
+- **Per-frame motion clamp.** Any frame-to-frame movement greater than 0.15 m is treated as
+  camera motion or detection jitter and ignored entirely. This corresponds to a
+  biomechanical limit of about 9 m/s, which exceeds the speed of even fast lunges and so
+  does not reject legitimate fencer motion.
+- **Noise floor.** Any frame-to-frame movement smaller than 0.03 m is treated as noise and
+  not accumulated. This prevents thousands of tiny jitters from summing into a misleading
+  total.
+- **Reference x is mid-hip when pose is available, bbox-bottom-centre otherwise.** Using
+  hips is more stable than using the centre of a bounding box because the hip is unaffected
+  by arm and weapon extension.
+
+After the smoothing, clamp and noise-floor changes the same 3-minute test clip produced push
+and pull totals in the 13-22 m range per fencer, which is biomechanically plausible for
+active fencing. The two test clips also produced very different push / pull totals,
+demonstrating that the metric *does* distinguish between bouts and is not simply a noise
+floor - the high-activity clip 2 produced 41 m of push per fencer, versus 14 m in the more
+static clip 1.
+
+Known limitations:
+
+- The metric **accumulates during walkback and reset periods**. This is the same issue as
+  with distance and will be addressed in the same way: in the full system, push and pull
+  are aggregated only over in-play segments determined by confirmed touches.
+- The metric **inherits the approximation of the pixel-to-metres scale**. It is more
+  trustworthy as a *relative* indicator (this fencer pushed twice as much as the other,
+  or this bout was twice as active as that one) than as a precise metric value.
+- The metric **is sensitive to camera motion**. Large pans are clamped out by the per-frame
+  motion ceiling but smaller, smoother pans are not detected and can inflate both push and
+  pull symmetrically.
+
+### 9.7 Pose estimation: design decisions and limitations
+
+Pose is the most expensive step in the pipeline and contributes to the prototype's wall-clock
+processing time more than any other component. The decisions taken in the prototype are:
+
+- **MediaPipe `pose_landmarker_lite` Tasks API.** Chosen for low setup cost, broad
+  documentation, and adequate accuracy on standing-human poses. The earlier
+  `mediapipe.solutions.pose` API is removed in current MediaPipe releases (0.10+); the
+  project migrated to the new Tasks API.
+- **Run on cropped bounding-box regions.** Running pose on each fencer's crop separately
+  (with small padding) rather than on the whole frame both constrains the pose model to the
+  right person and gives it an easier image to work with.
+- **Pose stride.** Pose is by default run every third frame. This trades pose-sample
+  frequency (20 Hz at 60 fps, instead of 60 Hz) for a roughly threefold reduction in total
+  wall-clock time, and was the change that brought a 3-minute clip's processing time from
+  ~38 minutes (under memory pressure) to a few minutes once memory was free.
+- **Graceful fallback.** When pose fails (occlusion, motion blur, partial view) the distance
+  computation falls back to bounding-box bottom-centre. The CSV records the method used per
+  frame.
+
+Known limitations:
+
+- Pose **fails noticeably under fast motion and occlusion**. This is consistent with the
+  literature (Hong et al., 2021) and was an explicit design assumption from the outset.
+  Hence the fallback strategy and the assisted-annotation workflow.
+- Pose **is computed on a fixed-shape crop**. If the bounding box is wrong (e.g. includes
+  parts of another fencer during a clinch), the pose may attach to the wrong body. This
+  is part of why pose alone is not used as the sole identity signal.
+
+### 9.8 Engineering and process
+
+A few observations about the development process itself, worth recording while still fresh:
+
+- The fast unit-test suite (currently 55 tests across the pure utility functions and the
+  stateful trackers) caught regressions multiple times during this project, most notably
+  the inflated push / pull values, which were initially flagged not by the tests
+  themselves but by the obvious implausibility of the numbers; that observation then
+  motivated the tests for jitter accumulation. This pattern of *observation on real footage
+  motivates a regression test* is one of the more valuable workflows in this project.
+- The cycle of *run on a real clip, find a failure mode, design a small targeted fix, add
+  a test for it, re-run* has worked well at the prototype scale; whether it scales to the
+  full system is an open question.
+- Memory pressure on the development machine (Apple Silicon, 16 GB) is the single biggest
+  factor in wall-clock processing time. Closing browser tabs and other heavy applications
+  reduced clip processing time from ~38 minutes to a few minutes without any code change.
+  This is a useful operational note for anyone reproducing the prototype.
 
 ---
 
