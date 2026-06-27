@@ -178,21 +178,71 @@ The principal risks are:
 
 ### 4.4 Tooling and infrastructure
 
-The development environment is:
+This section records the development environment and supporting infrastructure in detail. The
+intent is that the engineering process behind the project be visibly professional and
+reproducible, not just the final artefacts. Each tool and convention is listed with a brief
+rationale so that another developer (or marker) could continue the project from the same
+starting point.
 
-- **Editor / workflow**: Claude Code (CLI) used for code generation, code review and writing
-  support; VS Code for inspection; GitHub Desktop for repository management.
-- **Language and frameworks**: Python 3.13 for all AI / video processing code. The prototype
-  uses the Ultralytics implementation of YOLOv8 with ByteTrack for detection and tracking, and
-  the MediaPipe Tasks API (`PoseLandmarker`) for pose estimation. OpenCV is used for video I/O
-  and annotation. matplotlib is used for charts. pytest is used for unit testing.
-- **Source control**: a private GitHub repository (`minh-bitrise/epee-fencing-analysis`),
-  with a `main` branch for stable code and `feature/<name>` branches for experiments. The
-  prototype was developed primarily on `feature/pose-distance`.
-- **Project tracking**: the repository root contains `TODO.md`, structured into a Part A
-  (preliminary report scope) and Part B (full-app scope) with cross-references, and this file
-  (`final_report.md`) as the long-form report and development log. Completed items in
-  `TODO.md` are checked off rather than deleted, so the historical trail is preserved.
+**Editor and workflow.** Claude Code (CLI) was used for code generation, code review and
+writing support; VS Code for visual inspection; GitHub Desktop for branch and commit
+visualisation when terminal git was inconvenient. The CLI / IDE split was practical rather
+than ideological: writing and refactoring code happened in the CLI session, reading and
+spot-checking the diffs in VS Code, and inspecting commit history in GitHub Desktop.
+
+**Language, runtime and dependencies.** All AI and video-processing code is in Python 3.13.
+The prototype uses the Ultralytics implementation of YOLOv8 with the built-in ByteTrack
+tracker for detection and identification; the MediaPipe Tasks API (`PoseLandmarker`,
+`pose_landmarker_lite` model) for pose estimation; OpenCV for video I/O, frame manipulation
+and on-frame annotation; matplotlib for the distance-over-time chart; and pytest for unit
+testing. Direct dependencies are pinned with version floors in `prototype/requirements.txt`
+so that a fresh checkout can be installed with one command. Heavy artefacts (model weights
+`*.pt`, MediaPipe `.task` files, raw and trimmed videos, and all generated CSV / MP4 / PNG
+output) are excluded from the repository via `.gitignore` to keep clones small.
+
+**Source control: branching and commit discipline.** The project is hosted in a private
+GitHub repository, `minh-bitrise/epee-fencing-analysis`. A simple branching model is used:
+`main` holds stable, working code only; experiments and new features live on `feature/<name>`
+branches (for example, the entire pose-based distance work happened on
+`feature/pose-distance`, where every prototype iteration was committed). Commits are made at
+green-test states - that is, only when the relevant unit-test suite passes - and follow a
+multi-line convention with a short imperative subject line and a longer body explaining
+*why* the change was made and what was measured or observed, rather than merely *what* the
+change was. Several commits in this project are explicit checkpoints attached to specific
+quantitative findings (for example, the move from strict-ID matching to spatial continuity
+is recorded with the coverage drop that motivated it). This commit style is more verbose
+than is strictly necessary but it is what makes the development log in section 6 possible:
+the commit history is itself the primary record of what was tried and why.
+
+**Test discipline.** Each new component is accompanied by its unit tests in the same commit
+where the component is introduced; tests are added for regressions before, not after, the
+underlying fix. The full pytest suite is run before every commit and currently completes in
+under two seconds, which is short enough that running it adds no friction to the iteration
+cycle. Stateful components (`FencerTracker`, `PushPullTracker`) are tested directly via their
+public interfaces; pure helpers are tested with table-style cases.
+
+**Project tracking.** The repository root contains `TODO.md`, structured into a Part A
+(preliminary report scope, time-bounded by the imminent submission) and a Part B (full-app
+scope, with a substructure mirroring the eventual chapters of the final report) with
+cross-references between the two parts so that limitations acknowledged in the report point
+directly to the implementation tasks that will resolve them. A separate file,
+`final_report.md` (this document), is the long-form development log and report,
+intentionally maintained as the project unfolds rather than written from scratch at the end.
+Completed items in `TODO.md` are checked off but not deleted, preserving the audit trail of
+what the project actually went through.
+
+**Documentation.** The repository's `README.md` describes the project at a high level and
+gives setup instructions for the prototype. The `CLAUDE.md` file holds short-form context
+used during development. The development log (this section's later siblings) and the
+`TODO.md` cross-references together replace what would otherwise be a separate design
+journal or wiki.
+
+**Repository hygiene.** The `.gitignore` excludes Python build artefacts (`__pycache__/`,
+`*.egg-info/`, `.venv/`, `dist/`, `build/`), Node artefacts left over from the early docx
+generation tooling, OS files (`.DS_Store`, `Thumbs.db`), large media (`*.mp4`, `*.avi`,
+`*.mov`, `*.mkv`), model weights (`*.pt`, `*.pth`, `*.onnx`, `*.task`), the generated
+results folder, and any `.env` or environment-secret files. This keeps the repository to
+source code, tests, the report files, and the project documentation.
 
 ---
 
