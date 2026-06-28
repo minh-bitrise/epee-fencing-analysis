@@ -1,64 +1,51 @@
 # An AI-Assisted Web Application for Epee Fencing Bout Analysis and Fencer Profiling
 
-**Final Project Report — CM3020 Artificial Intelligence**
-University of London, BSc Computer Science
-
-**Author:** Nguyen Anh Minh
-**Project template:** Project Idea 1 — Orchestrating AI Models to Achieve a Goal
-**Repository:** https://github.com/minh-bitrise/epee-fencing-analysis (private)
-
----
-
 ## About this document
 
 This is the **final project report** for the full project, not the preliminary report.
 
-The preliminary report (`final proj uol/prelim_report.docx`) is a separate submission with
-strict per-chapter word limits. This document has no such limits; it is intended to be a
-thorough, academic-style record of the entire development process - planning, research,
-implementation, testing, iteration, evaluation, and discussion - that can be polished into
-the final submission at the end of the year.
+The preliminary report (`final proj uol/prelim_report.docx`) is a separate, earlier submission
+with strict per-chapter word limits. This document has no such limits; it is a thorough,
+academic-style record of the entire project that will be polished into the final submission.
 
-The structure mirrors a typical final-year project report and is filled in as work progresses.
-Sections labelled *(placeholder)* are stubs that will be expanded later; sections written out
-in full are based on work already completed.
+The structure follows the **six chapters required by the module** for the final report:
+Introduction, Literature Review, Design, Implementation, Evaluation, and Conclusion, preceded
+by an abstract and followed by references and appendices. Chapters are numbered; subsections
+are titled rather than numbered, so the document can be reordered and extended without
+renumbering churn. Sections marked *(placeholder)* are stubs to be expanded; the rest is based
+on work already completed.
 
-> **Author's working note.** I am keeping this document as a long-form development log written
-> as I go, rather than as something to be drafted from scratch at the end of the year. The aim
-> is that by the time the final submission is due, this file already contains a faithful and
-> well-organised record of every meaningful decision, experiment, and result, which can then be
-> trimmed and re-polished into the final required format.
-
----
+> **Author's working note.** I keep this as a long-form development log written as I go, rather
+> than something to be drafted from scratch at the end. The aim is that by submission time this
+> file already holds a faithful, well-organised record of every meaningful decision, experiment
+> and result, which can then be trimmed into the final required format. Reminders on house style
+> for the final write-up (past tense, minimal first person, avoid passive voice, justify every
+> claim with evidence) are tracked in `TODO.md`.
 
 ## Table of contents
 
-1. Abstract *(placeholder)*
-2. Introduction
-3. Background and literature review *(placeholder; preliminary version exists)*
-4. Project planning and methodology
-5. System design *(placeholder; preliminary version exists)*
-6. Implementation and development log
-7. Testing
-8. Evaluation
-9. Discussion and known limitations
-10. Future work
-11. Conclusion *(placeholder)*
-12. References *(placeholder)*
-13. Appendices
+Front matter: Abstract
 
----
+1. Introduction
+2. Literature Review
+3. Design  (domain & users, architecture, technologies, work plan, evaluation plan, ethics, methodology, tooling)
+4. Implementation  (development log of the prototype, plus testing)
+5. Evaluation  (results on real footage, summative assessment against the aims, limitations)
+6. Conclusion  (summary, future work, self-evaluation)
 
-## 1. Abstract
+Back matter: References, Appendices
+
+## Abstract
 
 *(Placeholder — to be written at the end of the project. Will summarise the problem, approach,
 key results, and contribution in 200-300 words.)*
 
 ---
 
-## 2. Introduction
 
-### 2.1 Context
+## 1. Introduction
+
+### Context
 
 Video review is now a routine part of sports performance analysis at professional levels, but
 in amateur and club-level fencing it remains largely manual, informal, and inconsistent. Recorded
@@ -71,7 +58,7 @@ The system combines multiple pre-trained AI models with a user-driven annotation
 turn raw bout video into structured event records, movement and distance data, and a simple
 tactical profile of each fencer.
 
-### 2.2 Motivation
+### Motivation
 
 The motivation is partly first-person. As a fencer, I have experienced directly how
 time-consuming it is to conduct meaningful post-bout self-analysis from video; conversations
@@ -87,7 +74,7 @@ and review remains limited to subjective impressions. An AI-assisted system is w
 close this gap by computing such metrics automatically and leaving the user to verify and
 interpret them.
 
-### 2.3 Problem statement and aims
+### Problem statement and aims
 
 The problem is to design and build a working software system that:
 
@@ -99,31 +86,32 @@ The problem is to design and build a working software system that:
 - produces aggregated outputs - bout statistics, distance analysis, and a simple tactical
   profile - that are genuinely useful to fencers and coaches.
 
-A central design principle, established in section 5 and validated in section 8, is that the
+A central design principle, established in the Design chapter and validated in the Evaluation chapter, is that the
 system is AI-assisted, not fully automatic. The unreliability of state-of-the-art computer
 vision on real fencing footage is treated as a constraint to be accommodated by the workflow
 rather than a problem to be solved before the system can be useful.
 
-### 2.4 Project template
+### Project template
 
 This project corresponds to the CM3020 Artificial Intelligence template "Project Idea 1:
 Orchestrating AI Models to Achieve a Goal", which expects an integrated software system built
 around at least three pre-trained models applied to a clearly defined problem.
 
-### 2.5 Structure of this report
+### Structure of this report
 
-Section 3 reviews related academic literature and existing systems. Section 4 sets out the
-project plan, methodology, tooling and risk management. Section 5 describes the system design,
-including architecture and intended user workflow. Section 6 is a development log: it documents
-the implementation as it actually happened, including iterations and changes of direction.
-Section 7 describes testing methodology and what is covered. Section 8 reports evaluation
-results on real bout footage. Section 9 discusses observed failure modes and known limitations.
-Section 10 lays out future work and the path from the current prototype to the full system.
-Section 11 concludes.
+The Literature Review chapter reviews related academic literature and existing systems. The
+Design chapter sets out the system design (architecture, technologies, intended user workflow),
+the work plan and evaluation plan, ethics, and the development methodology and tooling. The
+Implementation chapter is a development log: it documents the prototype as it was actually
+built, including iterations and changes of direction, and the testing that supports it. The
+Evaluation chapter reports results on real bout footage, assesses how well the work meets its
+aims, and discusses observed failure modes and known limitations. The Conclusion summarises the
+project, lays out future work, and reflects on what was learned.
 
 ---
 
-## 3. Background and literature review
+
+## 2. Literature Review
 
 *(Placeholder — the preliminary report contains a 1,200-word literature review covering
 Rangasamy et al. (2020), Vahdani and Tian (2021), Hong et al. (2021), Mo (2022),
@@ -132,9 +120,19 @@ review will be carried over and extended here.)*
 
 ---
 
-## 4. Project planning and methodology
 
-### 4.1 Methodology
+## 3. Design
+
+*(Placeholder — the preliminary report contains a 1,400-word design chapter including a layered
+architecture diagram (Client / Application / Processing pipeline / Data) and a Gantt chart.
+That material will be carried over here and extended, including an expanded data-flow
+description for the assisted-annotation workflow.)*
+
+---
+
+
+
+### Methodology
 
 The project is being developed in short two-week iterations, each producing demonstrable
 output, with frequent commits to a private GitHub repository so that every iteration is
@@ -149,7 +147,7 @@ Model selection and integration are front-loaded so that the feasibility of the 
 established before the user interface is built, and so that the feature prototype required for
 the preliminary report could be produced as a natural by-product of early iterations.
 
-### 4.2 Work plan
+### Work plan
 
 The preliminary report contains a Gantt chart covering approximately 4.5 months of work in nine
 two-week iterations (P1 to P9), comprising: requirements and environment setup; model
@@ -159,7 +157,7 @@ profiling and dashboard; software and user testing; refinement and iteration; ev
 report write-up; with a final buffer iteration for contingency. This plan is the working
 roadmap and is updated rather than replaced when scope changes.
 
-### 4.3 Risk management
+### Risk management
 
 The principal risks are:
 
@@ -176,7 +174,7 @@ The principal risks are:
   consumer-grade Apple Silicon CPU. Mitigated by frame-stride throttling on the pose stage and
   by planning to move heavier processing to a GPU workstation when scaling up.
 
-### 4.4 Tooling and infrastructure
+### Tooling and infrastructure
 
 This section records the development environment and supporting infrastructure in detail. The
 intent is that the engineering process behind the project be visibly professional and
@@ -211,7 +209,7 @@ multi-line convention with a short imperative subject line and a longer body exp
 change was. Several commits in this project are explicit checkpoints attached to specific
 quantitative findings (for example, the move from strict-ID matching to spatial continuity
 is recorded with the coverage drop that motivated it). This commit style is more verbose
-than is strictly necessary but it is what makes the development log in section 6 possible:
+than is strictly necessary but it is what makes the development log (the Implementation chapter) possible:
 the commit history is itself the primary record of what was tried and why.
 
 **Test discipline.** Each new component is accompanied by its unit tests in the same commit
@@ -246,22 +244,35 @@ source code, tests, the report files, and the project documentation.
 
 ---
 
-## 5. System design
 
-*(Placeholder — the preliminary report contains a 1,400-word design chapter including a layered
-architecture diagram (Client / Application / Processing pipeline / Data) and a Gantt chart.
-That material will be carried over here and extended, including an expanded data-flow
-description for the assisted-annotation workflow.)*
+### Ethics
 
----
+The project is subject to the module's research-ethics requirements. The analysis is performed
+on recorded fencing footage of identifiable athletes, so two ethical dimensions apply even
+though no human-participant experiment is run on vulnerable groups.
 
-## 6. Implementation and development log
+First, **copyright and source**: the evaluation footage is publicly available video used solely
+for non-commercial academic evaluation, not redistributed, with the original rights retained by
+the uploaders (see the footage-attribution appendix). Second, **personal data and likeness**:
+the footage shows identifiable individuals, and the system extracts position and pose data about
+them. For the prototype and report, no attempt is made to identify individuals by name from the
+video, no biometric identity model is used, and the derived data is used only to demonstrate the
+analysis pipeline. If the full system were to store per-fencer profiles tied to named
+individuals, informed consent and a data-handling/retention policy would be required, and UK
+data-protection norms (the strictest applied by the module regardless of country) would govern
+storage and sharing.
+
+Any user testing of the application will be carried out with consenting healthy adults; the
+project deliberately avoids children, vulnerable adults, medical patients, and animals, in line
+with the module's ethics guidance.
+
+## 4. Implementation
 
 This section records the implementation work as it actually happened, with the intent of
 producing an honest, traceable account that can be quoted from or cited in the final
 submission's discussion of process and engineering decisions.
 
-### 6.1 Prototype scope and goals
+### Prototype scope and goals
 
 The prototype, written for Chapter 4 of the preliminary report, was scoped to the most
 foundational technical feature of the eventual system: identifying and following the two
@@ -277,7 +288,7 @@ forward / backward motion. This choice was deliberate:
   introduction identifies as infeasible to compute manually, which makes the prototype's
   output a direct evidence base for the project's premise.
 
-### 6.2 Pipeline overview
+### Pipeline overview
 
 The prototype pipeline is, per frame:
 
@@ -304,7 +315,7 @@ The prototype pipeline is, per frame:
    per-fencer cumulative push and pull); the annotated frame is written to an output MP4 with
    a translucent bottom HUD; at end of run a distance-over-time chart is saved.
 
-### 6.3 Person detection and tracking
+### Person detection and tracking
 
 YOLOv8 was selected for detection because it is mature, pre-trained on a generic person class
 (COCO), well documented, and bundled with a stable tracking implementation (ByteTrack) in the
@@ -315,9 +326,9 @@ ByteTrack's own track IDs were initially used to maintain fencer identity across
 proved fragile: ByteTrack frequently reassigns IDs after occlusion or rapid motion, and a
 strict-ID-matching identity scheme caused the prototype to lose track of both fencers for
 extended periods (in one early test, only ~5% of frames had both fencers identified). The
-identity logic was reworked to use spatial continuity instead (section 6.6).
+identity logic was reworked to use spatial continuity instead (see the identity-tracking discussion below).
 
-### 6.4 Pose estimation
+### Pose estimation
 
 MediaPipe was selected for pose estimation because of its low setup cost, broad documentation,
 and adequate accuracy on standing-human poses. The deprecated `solutions.pose` API was tried
@@ -332,7 +343,7 @@ To make end-to-end runs feasible, pose is by default executed only every third f
 distance pipeline falling back gracefully to a bounding-box-based estimate for the in-between
 frames.
 
-### 6.5 Distance estimation
+### Distance estimation
 
 Distance was originally computed centre-to-centre of bounding boxes. This was changed for two
 reasons: arm and weapon extension distort the bounding box, moving its centre in a way that is
@@ -349,7 +360,7 @@ scale reference. This is approximate, with a number of known sources of error in
 angle and fencers' actual heights, but it is sufficient to produce values consistent with
 expected engagement ranges (typically 1.5-3 m for an active exchange).
 
-### 6.6 Identity tracking and bystander rejection
+### Identity tracking and bystander rejection
 
 The `FencerTracker` is the result of several iterations.
 
@@ -380,11 +391,11 @@ fencer motion was over-rejected; they were subsequently relaxed (`3.5 / 0.4 / 2.
 ~82% coverage while still filtering obvious bystanders. The maximum observed inter-fencer
 distance dropped from 11.27 m to 6.60 m between the un-gated and gated runs, confirming that
 the gates were excluding precisely the wrong-target outliers that had inflated distance
-estimates. Remaining bystander captures and close-range flicker (section 9) are deferred to
+estimates. Remaining bystander captures and close-range flicker (discussed in the Evaluation chapter) are deferred to
 the full system, where motion modelling, piste-region detection, or appearance re-ID will be
 deployed.
 
-### 6.7 Push / pull metric
+### Push / pull metric
 
 This metric records, in metres, how much each fencer has moved toward the opponent ("push")
 and away from the opponent ("pull") over the bout. It directly addresses the report's
@@ -402,7 +413,7 @@ the noise floor was raised (any movement <0.03 m is treated as noise and not acc
 The same test clip now produces totals in the 13-22 m range per fencer, which are biomechanically
 plausible for a 3-minute active bout.
 
-### 6.8 Annotated video output
+### Annotated video output
 
 The output video draws bounding boxes, fencer labels, key pose landmarks, and a bottom-of-frame
 heads-up panel. The HUD shows the time, the currently smoothed distance with a colour code by
@@ -414,7 +425,8 @@ read in lighter parts of the video.
 
 ---
 
-## 7. Testing
+
+### Testing
 
 The prototype is supported by 55 unit tests, organised into ten test classes, written with
 `pytest`. Tests cover:
@@ -440,17 +452,18 @@ resulting annotated video and CSV by eye.
 
 The combination of fast unit tests plus on-real-footage smoke tests has proved effective at
 catching both regression bugs in the matching logic and unrealistic numbers in the derived
-metrics (the inflated push / pull values of section 6.7 were caught this way).
+metrics (the inflated push / pull values discussed earlier were caught this way).
 
 ---
 
-## 8. Evaluation
+
+## 5. Evaluation
 
 The prototype has been evaluated on two independently sourced clips of FIE-level epee bouts,
 both trimmed to three minutes of in-bout footage. Footage attribution is given in
 Appendix C.
 
-### 8.1 Clip 1 — engagement-oriented bout
+### Clip 1 — engagement-oriented bout
 
 - Frames processed: 10,791
 - Frames with both fencers detected: 8,842 (82%)
@@ -460,7 +473,7 @@ Appendix C.
 - Distance range: 0.11 m to 6.60 m
 - Cumulative motion: Fencer 1 — 14.2 m push / 11.1 m pull. Fencer 2 — 15.8 m push / 17.1 m pull.
 
-### 8.2 Clip 2 — high-activity bout
+### Clip 2 — high-activity bout
 
 - Frames processed: 9,000 (50 fps source)
 - Frames with both fencers detected: 7,813 (87%)
@@ -469,7 +482,7 @@ Appendix C.
 - Distance range: 0.36 m to 8.45 m
 - Cumulative motion: Fencer 1 — 41.0 m push / 41.5 m pull. Fencer 2 — 36.8 m push / 37.1 m pull.
 
-### 8.3 Cross-clip comparison
+### Cross-clip comparison
 
 The two clips show a striking difference in activity. Clip 2's fencers do roughly two to three
 times the footwork of clip 1's and engage at a noticeably wider average distance. This is
@@ -478,26 +491,26 @@ observation, and so its reproducible production by the prototype is itself a mea
 result: the prototype can already generate metrics that distinguish bouts at a level of detail
 that manual analysis cannot match.
 
-### 8.4 Detection coverage
+### Detection coverage
 
 Coverage of 82-87% (both fencers detected and assigned to their stable slots) is well above
 what is needed to support a useful annotation workflow. The remaining 13-18% of frames are
 largely either (a) frames where one or both fencers are partially off-screen, (b) frames where
 the spatial / size gates correctly rejected a passing referee or background detection, or
-(c) frames where the close-range flicker described in section 9 caused the tracker to drop a
+(c) frames where the close-range flicker described in the Evaluation chapter caused the tracker to drop a
 slot momentarily. None of these introduce wrong data into the aggregate metrics; they merely
 reduce the number of contributing samples.
 
 ---
 
-## 9. Discussion and known limitations
+
 
 This section documents every observed limitation of the prototype and the design decisions
 that drive how the full system accommodates them. It is deliberately exhaustive at this
 stage; some material will be trimmed and re-balanced for the final submission, but the
 intention is that everything be recorded now while the engineering reasoning is fresh.
 
-### 9.1 Observed failure modes
+### Observed failure modes
 
 Prototype evaluation on two independently sourced FIE-level bout clips reproducibly revealed
 two specific failure modes. Both are well-known data-association problems in single-camera
@@ -530,7 +543,7 @@ one). During those chaotic moments background detections (referee, adjacent-pist
 audience members near the camera) are also more likely to be admitted, because the slot whose
 own fencer was momentarily lost is hungry for any nearby candidate.
 
-### 9.2 Algorithmic fixes deferred to the full system
+### Algorithmic fixes deferred to the full system
 
 The deeper fixes for both failure modes are scoped to the full system rather than to the
 prototype:
@@ -553,7 +566,7 @@ prototype:
   referee's dark suit). Heaviest of the three but the most general; useful in combination
   with the lighter techniques above.
 
-### 9.3 The assisted-annotation workflow as the design's answer
+### The assisted-annotation workflow as the design's answer
 
 The prototype's failures do not undermine the project concept. They are exactly the
 situations the proposed assisted-annotation workflow is designed to handle, by exposing a
@@ -586,7 +599,7 @@ system frame by frame. Each action operates at the level at which the user alrea
 about a bout - exchanges, touches, segments, who is who - and propagates downward to fix
 many frames' worth of derived metrics in one interaction.
 
-### 9.4 Distance estimation: design decisions and limitations
+### Distance estimation: design decisions and limitations
 
 Distance is the single most important derived metric in the system, both as the headline
 indicator on the dashboard and as the input to several other metrics (engagement distance,
@@ -630,17 +643,17 @@ Known limitations of the distance estimate that follow from these choices:
   and is therefore sensitive to camera motion within a single frame.
 - It does not yet **distinguish between in-play distance and reset distance**. This is by
   design at the prototype stage; in the full system, distance is averaged and analysed only
-  over in-play segments determined by the user's confirmed touches (see 9.3 action 1).
+  over in-play segments determined by the user's confirmed touches (see the assisted-annotation workflow discussion).
 - It is **front-foot-to-front-foot only in a horizontal/2D sense**; depth differences
   between the two fencers (one closer to the camera than the other) are not modelled
   because we only have a single camera. This is acceptable for a side-on view where both
   fencers lie on the same plane.
 
-### 9.5 Identity and matching: design decisions and limitations
+### Identity and matching: design decisions and limitations
 
 The `FencerTracker` design - spatial continuity rather than strict ByteTrack-ID matching,
 with spatial and size gates - is the result of three distinct iterations during development
-(documented in section 6.6) and represents a deliberate engineering tradeoff between
+(documented in the identity-tracking discussion) and represents a deliberate engineering tradeoff between
 robustness to ID changes and rejection of obvious bystanders. The current gate settings
 (`GATE_DISTANCE_RATIO=3.5`, `MIN_SIZE_RATIO=0.4`, `MAX_SIZE_RATIO=2.2`) were chosen
 empirically to give ~82% detection coverage on the first test clip while still meaningfully
@@ -650,7 +663,7 @@ coverage but admitted obvious bystanders. The choice was made to err slightly on
 admitting borderline cases (because aggregate metrics will be cleaned up by the
 assisted-annotation workflow anyway) rather than to err on the side of dropping coverage.
 
-### 9.6 Push / pull metric: design decisions and limitations
+### Push / pull metric: design decisions and limitations
 
 The push / pull metric records, in metres, how much each fencer has moved toward the
 opponent ("push") and away from the opponent ("pull") over the bout. It exists because the
@@ -695,7 +708,7 @@ Known limitations:
   motion ceiling but smaller, smoother pans are not detected and can inflate both push and
   pull symmetrically.
 
-### 9.7 Pose estimation: design decisions and limitations
+### Pose estimation: design decisions and limitations
 
 Pose is the most expensive step in the pipeline and contributes to the prototype's wall-clock
 processing time more than any other component. The decisions taken in the prototype are:
@@ -724,7 +737,7 @@ Known limitations:
   parts of another fencer during a clinch), the pose may attach to the wrong body. This
   is part of why pose alone is not used as the sole identity signal.
 
-### 9.8 Engineering and process
+### Engineering and process
 
 A few observations about the development process itself, worth recording while still fresh:
 
@@ -744,7 +757,15 @@ A few observations about the development process itself, worth recording while s
 
 ---
 
-## 10. Future work
+
+## 6. Conclusion
+
+*(Placeholder — to be written at the end of the project.)*
+
+---
+
+
+### Future work
 
 Future work falls into four categories: (i) tracker robustness, with piste-region detection,
 a motion / velocity model, and an appearance re-ID embedding as the three candidate paths;
@@ -758,18 +779,14 @@ system. Detailed task-level breakdown is maintained in `TODO.md` Part B.
 
 ---
 
-## 11. Conclusion
 
-*(Placeholder — to be written at the end of the project.)*
-
----
-
-## 12. References
+## References
 
 *(Placeholder — the preliminary report's reference list will be carried over and extended
 here in Harvard style.)*
 
 ---
+
 
 ## Appendices
 
