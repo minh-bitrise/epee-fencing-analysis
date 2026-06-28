@@ -4,7 +4,7 @@
 
 This is the **final project report** for the full project, not the preliminary report.
 
-The preliminary report (`final proj uol/prelim_report.docx`) is a separate, earlier submission
+The preliminary report (`preliminary/prelim_report.docx`) is a separate, earlier submission
 with strict per-chapter word limits. This document has no such limits; it is a thorough,
 academic-style record of the entire project that will be polished into the final submission.
 
@@ -193,7 +193,7 @@ The prototype uses the Ultralytics implementation of YOLOv8 with the built-in By
 tracker for detection and identification; the MediaPipe Tasks API (`PoseLandmarker`,
 `pose_landmarker_lite` model) for pose estimation; OpenCV for video I/O, frame manipulation
 and on-frame annotation; matplotlib for the distance-over-time chart; and pytest for unit
-testing. Direct dependencies are pinned with version floors in `prototype/requirements.txt`
+testing. Direct dependencies are pinned with version floors in `code/prototype/requirements.txt`
 so that a fresh checkout can be installed with one command. Heavy artefacts (model weights
 `*.pt`, MediaPipe `.task` files, raw and trimmed videos, and all generated CSV / MP4 / PNG
 output) are excluded from the repository via `.gitignore` to keep clones small.
@@ -792,9 +792,9 @@ here in Harvard style.)*
 
 ### A. Source code overview
 
-The prototype is in `prototype/`, with `run_detection.py` as the main pipeline and
+The prototype is in `code/prototype/`, with `run_detection.py` as the main pipeline and
 `test_detection.py` as the unit-test suite. Dependencies are declared in
-`prototype/requirements.txt`.
+`code/prototype/requirements.txt`.
 
 ### B. CSV schema
 

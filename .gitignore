@@ -39,6 +39,6 @@ Thumbs.db
 tmp/
 
 # Prototype data (too large for git — keep locally)
-prototype/results/
-prototype/fencing_raw*
-prototype/fencing_clip*.mp4
+code/prototype/results/
+code/prototype/fencing_raw*
+code/prototype/fencing_clip*.mp4

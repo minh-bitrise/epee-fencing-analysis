@@ -18,17 +18,20 @@ The current prototype demonstrates person detection, tracking, and distance meas
 
 ### Requirements
 - Python 3.10+
-- See `prototype/requirements.txt`
+- See `code/prototype/requirements.txt`
 
 ### Run
 ```bash
-cd prototype
+cd code/prototype
 pip install -r requirements.txt
 python run_detection.py --video <path_to_video>
 ```
 
 ## Project structure
 ```
-prototype/       Python prototype code
-final proj uol/  Report documents
+code/             ALL project code (prototype + future backend/frontend)
+uni_modules/      Read-only university materials
+proposal/         Project proposal submission deliverables
+preliminary/      Preliminary report submission deliverables
+final/            Final report submission (in progress)
 ```

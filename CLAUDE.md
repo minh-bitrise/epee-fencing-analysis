@@ -14,8 +14,11 @@ A web application for post-bout analysis of epee fencing videos. Users upload a 
 
 ## Repo structure
 ```
-prototype/       - all Python/AI code for the prototype and later full app
-final proj uol/  - report files (.docx, instructions, pitch)
+code/prototype/  - Python/AI code for the prototype (will sit alongside backend/ and frontend/ in code/ later)
+uni_modules/     - read-only university materials (syllabus, instructions, transcripts)
+proposal/        - project proposal submission deliverables
+preliminary/     - preliminary report submission deliverables
+final/           - final report submission deliverables (in progress)
 ```
 
 ## Prototype scope (Chapter 4 of prelim report)
@@ -39,4 +42,5 @@ Person detection + tracking + inter-fencer distance measurement.
 - Prototype must be demonstrable in a 3-5 min video
 - Report word limits: Intro 1000w, Lit Review 2500w, Design 2000w, Prototype 1500w
 - No long dashes (em dashes) in report — use short hyphens only
-- Report file: final proj uol/prelim_report.docx
+- Preliminary report file: preliminary/prelim_report.docx
+- Final report file: final/final_report.md
