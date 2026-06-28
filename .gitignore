@@ -42,3 +42,5 @@ tmp/
 code/prototype/results/
 code/prototype/fencing_raw*
 code/prototype/fencing_clip*.mp4
+# Exception: deliverable demo video must be committed
+!preliminary/prelim_demo_video.mp4
