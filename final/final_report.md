@@ -423,13 +423,46 @@ outline so that it remains legible against the bright piste background. An earli
 placed the HUD in the top-left and top-right corners with no background, which proved hard to
 read in lighter parts of the video.
 
+### LLM tactical summary (third pre-trained model, basic implementation)
+
+The third pre-trained model in the design - a large language model that turns the collected
+statistics into a written tactical summary - was implemented as a separate command-line stage,
+`generate_summary.py`, decoupled from the video pipeline. It reads the per-frame metrics CSV
+that `run_detection.py` produces, aggregates it into bout-level statistics (mean, minimum,
+maximum and standard deviation of distance; time spent in each tactical distance band;
+per-fencer cumulative push and pull with percentage shares and net displacement; tracker
+coverage), embeds that payload as JSON in a structured prompt, and calls the Claude API
+(Anthropic Python SDK). The output is constrained by the prompt to a fixed markdown structure:
+a bout-summary paragraph, observed-tendencies bullets each tied to a concrete number,
+suggestions to explore, and a data-caveats paragraph.
+
+Two design points are worth recording. First, the prompt carries explicit **honesty
+constraints**: the model is told that distances are estimates, that totals include resets and
+walkbacks because the system does not yet know when touches happen, and that it must never
+invent touches, scores or events that are not in the data. This mirrors the project-wide
+stance of acknowledging measurement limitations rather than glossing over them, and directly
+addresses the known risk of LLMs fabricating plausible-sounding specifics. Second, outputs are
+**cached**: a SHA-256 hash of the model ID and both prompts is stored in a sidecar metadata
+file, and the API call is skipped when nothing has changed, so re-running the stage does not
+re-bill.
+
+This is deliberately a basic first implementation - the inspiration is the way consumer sports
+platforms (Garmin Connect, Strava, Fitbit) generate narrative insights from sensor data with a
+pre-trained LLM behind a structured prompt. The summaries are currently thin because the
+prototype only produces distance and push/pull data; the pipeline is unchanged as richer
+inputs arrive (confirmed touch events, in-play-only metrics, tempo, cross-bout profiles), so
+the payload grows rather than the architecture. The stage is covered by 17 unit tests over the
+statistics computation, prompt construction and cache behaviour, with the API call mocked, so
+the test suite needs neither a network connection nor an API key.
+
 ---
 
 
 ### Testing
 
-The prototype is supported by 55 unit tests, organised into ten test classes, written with
-`pytest`. Tests cover:
+The prototype is supported by 72 unit tests written with `pytest`: 55 covering the detection
+and metrics pipeline, and 17 covering the LLM summary stage (statistics aggregation, prompt
+construction, cache behaviour, with the API call mocked). Tests cover:
 
 - the geometry helpers (`get_box_centre`, `get_box_bottom_centre`, `box_height_pixels`,
   `pixel_distance`, `normalise_distance`);
