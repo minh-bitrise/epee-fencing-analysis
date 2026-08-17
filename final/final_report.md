@@ -427,6 +427,91 @@ than the raw count implies, and the six-corrections figure is a lower bound on t
 than a measurement of it. Establishing the real ratio requires the user study set out in the
 design chapter, which has not been carried out.
 
+### Touch detection: the audio approach failed to generalise, and was replaced
+
+The figures above describe the audio-based detector evaluated on the clip it was tuned on. A
+second bout was then labelled and deliberately held back, and the tuned operating point was
+applied to it without retuning. It failed.
+
+| | clip 3 (tuned on) | clip 2 (held back) |
+|---|---|---|
+| Precision | 0.79 | 0.21 |
+| Recall | 0.79 | 1.00 |
+| F1 | 0.79 | 0.35 |
+| Corrections vs manual | 6 vs 14 | 15 vs 4 |
+
+Fifteen corrections against a manual baseline of four means the detector produced nearly four
+times more work than labelling by hand. Confidence also lost all ranking power: the four real
+touches scored 0.74 to 0.79 while false positives reached 0.91, so filtering at 0.80 gave
+precision 0.00.
+
+#### Why audio could not be rescued
+
+Three diagnostics established that this was not a badly chosen constant.
+
+**The noise floor differs by an order of magnitude between recordings.** Clip 3 is a quiet club
+hall: median band score 0.00007 against touches of 0.008 to 0.21, so touch-to-noise runs 114x to
+3000x. Clip 2 is a broadcast with crowd and commentary: median 0.00079 against touches of 0.005 to
+0.025, so touch-to-noise is 6x to 32x. Five threshold rules were tested (percentile, median
+multiple, fraction of maximum, median plus MAD, and calibration from user-confirmed touches) and
+each either floods the noisier clip or finds nothing in it.
+
+**A percentile threshold flags a fixed fraction of frames rather than a number of events.** Five
+per cent of 9,000 envelope frames is always about 450, merging to 40 or 50 candidates on any clip.
+Against fourteen touches that ratio works; against four it cannot. Candidate count followed
+recording length rather than how much happened, which is a structural defect rather than a tuning
+error.
+
+**No frequency band works, even with the answer in hand.** Searching every band and scoring each by
+how well it separated the weakest real touch from strong background gave a best ratio below 1.0 on
+both clips (0.45 and 0.92), meaning the weakest touch is quieter than ordinary background even in
+the optimal band. Spectral tonality, which responds to tone rather than loudness and should suit a
+buzzer better, was worse (0.21 and 0.55). Most tellingly, on clip 3 the loudest tonal component at
+each touch sat at a different frequency every time. A scoring machine has one pitch. That scatter
+indicates the buzzer is not reliably present in the recording at all, and that what the detector
+had been finding was blade contact and exchange noise which happens to correlate with touches.
+
+#### Geometry alone is better, and it transfers
+
+Testing what the geometric features could do without audio produced a detector that scores the
+same on both clips using identical settings:
+
+| | audio and geometry | geometry alone |
+|---|---|---|
+| clip 3 (tuned on) | F1 0.79, 6 corrections | **F1 0.86, 4 corrections** |
+| clip 2 (held back) | F1 0.35, 15 corrections | **F1 0.86, 1 correction** |
+
+The audio was not merely unhelpful but actively harmful: it generated candidates that the geometry
+then had to filter, and on the noisier recording it flooded the timeline. Removing it also removed
+the ffmpeg dependency, the per-clip band calibration, and the threshold that would not transfer.
+
+The geometric signature follows from how fencing works rather than from a fit. A touch requires
+closing to scoring distance, and the referee's halt afterwards sends both fencers back to their
+guard lines, so they separate. The detector looks for a prominent local minimum in inter-fencer
+distance followed by sustained separation. Distance is also robust to camera panning, because a pan
+shifts both fencers together and distance is a difference between them.
+
+Candidate rate now tracks content instead of recording length: 0.7 per minute on clip 1, 1.0 on
+clip 2, 4.7 on clip 3 and 4.4 on clip 4.
+
+#### What this episode demonstrates
+
+Three points worth carrying into the evaluation chapter.
+
+First, **a single-clip evaluation establishes nothing.** The audio detector's F1 of 0.79 looked like
+a working feature and was an artefact of the clip it was tuned on. Only a held-back bout revealed
+that, and the cost of finding out was one labelling session.
+
+Second, **the more sophisticated approach was the worse one.** Audio detection followed the
+literature (Mo, 2022), required band calibration, spectral analysis and an external decoding
+dependency, and was beaten by a local minimum in a signal the pipeline already produced. The
+simpler method won because it rests on a physical property of the sport rather than on a property
+of one recording.
+
+Third, **a negative result was necessary to reach the positive one.** Geometry-only detection was
+not tried until audio had been shown to fail, and the failure is what prompted asking what the
+remaining features could do unaided.
+
 ---
 
 

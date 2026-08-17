@@ -833,3 +833,98 @@ class TestMotionModelGapHandling:
                 np.array([0.9]),
             )
         assert t.last_pos[1] is not None, "short dropout should keep history"
+
+
+# -------------------- CameraMotionEstimator --------------------
+
+class TestCameraMotionEstimator:
+    """
+    Push and pull are accumulated from image-space displacement, which conflates
+    the fencer moving with the camera moving. The existing safeguards cannot
+    catch a slow pan: the per-frame clamp only rejects biomechanically
+    impossible jumps and the noise floor only rejects sub-jitter movement. On
+    hand-held footage the unstabilised metric reported both fencers
+    net-advancing a combined 32 m on a 14 m piste.
+    """
+
+    def _texture(self, h=400, w=600, seed=0):
+        import cv2
+        rng = np.random.default_rng(seed)
+        img = (rng.random((h, w, 3)) * 255).astype(np.uint8)
+        return cv2.GaussianBlur(img, (5, 5), 0)   # give LK a trackable gradient
+
+    def test_first_frame_reports_no_motion(self):
+        from run_detection import CameraMotionEstimator
+        est = CameraMotionEstimator()
+        assert est.update(self._texture()) == 0.0
+
+    def test_static_camera_reports_near_zero(self):
+        from run_detection import CameraMotionEstimator
+        est = CameraMotionEstimator()
+        img = self._texture()
+        est.update(img)
+        for _ in range(4):
+            assert abs(est.update(img)) < 0.5
+
+    def test_recovers_a_known_pan(self):
+        from run_detection import CameraMotionEstimator
+        est = CameraMotionEstimator()
+        base = self._texture()
+        est.update(base)
+        for i in range(1, 5):
+            dx = est.update(np.roll(base, i * 5, axis=1))
+            assert abs(dx - 5.0) < 1.0, f"expected ~5 px, got {dx}"
+
+    def test_cumulative_offset_accumulates(self):
+        from run_detection import CameraMotionEstimator
+        est = CameraMotionEstimator()
+        base = self._texture()
+        est.update(base)
+        for i in range(1, 6):
+            est.update(np.roll(base, i * 4, axis=1))
+        assert abs(est.cumulative_dx - 20.0) < 2.0
+
+    def test_stabilise_removes_the_offset(self):
+        from run_detection import CameraMotionEstimator
+        est = CameraMotionEstimator()
+        est.cumulative_dx = 30.0
+        assert est.stabilise(100.0) == 70.0
+
+    def test_stabilise_passes_none_through(self):
+        from run_detection import CameraMotionEstimator
+        assert CameraMotionEstimator().stabilise(None) is None
+
+    def test_implausible_shift_is_rejected(self):
+        """A cut or flash produces a huge apparent shift; better to report no
+        motion than to inject a spurious one into the accumulator."""
+        from run_detection import CameraMotionEstimator
+        est = CameraMotionEstimator()
+        est.update(self._texture(seed=1))
+        # an unrelated frame gives incoherent flow, well beyond a real pan
+        dx = est.update(self._texture(seed=99))
+        limit = est.MAX_PAN_FRACTION * 600
+        assert abs(dx) <= limit
+
+    def test_featureless_frame_fails_safely(self):
+        from run_detection import CameraMotionEstimator
+        est = CameraMotionEstimator()
+        blank = np.zeros((400, 600, 3), dtype=np.uint8)
+        est.update(blank)
+        assert est.update(blank) == 0.0
+        assert est.frames_failed > 0
+
+    def test_fencer_boxes_are_masked_out(self):
+        """
+        The fencers move too, so features on them would bias the estimate. They
+        are excluded directly rather than relying on the median alone.
+        """
+        from run_detection import CameraMotionEstimator
+        shape = (400, 600, 3)
+        mask = CameraMotionEstimator._mask_excluding(shape, [[100, 100, 200, 300]])
+        assert mask[200, 150] == 0        # inside the box
+        assert mask[50, 500] == 255       # well outside it
+
+    def test_masking_tolerates_missing_boxes(self):
+        from run_detection import CameraMotionEstimator
+        mask = CameraMotionEstimator._mask_excluding((400, 600, 3), [None])
+        assert (mask == 255).all()
