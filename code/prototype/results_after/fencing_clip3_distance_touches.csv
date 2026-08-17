@@ -1,0 +1,15 @@
+time_s,duration_s,confidence,min_distance_m,separation_m,audio_strength,sustained,in_distance,closing,separated,isolated,signals
+18.9,0.92,0.954,0.63,1.47,0.768,1,1,1,1,1,sustained+in_distance+closing+separated+isolated
+171.24,0.44,0.953,1.1,0.3,0.765,1,1,1,1,1,sustained+in_distance+closing+separated+isolated
+89.34,0.36,0.935,1.26,2.21,0.674,1,1,1,1,1,sustained+in_distance+closing+separated+isolated
+47.3,1.22,0.892,1.78,0.58,0.46,1,1,1,1,1,sustained+in_distance+closing+separated+isolated
+154.68,0.3,0.877,1.15,0.61,0.385,1,1,1,1,1,sustained+in_distance+closing+separated+isolated
+63.06,0.2,0.861,1.24,0.44,0.307,1,1,1,1,1,sustained+in_distance+closing+separated+isolated
+112.7,0.18,0.852,1.27,1.77,0.26,1,1,1,1,1,sustained+in_distance+closing+separated+isolated
+106.58,0.52,0.843,2.02,0.28,0.214,1,1,1,1,1,sustained+in_distance+closing+separated+isolated
+139.68,0.52,0.843,0.52,1.09,0.613,1,1,0,1,1,sustained+in_distance+separated+isolated
+151.34,0.34,0.835,2.07,0.26,0.175,1,1,1,1,1,sustained+in_distance+closing+separated+isolated
+35.42,0.1,0.826,1.54,0.96,0.128,1,1,1,1,1,sustained+in_distance+closing+separated+isolated
+131.48,1.28,0.825,0.62,0.68,0.525,1,1,0,1,1,sustained+in_distance+separated+isolated
+88.92,0.1,0.816,1.34,1.14,0.08,1,1,1,1,1,sustained+in_distance+closing+separated+isolated
+113.2,0.26,0.747,1.28,1.98,0.134,1,1,0,1,1,sustained+in_distance+separated+isolated
