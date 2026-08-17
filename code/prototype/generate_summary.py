@@ -165,6 +165,17 @@ def add_in_play_scope(stats, rows, touch_path):
         "fencer_2": f2,
     }
 
+    # Tempo. This is the group of metrics Chapter 1 promises and the pipeline
+    # could not produce before touch detection existed, which is why earlier
+    # summaries were accurate but thin. The per-exchange list is left out of the
+    # payload deliberately: the model needs the distribution to reason about
+    # tempo, not fourteen individual intervals it would be tempted to narrate.
+    from tempo import compute_tempo, load_touches_with_scorer
+    t_touches = load_touches_with_scorer(touch_path)
+    tempo = compute_tempo(t_touches, stats["duration_s"])
+    tempo.pop("exchanges", None)
+    stats["tempo"] = tempo
+
     # A piste is 14 m long and fencers reset between touches, so net forward
     # displacement across a bout should be small. Anything large is the
     # panning artefact, and the reader must be told rather than left to
@@ -220,6 +231,12 @@ _PROMPT_WITH_TOUCHES = (
     "attribute a touch to a fencer, state a score, or name a winner. Never "
     "describe the action that produced a touch, since that is not in the "
     "data.\n"
+    "- A 'tempo' block is present when touch data is. Use it: touch rate, time "
+    "between touches, exchange duration and whether the bout quickened or slowed "
+    "are the tactically richest figures available, and they are what distinguish "
+    "one bout from another most clearly. If 'scorer_counts' is null, the touch "
+    "source did not record who scored; do not infer it, and do not comment on "
+    "streaks or momentum in that case.\n"
     "- Check the touch list's 'provenance' field. 'human_confirmed' means a "
     "person labelled these touches and the count is reliable. "
     "'automatic_detector' means they were proposed by the system and the "

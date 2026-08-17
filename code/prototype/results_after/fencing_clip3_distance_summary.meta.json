@@ -1,5 +1,5 @@
 {
-  "cache_key": "978b34f49846fe3a8286b4097fc8baf3b880bf04c2c1129d9663bd4d22dfb1c3",
+  "cache_key": "a12064aaefffc55bf875bbec40c6027c87c59be5f277b050bed54fed224e2261",
   "model": "claude-opus-4-8",
   "stats": {
     "duration_s": 180.0,
@@ -33,42 +33,77 @@
     "touches": {
       "count": 14,
       "times_s": [
-        19.7,
-        35.9,
-        43.8,
+        19.0,
+        35.0,
+        43.0,
         48.0,
-        64.0,
-        89.8,
-        99.4,
-        102.3,
-        107.1,
-        113.0,
-        131.1,
-        140.6,
-        155.3,
-        172.2
+        63.0,
+        83.0,
+        89.0,
+        106.0,
+        112.0,
+        132.0,
+        140.0,
+        155.0,
+        172.0,
+        179.0
       ],
-      "provenance": "automatic_detector",
+      "provenance": "human_confirmed",
       "reset_excluded_s": 6.0
     },
     "in_play_only": {
-      "share_of_recording_pct": 56.8,
-      "mean_distance_m": 2.24,
+      "share_of_recording_pct": 56.7,
+      "mean_distance_m": 2.42,
       "fencer_1": {
-        "push_m": 28.59,
-        "pull_m": 20.23,
-        "push_share_pct": 58.6,
-        "net_forward_m": 8.36
+        "push_m": 27.62,
+        "pull_m": 20.19,
+        "push_share_pct": 57.8,
+        "net_forward_m": 7.43
       },
       "fencer_2": {
-        "push_m": 35.91,
-        "pull_m": 22.34,
-        "push_share_pct": 61.6,
-        "net_forward_m": 13.57
+        "push_m": 32.35,
+        "pull_m": 21.5,
+        "push_share_pct": 60.1,
+        "net_forward_m": 10.85
+      }
+    },
+    "tempo": {
+      "touches": 14,
+      "duration_s": 180.0,
+      "touches_per_minute": 4.67,
+      "time_between_touches_s": {
+        "mean": 12.31,
+        "median": 15.0,
+        "min": 5.0,
+        "max": 20.0,
+        "std": 5.47
+      },
+      "exchange_duration_s": {
+        "mean": 9.27,
+        "median": 10.0,
+        "min": 1.0,
+        "max": 19.0,
+        "std": 5.4
+      },
+      "reset_assumed_s": 6.0,
+      "tempo_trend": {
+        "first_half_mean_gap_s": 11.67,
+        "second_half_mean_gap_s": 12.86,
+        "change_s": 1.19,
+        "direction": "slowing"
+      },
+      "scorer_counts": {
+        "right": 5,
+        "left": 5,
+        "double": 4
+      },
+      "longest_streak": {
+        "scorer": "double",
+        "touches": 4
       }
     },
     "data_quality_warnings": [
-      "net_forward_m is unreliable on this recording (largest magnitude 13.6 m). Fencers reset between touches, so net displacement over a bout should be near zero; a large value indicates uncorrected camera motion inflating the movement totals. Do not interpret net_forward_m as aggression or territorial gain. push_share_pct is affected by the same cause and should be treated as indicative only."
+      "net_forward_m is unreliable on this recording (largest magnitude 10.8 m). Fencers reset between touches, so net displacement over a bout should be near zero; a large value indicates uncorrected camera motion inflating the movement totals. Do not interpret net_forward_m as aggression or territorial gain. push_share_pct is affected by the same cause and should be treated as indicative only."
     ]
   }
 }
