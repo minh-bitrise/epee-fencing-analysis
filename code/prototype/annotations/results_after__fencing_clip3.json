@@ -1,0 +1,93 @@
+{
+  "bout_id": "results_after:fencing_clip3",
+  "touch_states": {
+    "p0": {
+      "state": "confirmed",
+      "scorer": "left",
+      "updated": 1787006534.985489
+    },
+    "p11": {
+      "state": "confirmed",
+      "scorer": "left",
+      "updated": 1787006534.986777
+    },
+    "p13": {
+      "state": "confirmed",
+      "scorer": "left",
+      "updated": 1787006534.987844
+    },
+    "p5": {
+      "state": "confirmed",
+      "scorer": "left",
+      "updated": 1787006534.98896
+    },
+    "p12": {
+      "state": "confirmed",
+      "scorer": "left",
+      "updated": 1787006534.990143
+    },
+    "p9": {
+      "state": "confirmed",
+      "scorer": "left",
+      "updated": 1787006534.991202
+    },
+    "p4": {
+      "state": "confirmed",
+      "scorer": "left",
+      "updated": 1787006534.992223
+    },
+    "p1": {
+      "state": "confirmed",
+      "scorer": "left",
+      "updated": 1787006534.993501
+    },
+    "p3": {
+      "state": "confirmed",
+      "scorer": "left",
+      "updated": 1787006534.9948192
+    },
+    "p6": {
+      "state": "confirmed",
+      "scorer": "left",
+      "updated": 1787006534.995965
+    },
+    "p2": {
+      "state": "confirmed",
+      "scorer": "left",
+      "updated": 1787006534.996943
+    },
+    "p8": {
+      "state": "confirmed",
+      "scorer": "left",
+      "updated": 1787006534.997903
+    },
+    "p7": {
+      "state": "rejected",
+      "updated": 1787006534.9988952
+    },
+    "p10": {
+      "state": "rejected",
+      "updated": 1787006535.0001369
+    }
+  },
+  "added_touches": [
+    {
+      "id": "u0",
+      "time_s": 83.0,
+      "scorer": "right",
+      "note": "",
+      "origin": "user",
+      "created": 1787006535.00167
+    },
+    {
+      "id": "u1",
+      "time_s": 179.0,
+      "scorer": "right",
+      "note": "",
+      "origin": "user",
+      "created": 1787006535.0027351
+    }
+  ],
+  "unreliable_segments": [],
+  "reanchors": []
+}

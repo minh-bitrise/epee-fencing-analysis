@@ -261,6 +261,72 @@ def get_front_foot(landmarks, fencer_ref_x, opponent_ref_x):
         return left_ankle if left_ankle[0] < right_ankle[0] else right_ankle
 
 
+# --- scale calibration ------------------------------------------------
+
+def calibrate_fixed_scale(video_path, sample_every=15, max_frames=4500,
+                          min_height_px=60):
+    """
+    Estimate one pixels-per-metre scale for the whole clip, from the median
+    apparent height of the two largest person detections.
+
+    WHY A FIXED SCALE RATHER THAN A PER-FRAME ONE. The pipeline originally
+    derived scale from the current frame's mean bounding-box height, on the
+    reasoning that a fencer's height is a known quantity and apparent height
+    therefore encodes depth. Measurement shows that reasoning is wrong, and
+    wrong in a way that biases the result rather than merely adding noise.
+
+    Bounding-box height tracks posture more strongly than depth. On clip 3 its
+    correlation with feet-y, the ground-plane depth cue, is +0.267, while its
+    correlation with inter-fencer distance is +0.502; fencers are 1.31 times
+    taller when in the furthest quartile of separation than in the nearest.
+    That is the sport itself: en garde is shorter than standing and a lunge
+    shorter again.
+
+    The consequence is a self-reinforcing error. Closing distance to attack
+    lowers both fencers, which shrinks the scale reference, which inflates every
+    computed metre value, and it does so exactly during the exchanges that matter
+    most. Because both fencers crouch together, the bias does not cancel between
+    them, which is why clip 3 reported both fencers net-advancing a combined 32 m
+    on a 14 m piste. Camera panning was investigated first and ruled out: pan
+    bias moves the two fencers' net displacement in opposite directions, and
+    clip 3's were both positive.
+
+    A median over the whole clip removes the frame-to-frame posture variation.
+    It does not make the absolute scale correct, since it still rests on an
+    assumed 1.75 m fencer and takes no account of perspective. Doing better
+    requires a scale reference that is not a fencer, which means calibrating
+    against the piste. Note that this cannot assume the whole piste is visible:
+    in practice a camera shows only a segment of the strip, so a four-corner
+    homography is not generally available. The strip's two long edges plus one
+    transverse line of known separation would be, and that is the route to a
+    properly metric calibration.
+
+    Returns pixels per metre, or None if too few usable detections were found,
+    in which case callers should fall back to the per-frame estimate.
+    """
+    model = YOLO(MODEL_NAME)
+    cap = cv2.VideoCapture(video_path)
+    heights = []
+    idx = 0
+    while idx < max_frames:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        if idx % sample_every == 0:
+            results = model.predict(frame, conf=CONF_THRESH, iou=IOU_THRESH,
+                                    classes=[0], verbose=False)
+            if results[0].boxes is not None and len(results[0].boxes) > 0:
+                boxes = results[0].boxes.xyxy.cpu().numpy()
+                tallest = sorted(boxes, key=box_height_pixels, reverse=True)[:MAX_FENCERS]
+                heights.extend(box_height_pixels(b) for b in tallest
+                               if box_height_pixels(b) >= min_height_px)
+        idx += 1
+    cap.release()
+    if len(heights) < 20:
+        return None
+    return float(np.median(heights)) / REAL_HEIGHT_M
+
+
 # --- camera motion ----------------------------------------------------
 
 class CameraMotionEstimator:
@@ -661,6 +727,8 @@ class PushPullTracker:
         self.prev_smooth   = [None] * n_fencers
         self.advance_m     = [0.0]  * n_fencers
         self.retreat_m     = [0.0]  * n_fencers
+        # Sub-threshold movement waiting to be committed. See update().
+        self.pending_m     = [0.0]  * n_fencers
 
     def update(self, idx, fencer_x, opponent_x, scale_px_per_m):
         if fencer_x is None or scale_px_per_m == 0:
@@ -684,15 +752,49 @@ class PushPullTracker:
 
         advance_m = advance_px / scale_px_per_m
 
+        # A single-frame movement this large is not biomechanically possible and
+        # indicates camera motion or a detection failure. Discarded outright,
+        # and deliberately not added to the pending buffer, because admitting it
+        # there would let one bad frame corrupt a later commit.
         if abs(advance_m) > MAX_FRAME_MOVEMENT_M:
             return
-        if abs(advance_m) < PUSH_PULL_NOISE_FLOOR_M:
+
+        # Sub-threshold movement is BANKED, not discarded.
+        #
+        # The threshold exists to stop bounding-box jitter accumulating: an early
+        # version summed raw displacement and reported 216 m of push per fencer in
+        # a three-minute bout. Discarding small movements fixed that number and
+        # introduced a directional bias, because in fencing advances and retreats
+        # do not have the same speed. An attack is explosive and clears the
+        # threshold every frame; the recovery and walk-back are slow and clear it
+        # on none. Measured on synthetic input with a fencer returning to its
+        # exact starting position, the discarding version reported +5.25 m of net
+        # advance with pull recorded as 0.00 m, having thrown away every retreat
+        # frame. Because both fencers attack fast and recover slowly, the bias
+        # does not cancel between them, which is why clip 3 reported both fencers
+        # net-advancing a combined 32 m on a 14 m piste.
+        #
+        # Banking keeps the jitter rejection and removes the bias. Jitter
+        # oscillates around zero, so the buffer rarely reaches the threshold and
+        # commits only the true net when it does. Genuine slow movement is
+        # one-directional, so the buffer fills and commits at the correct
+        # magnitude. Nothing real is lost; it is only delayed.
+        #
+        # Camera panning and per-frame scale variation were both investigated as
+        # causes of the same symptom before this was found, and neither was it.
+        # Both "fixes" made clip 3 worse, because each reduced the noise that had
+        # been accidentally pushing some slow retreats over the threshold.
+        self.pending_m[idx] += advance_m
+        if abs(self.pending_m[idx]) < PUSH_PULL_NOISE_FLOOR_M:
             return
 
-        if advance_m > 0:
-            self.advance_m[idx] += advance_m
+        committed = self.pending_m[idx]
+        self.pending_m[idx] = 0.0
+
+        if committed > 0:
+            self.advance_m[idx] += committed
         else:
-            self.retreat_m[idx] += -advance_m
+            self.retreat_m[idx] += -committed
 
 
 # --- smoothing --------------------------------------------------------
@@ -822,7 +924,7 @@ def save_plot(times, distances, methods, output_path):
 # --- main pipeline ----------------------------------------------------
 
 def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=None,
-        show_piste=False, stabilise_camera=True):
+        show_piste=False, stabilise_camera=True, fixed_scale_calibration=True):
     os.makedirs(output_dir, exist_ok=True)
 
     base      = os.path.splitext(os.path.basename(video_path))[0]
@@ -853,6 +955,15 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
     fencer_tracker = FencerTracker()
     push_pull      = PushPullTracker(n_fencers=2)
     camera         = CameraMotionEstimator() if stabilise_camera else None
+
+    fixed_scale = None
+    if fixed_scale_calibration:
+        print("Calibrating a fixed pixels-per-metre scale (pre-pass)...")
+        fixed_scale = calibrate_fixed_scale(video_path)
+        if fixed_scale:
+            print(f"  fixed scale: {fixed_scale:.1f} px/m")
+        else:
+            print("  too few detections; falling back to per-frame scale")
     dist_buffer    = deque()
 
     csv_rows  = []
@@ -917,6 +1028,10 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
             h1 = box_height_pixels(box1)
             avg_height_px   = (h0 + h1) / 2
             scale_px_per_m  = avg_height_px / REAL_HEIGHT_M if avg_height_px > 0 else 0
+            # Push/pull uses the clip-wide fixed scale when available. The
+            # per-frame scale tracks posture, not depth, so it biases
+            # accumulated movement toward the moments fencers crouch.
+            movement_scale = fixed_scale if fixed_scale else scale_px_per_m
 
             # per-fencer reference x: prefer mid-hip from pose, else box bottom-centre
             ref0 = get_hip_centre(pose_data[0]) if pose_data[0] else None
@@ -955,8 +1070,8 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
             else:
                 sx0, sx1 = ref0[0], ref1[0]
 
-            push_pull.update(0, sx0, sx1, scale_px_per_m)
-            push_pull.update(1, sx1, sx0, scale_px_per_m)
+            push_pull.update(0, sx0, sx1, movement_scale)
+            push_pull.update(1, sx1, sx0, movement_scale)
 
         # smoothed value for the on-screen overlay
         dist_display_m = None
@@ -1039,6 +1154,11 @@ def main():
                         help="Path to a JSON file describing the piste polygon "
                              "(pixel-space vertices). Detections outside the "
                              "polygon are rejected before tracking.")
+    parser.add_argument("--no-fixed-scale", action="store_true",
+                        help="Use the per-frame bounding-box scale for push/pull instead\n"
+                             "of a clip-wide fixed one. The per-frame scale tracks posture\n"
+                             "rather than depth and biases movement totals; retained so the\n"
+                             "before/after comparison stays reproducible.")
     parser.add_argument("--no-stabilise", action="store_true",
                         help="Disable camera-motion compensation. Push/pull then conflates\n"
                              "fencer movement with camera panning; retained so the\n"
@@ -1050,7 +1170,8 @@ def main():
     args = parser.parse_args()
     run(args.video, args.output, pose_stride=args.pose_stride,
         piste_config=args.piste_config, show_piste=args.show_piste,
-        stabilise_camera=not args.no_stabilise)
+        stabilise_camera=not args.no_stabilise,
+        fixed_scale_calibration=not args.no_fixed_scale)
 
 
 if __name__ == "__main__":

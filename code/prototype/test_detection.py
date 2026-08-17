@@ -928,3 +928,102 @@ class TestCameraMotionEstimator:
         from run_detection import CameraMotionEstimator
         mask = CameraMotionEstimator._mask_excluding((400, 600, 3), [None])
         assert (mask == 255).all()
+
+
+# -------------------- push/pull banking (directional bias) --------------------
+
+class TestPushPullBanking:
+    """
+    The noise threshold exists to stop bounding-box jitter accumulating; an early
+    version summed raw displacement and reported 216 m of push per fencer in a
+    three-minute bout. Discarding sub-threshold movement fixed that number and
+    introduced a directional bias, because advances and retreats in fencing do
+    not share a speed: an attack is explosive and clears the threshold on every
+    frame, while the recovery is slow and clears it on none.
+
+    Banking sub-threshold movement instead of discarding it keeps the jitter
+    rejection and removes the bias. These tests pin both halves of that, because
+    a change to either constant could silently reintroduce the bug.
+    """
+
+    SCALE = 143.0
+
+    def _cycle(self, adv_px, adv_frames, ret_frames, cycles=12):
+        """
+        Drive a fencer through advance/retreat cycles that return it to the exact
+        starting position, so the correct net displacement is zero by construction.
+        """
+        p = PushPullTracker(n_fencers=2)
+        x, opponent = 400.0, 900.0
+        ret_px = (adv_px * adv_frames) / ret_frames
+        for _ in range(cycles):
+            for _ in range(adv_frames):
+                x += adv_px
+                p.update(0, x, opponent, self.SCALE)
+            for _ in range(ret_frames):
+                x -= ret_px
+                p.update(0, x, opponent, self.SCALE)
+        return p
+
+    def test_symmetric_motion_nets_to_zero(self):
+        p = self._cycle(adv_px=8.0, adv_frames=10, ret_frames=10)
+        assert abs(p.advance_m[0] - p.retreat_m[0]) < 0.5
+
+    def test_explosive_attack_slow_recovery_nets_to_zero(self):
+        """
+        The regression this fix addresses. With sub-threshold movement discarded
+        this reported +5.25 m of net advance and pull of exactly 0.00 m, having
+        thrown away every retreat frame.
+        """
+        p = self._cycle(adv_px=8.0, adv_frames=10, ret_frames=40)
+        net = p.advance_m[0] - p.retreat_m[0]
+        assert p.retreat_m[0] > 0, "slow retreats must not be discarded entirely"
+        assert abs(net) < 0.5, f"expected net near zero, got {net:+.2f}"
+
+    def test_very_slow_recovery_nets_to_zero(self):
+        p = self._cycle(adv_px=8.0, adv_frames=10, ret_frames=80)
+        assert abs(p.advance_m[0] - p.retreat_m[0]) < 0.5
+
+    def test_jitter_still_does_not_accumulate(self):
+        """
+        The other half. A random walk with no true displacement must not produce
+        large totals, or banking would have simply undone the original fix.
+        """
+        rng = np.random.default_rng(0)
+        p = PushPullTracker(n_fencers=2)
+        x = 400.0
+        for _ in range(2000):
+            x += rng.normal(0, 1.5)
+            p.update(0, x, 900.0, self.SCALE)
+        assert p.advance_m[0] < 10.0 and p.retreat_m[0] < 10.0
+
+    def test_a_single_tiny_move_commits_nothing(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 100.0, 500.0, 100.0)
+        tiny = (PUSH_PULL_NOISE_FLOOR_M / 3) * 100.0
+        p.update(0, 100.0 + tiny, 500.0, 100.0)
+        assert p.advance_m[0] == 0.0
+        assert p.pending_m[0] > 0, "it should be banked, not lost"
+
+    def test_repeated_tiny_moves_eventually_commit(self):
+        """Slow movement is delayed, never dropped."""
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 100.0, 500.0, 100.0)
+        step = (PUSH_PULL_NOISE_FLOOR_M / 3) * 100.0
+        x = 100.0
+        for _ in range(6):
+            x += step
+            p.update(0, x, 500.0, 100.0)
+        assert p.advance_m[0] > 0, "banked movement should have committed by now"
+
+    def test_implausible_jump_is_not_banked(self):
+        """
+        A camera cut must not sit in the buffer waiting to corrupt a later
+        commit, so it is discarded rather than banked.
+        """
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 100.0, 500.0, 100.0)
+        huge = (MAX_FRAME_MOVEMENT_M + 0.5) * 100.0
+        p.update(0, 100.0 + huge, 500.0, 100.0)
+        assert p.advance_m[0] == 0.0
+        assert p.pending_m[0] == 0.0

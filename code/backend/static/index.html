@@ -1,0 +1,235 @@
+<!-- Assisted-annotation review interface.
+     Deliberately vanilla HTML and JS with no build step, so the interface can be
+     run and evaluated by anyone with the repository and Python, without a Node
+     toolchain. The design chapter specifies React for the finished application;
+     this exists to test the workflow, not to be that application. -->
+<meta charset="utf-8">
+<title>Epee Bout Review</title>
+<style>
+  :root { --bg:#14161a; --panel:#1d2027; --line:#2c313b; --fg:#e6e8ec;
+          --muted:#9aa3b2; --accent:#4da3ff; --ok:#3ddc84; --no:#ff6b6b;
+          --warn:#ffc857; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  header { padding:14px 20px; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  h1 { font-size:16px; margin:0; font-weight:600; }
+  select, button { background:var(--panel); color:var(--fg);
+                   border:1px solid var(--line); border-radius:6px;
+                   padding:6px 10px; font-size:13px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  main { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:18px;
+         padding:18px 20px; align-items:start; }
+  .panel { background:var(--panel); border:1px solid var(--line);
+           border-radius:8px; padding:14px; }
+  .panel h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em;
+              color:var(--muted); margin:0 0 10px; font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  tr.confirmed td:first-child { border-left:3px solid var(--ok); }
+  tr.rejected  td:first-child { border-left:3px solid var(--no); opacity:.5; }
+  tr.pending   td:first-child { border-left:3px solid var(--warn); }
+  .row-actions { display:flex; gap:5px; }
+  .row-actions button { padding:3px 8px; font-size:12px; }
+  .mini { color:var(--muted); font-size:12px; }
+  .stat { display:flex; justify-content:space-between; padding:3px 0; }
+  .stat b { font-variant-numeric:tabular-nums; font-weight:600; }
+  .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden;
+         margin:8px 0 4px; }
+  .bar > div { height:100%; background:var(--accent); }
+  .note { background:#20242c; border-left:3px solid var(--warn);
+          padding:8px 10px; border-radius:4px; color:var(--muted);
+          font-size:12px; margin-top:10px; }
+  form.inline { display:flex; gap:6px; margin-top:10px; }
+  form.inline input { flex:1; min-width:0; background:var(--bg); color:var(--fg);
+                      border:1px solid var(--line); border-radius:6px; padding:6px 8px; }
+</style>
+
+<header>
+  <h1>Epee Bout Review</h1>
+  <select id="bout"></select>
+  <span id="progress" class="mini"></span>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>Proposed touches</h2>
+    <p class="mini" id="basis"></p>
+    <table id="touches"><thead><tr>
+      <th>Time</th><th>Conf</th><th>Separation</th><th>Scorer</th><th>State</th><th></th>
+    </tr></thead><tbody></tbody></table>
+
+    <h2 style="margin-top:20px">Add a touch the system missed</h2>
+    <form class="inline" id="addForm">
+      <input id="addTime" type="number" step="0.1" placeholder="time (s)" required>
+      <select id="addScorer">
+        <option value="left">left</option><option value="right">right</option>
+        <option value="double">double</option><option value="unknown">unknown</option>
+      </select>
+      <button type="submit">Add</button>
+    </form>
+
+    <h2 style="margin-top:20px">Mark a segment tracking-unreliable</h2>
+    <form class="inline" id="segForm">
+      <input id="segStart" type="number" step="0.1" placeholder="from (s)" required>
+      <input id="segEnd" type="number" step="0.1" placeholder="to (s)" required>
+      <button type="submit">Exclude</button>
+    </form>
+    <div id="segments" class="mini"></div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h2>Review progress</h2>
+      <div class="bar"><div id="progBar" style="width:0%"></div></div>
+      <div id="progDetail" class="mini"></div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <h2>Metrics</h2>
+      <div id="metrics"></div>
+      <div class="note" id="scopeNote"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+let boutId = null;
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+  return r.json();
+}
+const json = (method, body) => ({
+  method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+});
+
+async function loadBouts() {
+  const {bouts} = await api('/api/bouts');
+  const sel = $('#bout');
+  sel.innerHTML = bouts.map(b =>
+    `<option value="${b.bout_id}">${b.bout_id}` +
+    `${b.has_touches ? '' : '  (no touches proposed)'}</option>`).join('');
+  if (bouts.length) { boutId = bouts[0].bout_id; await refresh(); }
+}
+
+async function refresh() {
+  const [t, m] = await Promise.all([
+    api(`/api/bouts/${encodeURIComponent(boutId)}/touches`),
+    api(`/api/bouts/${encodeURIComponent(boutId)}/metrics`),
+  ]);
+  renderTouches(t);
+  renderProgress(t.progress);
+  renderSegments(t.unreliable_segments);
+  renderMetrics(m);
+}
+
+function renderTouches(t) {
+  const rows = [];
+  for (const p of t.proposed) {
+    const shown = p.corrected_time_s ?? p.time_s;
+    rows.push(`<tr class="${p.state}">
+      <td>${shown.toFixed(1)}s</td>
+      <td>${p.confidence.toFixed(2)}</td>
+      <td>${p.separation_m != null ? p.separation_m.toFixed(2)+'m' : '-'}</td>
+      <td>${p.scorer ?? '-'}</td>
+      <td>${p.state}</td>
+      <td><div class="row-actions">
+        <button data-act="confirm" data-id="${p.id}">confirm</button>
+        <button data-act="reject"  data-id="${p.id}">reject</button>
+      </div></td></tr>`);
+  }
+  for (const a of t.added) {
+    rows.push(`<tr class="confirmed">
+      <td>${a.time_s.toFixed(1)}s</td><td class="mini">manual</td><td>-</td>
+      <td>${a.scorer}</td><td>added</td>
+      <td><div class="row-actions">
+        <button data-act="del" data-id="${a.id}">remove</button>
+      </div></td></tr>`);
+  }
+  $('#touches tbody').innerHTML = rows.join('') ||
+    '<tr><td colspan="6" class="mini">No proposals. Run detect_touches.py for this bout.</td></tr>';
+}
+
+function renderProgress(p) {
+  const pct = p.proposed ? Math.round(100 * p.reviewed / p.proposed) : 0;
+  $('#progBar').style.width = pct + '%';
+  $('#progress').textContent =
+    `${p.reviewed}/${p.proposed} reviewed${p.complete ? ' - complete' : ''}`;
+  $('#progDetail').innerHTML =
+    `<div class="stat"><span>confirmed</span><b>${p.confirmed}</b></div>
+     <div class="stat"><span>rejected</span><b>${p.rejected}</b></div>
+     <div class="stat"><span>added by hand</span><b>${p.user_added}</b></div>
+     <div class="stat"><span>excluded segments</span><b>${p.unreliable_segments}</b></div>
+     <div class="stat"><span>re-anchors pending</span><b>${p.pending_reanchors}</b></div>`;
+}
+
+function renderSegments(segs) {
+  $('#segments').innerHTML = segs.length
+    ? segs.map(s => `<div class="stat"><span>${s.start_s.toFixed(1)}-${s.end_s.toFixed(1)}s</span>
+        <button data-act="delseg" data-id="${s.id}">remove</button></div>`).join('')
+    : '<div style="margin-top:6px">No segments excluded.</div>';
+}
+
+function renderMetrics(m) {
+  const w = m.whole_recording, i = m.in_play;
+  const pct = Math.round(100 * i.in_play_fraction);
+  $('#metrics').innerHTML = `
+    <div class="stat"><span>confirmed touches</span><b>${m.confirmed_touches.length}</b></div>
+    <div class="stat"><span>in play</span><b>${pct}% of recording</b></div>
+    <div class="stat"><span>mean distance (in play)</span>
+      <b>${i.mean_distance_m != null ? i.mean_distance_m.toFixed(2)+' m' : '-'}</b></div>
+    <div class="stat"><span>mean distance (whole)</span>
+      <b>${w.distance_m.mean.toFixed(2)} m</b></div>
+    <div class="stat"><span>F1 push / pull</span>
+      <b>${i.fencer_1.push_m.toFixed(1)} / ${i.fencer_1.pull_m.toFixed(1)} m</b></div>
+    <div class="stat"><span>F2 push / pull</span>
+      <b>${i.fencer_2.push_m.toFixed(1)} / ${i.fencer_2.pull_m.toFixed(1)} m</b></div>`;
+  $('#scopeNote').textContent = 'Scoping basis: ' + m.scoping_basis;
+}
+
+document.addEventListener('click', async e => {
+  const b = e.target.closest('button[data-act]');
+  if (!b) return;
+  const id = b.dataset.id, base = `/api/bouts/${encodeURIComponent(boutId)}`;
+  try {
+    if (b.dataset.act === 'confirm')
+      await api(`${base}/touches/${id}/decision`, json('POST', {state:'confirmed'}));
+    else if (b.dataset.act === 'reject')
+      await api(`${base}/touches/${id}/decision`, json('POST', {state:'rejected'}));
+    else if (b.dataset.act === 'del')
+      await api(`${base}/touches/${id}`, {method:'DELETE'});
+    else if (b.dataset.act === 'delseg')
+      await api(`${base}/segments/${id}`, {method:'DELETE'});
+    await refresh();
+  } catch (err) { alert(err.message); }
+});
+
+$('#bout').addEventListener('change', async e => { boutId = e.target.value; await refresh(); });
+
+$('#addForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  await api(`/api/bouts/${encodeURIComponent(boutId)}/touches`,
+            json('POST', {time_s: parseFloat($('#addTime').value),
+                          scorer: $('#addScorer').value}));
+  $('#addTime').value = '';
+  await refresh();
+});
+
+$('#segForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api(`/api/bouts/${encodeURIComponent(boutId)}/segments`,
+              json('POST', {start_s: parseFloat($('#segStart').value),
+                            end_s: parseFloat($('#segEnd').value)}));
+    $('#segStart').value = $('#segEnd').value = '';
+    await refresh();
+  } catch (err) { alert(err.message); }
+});
+
+loadBouts().catch(e => alert('Failed to load bouts: ' + e.message));
+</script>
