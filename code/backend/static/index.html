@@ -1,8 +1,8 @@
 <!-- Assisted-annotation review interface.
-     Deliberately vanilla HTML and JS with no build step, so the interface can be
-     run and evaluated by anyone with the repository and Python, without a Node
-     toolchain. The design chapter specifies React for the finished application;
-     this exists to test the workflow, not to be that application. -->
+     Vanilla HTML and JS with no build step, so it runs with only the repository
+     and Python. The design chapter specifies React for the finished application;
+     this exists to test whether the workflow actually saves the user effort,
+     which is a claim the project has argued and never measured. -->
 <meta charset="utf-8">
 <title>Epee Bout Review</title>
 <style>
@@ -12,72 +12,115 @@
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg);
          font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-  header { padding:14px 20px; border-bottom:1px solid var(--line);
-           display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
-  h1 { font-size:16px; margin:0; font-weight:600; }
-  select, button { background:var(--panel); color:var(--fg);
+  header { padding:12px 18px; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  h1 { font-size:15px; margin:0; font-weight:600; }
+  select, button, input { background:var(--panel); color:var(--fg);
                    border:1px solid var(--line); border-radius:6px;
-                   padding:6px 10px; font-size:13px; cursor:pointer; }
+                   padding:6px 10px; font-size:13px; }
+  button { cursor:pointer; }
   button:hover { border-color:var(--accent); }
-  main { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:18px;
-         padding:18px 20px; align-items:start; }
+  button.primary { background:#22344a; border-color:var(--accent); }
+  main { display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:16px;
+         padding:16px 18px; align-items:start; }
   .panel { background:var(--panel); border:1px solid var(--line);
-           border-radius:8px; padding:14px; }
-  .panel h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em;
-              color:var(--muted); margin:0 0 10px; font-weight:600; }
+           border-radius:8px; padding:13px; }
+  .panel + .panel { margin-top:13px; }
+  .panel h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em;
+              color:var(--muted); margin:0 0 9px; font-weight:600; }
+  video { width:100%; border-radius:6px; background:#000; display:block; }
+  .novid { padding:40px; text-align:center; color:var(--muted);
+           border:1px dashed var(--line); border-radius:6px; }
+
+  /* timeline: touches as markers, excluded ranges shaded */
+  .tl { position:relative; height:44px; margin-top:10px; background:#12141a;
+        border:1px solid var(--line); border-radius:6px; cursor:pointer;
+        overflow:hidden; }
+  .tl .seg { position:absolute; top:0; bottom:0; background:#3a2c2c; }
+  .tl .mk { position:absolute; top:4px; bottom:16px; width:3px;
+            margin-left:-1.5px; border-radius:2px; }
+  .tl .mk.pending   { background:var(--warn); }
+  .tl .mk.confirmed { background:var(--ok); }
+  .tl .mk.rejected  { background:#4a4a4a; }
+  .tl .mk.added     { background:var(--accent); }
+  .tl .cur { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px;
+             background:#fff; pointer-events:none; }
+  .tl .ax { position:absolute; bottom:2px; left:0; right:0; height:12px;
+            color:var(--muted); font-size:10px; }
+  .tl .ax span { position:absolute; transform:translateX(-50%); }
+
   table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
-  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  th, td { text-align:left; padding:5px 7px; border-bottom:1px solid var(--line); }
   th { color:var(--muted); font-weight:500; font-size:12px; }
-  tr.confirmed td:first-child { border-left:3px solid var(--ok); }
-  tr.rejected  td:first-child { border-left:3px solid var(--no); opacity:.5; }
-  tr.pending   td:first-child { border-left:3px solid var(--warn); }
-  .row-actions { display:flex; gap:5px; }
-  .row-actions button { padding:3px 8px; font-size:12px; }
+  tbody tr { cursor:pointer; }
+  tbody tr:hover { background:#232830; }
+  tbody tr.sel { background:#26313d; }
+  tr.confirmed td:first-child { box-shadow:inset 3px 0 0 var(--ok); }
+  tr.rejected  td:first-child { box-shadow:inset 3px 0 0 var(--no); opacity:.55; }
+  tr.pending   td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
+  tr.added     td:first-child { box-shadow:inset 3px 0 0 var(--accent); }
   .mini { color:var(--muted); font-size:12px; }
   .stat { display:flex; justify-content:space-between; padding:3px 0; }
   .stat b { font-variant-numeric:tabular-nums; font-weight:600; }
   .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden;
-         margin:8px 0 4px; }
-  .bar > div { height:100%; background:var(--accent); }
+         margin:7px 0 4px; }
+  .bar > div { height:100%; background:var(--accent); transition:width .2s; }
   .note { background:#20242c; border-left:3px solid var(--warn);
-          padding:8px 10px; border-radius:4px; color:var(--muted);
-          font-size:12px; margin-top:10px; }
-  form.inline { display:flex; gap:6px; margin-top:10px; }
-  form.inline input { flex:1; min-width:0; background:var(--bg); color:var(--fg);
-                      border:1px solid var(--line); border-radius:6px; padding:6px 8px; }
+          padding:7px 9px; border-radius:4px; color:var(--muted);
+          font-size:12px; margin-top:9px; }
+  .keys { display:flex; gap:12px; flex-wrap:wrap; margin-top:8px; }
+  .keys code { background:#12141a; border:1px solid var(--line); border-radius:4px;
+               padding:1px 6px; font-size:12px; }
+  form.inline { display:flex; gap:6px; margin-top:9px; }
+  form.inline input { flex:1; min-width:0; }
 </style>
 
 <header>
   <h1>Epee Bout Review</h1>
   <select id="bout"></select>
   <span id="progress" class="mini"></span>
+  <span style="flex:1"></span>
+  <span class="mini" id="clock">0.0s</span>
 </header>
 
 <main>
-  <div class="panel">
-    <h2>Proposed touches</h2>
-    <p class="mini" id="basis"></p>
-    <table id="touches"><thead><tr>
-      <th>Time</th><th>Conf</th><th>Separation</th><th>Scorer</th><th>State</th><th></th>
-    </tr></thead><tbody></tbody></table>
+  <div>
+    <div class="panel">
+      <div id="videoWrap"></div>
+      <div class="tl" id="tl">
+        <div class="cur" id="cur" style="left:0"></div>
+        <div class="ax" id="ax"></div>
+      </div>
+      <div class="keys mini">
+        <span><code>J</code> prev touch</span>
+        <span><code>K</code> play/pause</span>
+        <span><code>L</code> next touch</span>
+        <span><code>C</code> confirm + next</span>
+        <span><code>X</code> reject + next</span>
+        <span><code>A</code> add at playhead</span>
+      </div>
+    </div>
 
-    <h2 style="margin-top:20px">Add a touch the system missed</h2>
-    <form class="inline" id="addForm">
-      <input id="addTime" type="number" step="0.1" placeholder="time (s)" required>
-      <select id="addScorer">
-        <option value="left">left</option><option value="right">right</option>
-        <option value="double">double</option><option value="unknown">unknown</option>
-      </select>
-      <button type="submit">Add</button>
-    </form>
-
-    <h2 style="margin-top:20px">Mark a segment tracking-unreliable</h2>
-    <form class="inline" id="segForm">
-      <input id="segStart" type="number" step="0.1" placeholder="from (s)" required>
-      <input id="segEnd" type="number" step="0.1" placeholder="to (s)" required>
-      <button type="submit">Exclude</button>
-    </form>
-    <div id="segments" class="mini"></div>
+    <div class="panel">
+      <h2>Proposed touches</h2>
+      <table id="touches"><thead><tr>
+        <th>Time</th><th>Conf</th><th>Separation</th><th>Scorer</th><th>State</th><th></th>
+      </tr></thead><tbody></tbody></table>
+      <form class="inline" id="addForm">
+        <input id="addTime" type="number" step="0.1" placeholder="time (s)" required>
+        <select id="addScorer">
+          <option value="left">left</option><option value="right">right</option>
+          <option value="double">double</option><option value="unknown">unknown</option>
+        </select>
+        <button type="submit">Add touch</button>
+      </form>
+      <form class="inline" id="segForm">
+        <input id="segStart" type="number" step="0.1" placeholder="exclude from (s)" required>
+        <input id="segEnd" type="number" step="0.1" placeholder="to (s)" required>
+        <button type="submit">Exclude range</button>
+      </form>
+      <div id="segments" class="mini"></div>
+    </div>
   </div>
 
   <div>
@@ -86,8 +129,7 @@
       <div class="bar"><div id="progBar" style="width:0%"></div></div>
       <div id="progDetail" class="mini"></div>
     </div>
-
-    <div class="panel" style="margin-top:14px">
+    <div class="panel">
       <h2>Metrics</h2>
       <div id="metrics"></div>
       <div class="note" id="scopeNote"></div>
@@ -97,62 +139,125 @@
 
 <script>
 const $ = s => document.querySelector(s);
-let boutId = null;
+let boutId = null, duration = 0, rows = [], selIdx = 0, vid = null;
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
-  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+  if (!r.ok) throw new Error(((await r.json().catch(()=>({}))).detail) || r.statusText);
   return r.json();
 }
-const json = (method, body) => ({
-  method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
-});
+const json = (m, b) => ({method:m, headers:{'Content-Type':'application/json'},
+                         body: JSON.stringify(b)});
+const enc = s => encodeURIComponent(s);
 
 async function loadBouts() {
   const {bouts} = await api('/api/bouts');
-  const sel = $('#bout');
-  sel.innerHTML = bouts.map(b =>
-    `<option value="${b.bout_id}">${b.bout_id}` +
-    `${b.has_touches ? '' : '  (no touches proposed)'}</option>`).join('');
-  if (bouts.length) { boutId = bouts[0].bout_id; await refresh(); }
+  $('#bout').innerHTML = bouts.map(b => {
+    const tags = [];
+    if (!b.has_touches) tags.push('no touches');
+    if (!b.has_video) tags.push('no video');
+    return `<option value="${b.bout_id}">${b.bout_id}` +
+           `${tags.length ? '  ('+tags.join(', ')+')' : ''}</option>`;
+  }).join('');
+  // open a bout that can actually be reviewed, rather than the first alphabetically
+  const best = bouts.find(b => b.has_touches && b.has_video) || bouts[0];
+  if (best) { boutId = best.bout_id; $('#bout').value = boutId; await load(); }
 }
 
-async function refresh() {
-  const [t, m] = await Promise.all([
-    api(`/api/bouts/${encodeURIComponent(boutId)}/touches`),
-    api(`/api/bouts/${encodeURIComponent(boutId)}/metrics`),
-  ]);
-  renderTouches(t);
-  renderProgress(t.progress);
-  renderSegments(t.unreliable_segments);
-  renderMetrics(m);
+async function load(keepSelection = false) {
+  const t = await api(`/api/bouts/${enc(boutId)}/touches`);
+  duration = t.duration_s || 0;
+  buildVideo(t.has_video);
+  rows = [
+    ...t.proposed.map(p => ({...p, kind:'proposed',
+                             at: p.corrected_time_s ?? p.time_s})),
+    ...t.added.map(a => ({...a, kind:'added', at:a.time_s, state:'added'})),
+  ].sort((a,b) => a.at - b.at);
+  // Only jump the cursor on a fresh bout. Recomputing it on every refresh made
+  // keyboard review skip proposals, because each decision triggered a reload
+  // that moved the cursor out from under the next keystroke.
+  if (!keepSelection) {
+    selIdx = Math.max(0, rows.findIndex(r => r.state === 'pending'));
+  } else {
+    selIdx = Math.min(selIdx, Math.max(0, rows.length - 1));
+  }
+  renderTable(); renderTimeline(t.unreliable_segments);
+  renderProgress(t.progress); renderSegments(t.unreliable_segments);
+  renderMetrics(await api(`/api/bouts/${enc(boutId)}/metrics`));
 }
 
-function renderTouches(t) {
-  const rows = [];
-  for (const p of t.proposed) {
-    const shown = p.corrected_time_s ?? p.time_s;
-    rows.push(`<tr class="${p.state}">
-      <td>${shown.toFixed(1)}s</td>
-      <td>${p.confidence.toFixed(2)}</td>
-      <td>${p.separation_m != null ? p.separation_m.toFixed(2)+'m' : '-'}</td>
-      <td>${p.scorer ?? '-'}</td>
-      <td>${p.state}</td>
-      <td><div class="row-actions">
-        <button data-act="confirm" data-id="${p.id}">confirm</button>
-        <button data-act="reject"  data-id="${p.id}">reject</button>
-      </div></td></tr>`);
+function buildVideo(has) {
+  const w = $('#videoWrap');
+  if (!has) {
+    w.innerHTML = '<div class="novid">No annotated video for this bout.<br>' +
+      '<span class="mini">Run run_detection.py to produce one.</span></div>';
+    vid = null; return;
   }
-  for (const a of t.added) {
-    rows.push(`<tr class="confirmed">
-      <td>${a.time_s.toFixed(1)}s</td><td class="mini">manual</td><td>-</td>
-      <td>${a.scorer}</td><td>added</td>
-      <td><div class="row-actions">
-        <button data-act="del" data-id="${a.id}">remove</button>
-      </div></td></tr>`);
+  if (vid && vid.dataset.bout === boutId) return;
+  w.innerHTML = `<video id="vid" controls preload="metadata" data-bout="${boutId}"
+                   src="/api/bouts/${enc(boutId)}/video"></video>`;
+  vid = $('#vid');
+  vid.addEventListener('timeupdate', () => {
+    $('#clock').textContent = vid.currentTime.toFixed(1) + 's';
+    if (duration) $('#cur').style.left = (100 * vid.currentTime / duration) + '%';
+  });
+}
+
+function seek(t) {
+  if (vid) { vid.currentTime = Math.max(0, t - 1.5); vid.play().catch(()=>{}); }
+}
+
+function renderTimeline(segs) {
+  const tl = $('#tl');
+  tl.querySelectorAll('.mk,.seg').forEach(e => e.remove());
+  if (!duration) return;
+  for (const s of segs || []) {
+    const d = document.createElement('div');
+    d.className = 'seg';
+    d.style.left = (100 * s.start_s / duration) + '%';
+    d.style.width = (100 * (s.end_s - s.start_s) / duration) + '%';
+    tl.appendChild(d);
   }
-  $('#touches tbody').innerHTML = rows.join('') ||
-    '<tr><td colspan="6" class="mini">No proposals. Run detect_touches.py for this bout.</td></tr>';
+  rows.forEach((r, i) => {
+    const m = document.createElement('div');
+    m.className = 'mk ' + (r.kind === 'added' ? 'added' : r.state);
+    m.style.left = (100 * r.at / duration) + '%';
+    m.title = `${r.at.toFixed(1)}s ${r.state}`;
+    m.onclick = e => { e.stopPropagation(); selIdx = i; renderTable(); seek(r.at); };
+    tl.appendChild(m);
+  });
+  const ax = $('#ax'); ax.innerHTML = '';
+  const step = duration > 150 ? 30 : 15;
+  for (let s = 0; s <= duration; s += step) {
+    const el = document.createElement('span');
+    el.style.left = (100 * s / duration) + '%';
+    el.textContent = s + 's';
+    ax.appendChild(el);
+  }
+}
+
+$('#tl').addEventListener('click', e => {
+  if (!duration || !vid) return;
+  const r = $('#tl').getBoundingClientRect();
+  vid.currentTime = duration * (e.clientX - r.left) / r.width;
+});
+
+function renderTable() {
+  $('#touches tbody').innerHTML = rows.map((r, i) => r.kind === 'added'
+    ? `<tr class="added ${i===selIdx?'sel':''}" data-i="${i}">
+         <td>${r.at.toFixed(1)}s</td><td class="mini">manual</td><td>-</td>
+         <td>${r.scorer}</td><td>added</td>
+         <td><button data-act="del" data-id="${r.id}">remove</button></td></tr>`
+    : `<tr class="${r.state} ${i===selIdx?'sel':''}" data-i="${i}">
+         <td>${r.at.toFixed(1)}s</td>
+         <td>${r.confidence.toFixed(2)}</td>
+         <td>${r.separation_m != null ? r.separation_m.toFixed(2)+'m' : '-'}</td>
+         <td>${r.scorer ?? '-'}</td><td>${r.state}</td>
+         <td><button data-act="confirm" data-id="${r.id}">confirm</button>
+             <button data-act="reject" data-id="${r.id}">reject</button></td></tr>`
+  ).join('') || '<tr><td colspan="6" class="mini">No proposals for this bout.</td></tr>';
+  const sel = $('#touches tbody tr.sel');
+  if (sel) sel.scrollIntoView({block:'nearest'});
 }
 
 function renderProgress(p) {
@@ -164,27 +269,25 @@ function renderProgress(p) {
     `<div class="stat"><span>confirmed</span><b>${p.confirmed}</b></div>
      <div class="stat"><span>rejected</span><b>${p.rejected}</b></div>
      <div class="stat"><span>added by hand</span><b>${p.user_added}</b></div>
-     <div class="stat"><span>excluded segments</span><b>${p.unreliable_segments}</b></div>
+     <div class="stat"><span>excluded ranges</span><b>${p.unreliable_segments}</b></div>
      <div class="stat"><span>re-anchors pending</span><b>${p.pending_reanchors}</b></div>`;
 }
 
 function renderSegments(segs) {
   $('#segments').innerHTML = segs.length
-    ? segs.map(s => `<div class="stat"><span>${s.start_s.toFixed(1)}-${s.end_s.toFixed(1)}s</span>
+    ? segs.map(s => `<div class="stat"><span>${s.start_s.toFixed(1)}-${s.end_s.toFixed(1)}s excluded</span>
         <button data-act="delseg" data-id="${s.id}">remove</button></div>`).join('')
-    : '<div style="margin-top:6px">No segments excluded.</div>';
+    : '';
 }
 
 function renderMetrics(m) {
   const w = m.whole_recording, i = m.in_play;
-  const pct = Math.round(100 * i.in_play_fraction);
   $('#metrics').innerHTML = `
     <div class="stat"><span>confirmed touches</span><b>${m.confirmed_touches.length}</b></div>
-    <div class="stat"><span>in play</span><b>${pct}% of recording</b></div>
+    <div class="stat"><span>in play</span><b>${Math.round(100*i.in_play_fraction)}%</b></div>
     <div class="stat"><span>mean distance (in play)</span>
       <b>${i.mean_distance_m != null ? i.mean_distance_m.toFixed(2)+' m' : '-'}</b></div>
-    <div class="stat"><span>mean distance (whole)</span>
-      <b>${w.distance_m.mean.toFixed(2)} m</b></div>
+    <div class="stat"><span>mean distance (whole)</span><b>${w.distance_m.mean.toFixed(2)} m</b></div>
     <div class="stat"><span>F1 push / pull</span>
       <b>${i.fencer_1.push_m.toFixed(1)} / ${i.fencer_1.pull_m.toFixed(1)} m</b></div>
     <div class="stat"><span>F2 push / pull</span>
@@ -192,42 +295,84 @@ function renderMetrics(m) {
   $('#scopeNote').textContent = 'Scoping basis: ' + m.scoping_basis;
 }
 
+let busy = false;
+
+async function decide(id, state, advance = false) {
+  if (busy) return;                     // ignore keystrokes arriving mid-request
+  busy = true;
+  try {
+    await api(`/api/bouts/${enc(boutId)}/touches/${id}/decision`,
+              json('POST', {state}));
+    await load(true);
+    if (advance) nextPending();
+  } finally { busy = false; }
+}
+
+function nextPending() {
+  // the next proposal still awaiting a decision, searching forward then wrapping
+  const from = selIdx + 1;
+  let i = rows.findIndex((r, j) => j >= from && r.kind === 'proposed'
+                                             && r.state === 'pending');
+  if (i < 0) i = rows.findIndex(r => r.kind === 'proposed' && r.state === 'pending');
+  if (i >= 0) { selIdx = i; renderTable(); seek(rows[i].at); }
+}
+
 document.addEventListener('click', async e => {
+  const tr = e.target.closest('tbody tr[data-i]');
+  if (tr && !e.target.closest('button')) {
+    selIdx = +tr.dataset.i; renderTable(); seek(rows[selIdx].at); return;
+  }
   const b = e.target.closest('button[data-act]');
   if (!b) return;
-  const id = b.dataset.id, base = `/api/bouts/${encodeURIComponent(boutId)}`;
+  const id = b.dataset.id, base = `/api/bouts/${enc(boutId)}`;
   try {
-    if (b.dataset.act === 'confirm')
-      await api(`${base}/touches/${id}/decision`, json('POST', {state:'confirmed'}));
-    else if (b.dataset.act === 'reject')
-      await api(`${base}/touches/${id}/decision`, json('POST', {state:'rejected'}));
-    else if (b.dataset.act === 'del')
-      await api(`${base}/touches/${id}`, {method:'DELETE'});
-    else if (b.dataset.act === 'delseg')
-      await api(`${base}/segments/${id}`, {method:'DELETE'});
-    await refresh();
+    if (b.dataset.act === 'confirm') await decide(id, 'confirmed');
+    else if (b.dataset.act === 'reject') await decide(id, 'rejected');
+    else if (b.dataset.act === 'del') { await api(`${base}/touches/${id}`, {method:'DELETE'}); await load(true); }
+    else if (b.dataset.act === 'delseg') { await api(`${base}/segments/${id}`, {method:'DELETE'}); await load(); }
   } catch (err) { alert(err.message); }
 });
 
-$('#bout').addEventListener('change', async e => { boutId = e.target.value; await refresh(); });
+// Keyboard review. The effort claim depends on a decision costing one keystroke,
+// so the review loop is jump-watch-judge without touching the mouse.
+document.addEventListener('keydown', async e => {
+  // Guard the type as well as the selector: the event target is not always an
+  // Element (it can be the document itself), and calling matches() on one that
+  // is not would throw and silently kill every shortcut.
+  const t = e.target;
+  if (t && typeof t.matches === 'function' && t.matches('input,select,textarea')) return;
+  const cur = rows[selIdx];
+  const k = e.key.toLowerCase();
+  if (k === 'l' && selIdx < rows.length - 1) { selIdx++; renderTable(); seek(rows[selIdx].at); }
+  else if (k === 'j' && selIdx > 0) { selIdx--; renderTable(); seek(rows[selIdx].at); }
+  else if (k === 'k' && vid) { vid.paused ? vid.play() : vid.pause(); }
+  else if (k === 'c' && cur && cur.kind === 'proposed') { await decide(cur.id, 'confirmed', true); }
+  else if (k === 'x' && cur && cur.kind === 'proposed') { await decide(cur.id, 'rejected', true); }
+  else if (k === 'a' && vid) {
+    await api(`/api/bouts/${enc(boutId)}/touches`,
+              json('POST', {time_s: +vid.currentTime.toFixed(1), scorer:'unknown'}));
+    await load();
+  } else return;
+  e.preventDefault();
+});
+
+$('#bout').addEventListener('change', async e => { boutId = e.target.value; await load(); });
 
 $('#addForm').addEventListener('submit', async e => {
   e.preventDefault();
-  await api(`/api/bouts/${encodeURIComponent(boutId)}/touches`,
+  await api(`/api/bouts/${enc(boutId)}/touches`,
             json('POST', {time_s: parseFloat($('#addTime').value),
                           scorer: $('#addScorer').value}));
-  $('#addTime').value = '';
-  await refresh();
+  $('#addTime').value = ''; await load();
 });
 
 $('#segForm').addEventListener('submit', async e => {
   e.preventDefault();
   try {
-    await api(`/api/bouts/${encodeURIComponent(boutId)}/segments`,
+    await api(`/api/bouts/${enc(boutId)}/segments`,
               json('POST', {start_s: parseFloat($('#segStart').value),
                             end_s: parseFloat($('#segEnd').value)}));
-    $('#segStart').value = $('#segEnd').value = '';
-    await refresh();
+    $('#segStart').value = $('#segEnd').value = ''; await load();
   } catch (err) { alert(err.message); }
 });
 

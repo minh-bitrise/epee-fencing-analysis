@@ -24,6 +24,7 @@ Then open http://localhost:8000
 """
 
 import os
+import subprocess
 import sys
 
 from fastapi import FastAPI, HTTPException
@@ -102,6 +103,7 @@ def list_bouts():
             "bout_id": bout_id,
             "has_touches": bool(b.touches_csv),
             "has_summary": bool(b.summary_md),
+            "has_video": bool(b.video),
             "progress": store.review_progress(bout_id, proposed),
         })
     return {"bouts": out}
@@ -124,8 +126,15 @@ def get_touches(bout_id: str):
         p["state"] = st.get("state", "pending")
         p["scorer"] = st.get("scorer")
         p["corrected_time_s"] = st.get("time_s")
+    # the timeline needs a scale, and the metrics CSV is authoritative for it
+    import csv as _csv
+    with open(b.metrics_csv) as f:
+        rows = list(_csv.DictReader(f))
+    duration_s = float(rows[-1]["time_s"]) if rows else 0.0
     return {
         "bout_id": bout_id,
+        "duration_s": duration_s,
+        "has_video": bool(b.video),
         "proposed": proposed,
         "added": data["added_touches"],
         "unreliable_segments": data["unreliable_segments"],
@@ -190,6 +199,56 @@ def get_metrics(bout_id: str):
                           "none: no touches confirmed yet, so in-play equals the "
                           "whole recording"),
     }
+
+
+WEB_VIDEO_DIR = os.path.join(PROTOTYPE_DIR, "web_video")
+
+
+def _web_playable(src):
+    """
+    Return a browser-playable copy of an annotated render, transcoding once and
+    caching the result.
+
+    OpenCV's VideoWriter writes MPEG-4 Part 2 with the `mp4v` tag, which browsers
+    generally refuse to decode: the element loads, reports readyState 0, and
+    plays nothing. The pipeline is deliberately left alone rather than switched
+    to H.264 at write time, because the `avc1` fourcc is not available in every
+    OpenCV build and a pipeline that fails to write video on some machines would
+    be a worse problem than a transcode here. Transcoding is done once per bout
+    and cached, so the cost is paid on first view rather than on every request.
+    """
+    os.makedirs(WEB_VIDEO_DIR, exist_ok=True)
+    stem = os.path.basename(src).replace(".mp4", "")
+    parent = os.path.basename(os.path.dirname(src))
+    out = os.path.join(WEB_VIDEO_DIR, f"{parent}__{stem}.h264.mp4")
+    if os.path.exists(out) and os.path.getmtime(out) >= os.path.getmtime(src):
+        return out
+    cmd = ["ffmpeg", "-y", "-i", src,
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+           # faststart moves the index to the front so the browser can start
+           # playing and seeking before the whole file has arrived
+           "-movflags", "+faststart", "-an", out]
+    proc = subprocess.run(cmd, capture_output=True)
+    if proc.returncode != 0 or not os.path.exists(out):
+        raise HTTPException(500, "failed to transcode the annotated video")
+    return out
+
+
+@app.get("/api/bouts/{bout_id}/video")
+def get_video(bout_id: str):
+    """
+    Stream a browser-playable copy of the annotated render for this bout.
+
+    Served with range-request support so the player can seek, which is what makes
+    review practical: a user jumps to a proposed touch, watches two seconds, and
+    decides. Without seeking they would have to scrub linearly through three
+    minutes per decision, and the workflow's claim to save effort would not
+    survive that.
+    """
+    b = _get_bout(bout_id)
+    if not b.video:
+        raise HTTPException(404, "no annotated video for this bout")
+    return FileResponse(_web_playable(b.video), media_type="video/mp4")
 
 
 @app.get("/api/bouts/{bout_id}/summary")

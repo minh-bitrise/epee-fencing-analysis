@@ -73,11 +73,17 @@ def discover_bouts(results_dirs):
             metrics = os.path.join(d, name)
             touches = os.path.join(d, f"{base}_distance_touches.csv")
             summary = os.path.join(d, f"{base}_distance_summary.md")
+            # The annotated render is preferred over the source video: it carries
+            # the boxes, labels and distance readout, so a user adjudicating a
+            # proposed touch can see what the tracker saw at that moment rather
+            # than having to trust it.
+            video = os.path.join(d, f"{base}_annotated.mp4")
             bouts[bout_id] = Bout(
                 bout_id=bout_id,
                 metrics_csv=metrics,
                 touches_csv=touches if os.path.exists(touches) else "",
                 summary_md=summary if os.path.exists(summary) else "",
+                video=video if os.path.exists(video) else "",
             )
     return bouts
 

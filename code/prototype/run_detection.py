@@ -360,6 +360,25 @@ class CameraMotionEstimator:
     where they started, since play resets to the guard lines after every touch.
     Net displacement should therefore be near zero, and that physical constraint
     gives a correctness check requiring no ground-truth labels at all.
+
+    WHY IT IS OFF BY DEFAULT. That check says this helps three of the four
+    evaluation clips slightly and harms the fourth badly. A controlled comparison
+    isolated it as the cause: on the club clip the worst net displacement is 21.88 m
+    with everything off, 21.90 m with fixed scale and movement banking enabled but
+    stabilisation off, and 37.34 m with stabilisation on.
+
+    The reason is that the club camera is hand-held and FOLLOWS the action. When an
+    operator pans to keep the fencers in frame, camera motion becomes correlated
+    with fencer motion, so subtracting it subtracts the very displacement being
+    measured. Stabilisation is therefore valid only for a camera that is
+    essentially fixed and pans incidentally, which describes the three broadcast
+    and competition clips and not the club one.
+
+    This matters beyond a default. A following camera has no fixed relationship to
+    the piste, so no amount of frame-to-frame compensation recovers world
+    coordinates from it. Measuring displacement on such footage requires a
+    reference in the scene rather than in the camera, which is the argument for
+    calibrating against the piste itself.
     """
 
     # Lucas-Kanade needs enough features to make a median meaningful; below this
@@ -924,7 +943,7 @@ def save_plot(times, distances, methods, output_path):
 # --- main pipeline ----------------------------------------------------
 
 def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=None,
-        show_piste=False, stabilise_camera=True, fixed_scale_calibration=True):
+        show_piste=False, stabilise_camera=False, fixed_scale_calibration=True):
     os.makedirs(output_dir, exist_ok=True)
 
     base      = os.path.splitext(os.path.basename(video_path))[0]
@@ -1159,10 +1178,15 @@ def main():
                              "of a clip-wide fixed one. The per-frame scale tracks posture\n"
                              "rather than depth and biases movement totals; retained so the\n"
                              "before/after comparison stays reproducible.")
-    parser.add_argument("--no-stabilise", action="store_true",
-                        help="Disable camera-motion compensation. Push/pull then conflates\n"
-                             "fencer movement with camera panning; retained so the\n"
-                             "before/after comparison is reproducible.")
+    parser.add_argument("--stabilise", action="store_true",
+                        help="Enable camera-motion compensation. OFF by default: it is "
+                             "only valid for a camera that is essentially fixed and pans "
+                             "incidentally. On a hand-held camera that FOLLOWS the action, "
+                             "camera motion is correlated with fencer motion, so removing "
+                             "it removes the signal being measured. Measured on the club "
+                             "clip, enabling it made the worst net displacement worse, "
+                             "21.88 -> 37.34 m, while helping the three fixed-camera clips "
+                             "only slightly.")
     parser.add_argument("--show-piste", action="store_true",
                         help="Draw the piste polygon on the annotated video. "
                              "Diagnostic only; useful for checking that a "
@@ -1170,7 +1194,7 @@ def main():
     args = parser.parse_args()
     run(args.video, args.output, pose_stride=args.pose_stride,
         piste_config=args.piste_config, show_piste=args.show_piste,
-        stabilise_camera=not args.no_stabilise,
+        stabilise_camera=args.stabilise,
         fixed_scale_calibration=not args.no_fixed_scale)
 
 
