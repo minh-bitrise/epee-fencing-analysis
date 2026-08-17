@@ -113,9 +113,79 @@ def compute_stats(rows):
     }
 
 
+def add_in_play_scope(stats, rows, touch_path):
+    """
+    Enrich the payload with touch events and in-play-only metrics.
+
+    Without this the totals span the whole recording, including the walk back
+    to the guard line after every touch, which on clip 3 is 43 per cent of the
+    frames and inflates movement totals by a third. Adding both the scoped and
+    unscoped figures lets the model say which is which rather than having to
+    hedge every number.
+    """
+    from in_play import load_touch_times, scope_metrics, touch_provenance
+
+    touches = load_touch_times(touch_path)
+    if not touches:
+        return stats
+
+    scoped = scope_metrics(rows, touches)
+    ip = scoped["in_play"]
+    stats["touches"] = {
+        "count": scoped["touches"],
+        "times_s": [round(x, 1) for x in sorted(touches)],
+        "provenance": touch_provenance(touch_path),
+        "reset_excluded_s": scoped["reset_s"],
+    }
+
+    def per_fencer(push, pull):
+        """
+        Derived movement figures for one fencer, in-play only.
+
+        net_forward_m is included but flagged, because it is the metric most
+        corrupted by camera panning: over a whole bout a fencer returns to
+        roughly where they started, so a large net value indicates measurement
+        error rather than tactics. Supplying it unflagged previously led the
+        model to report an impossible +21.88 m as decisive aggression.
+        """
+        total = push + pull
+        return {
+            "push_m": round(push, 2),
+            "pull_m": round(pull, 2),
+            "push_share_pct": round(100.0 * push / total, 1) if total > 0 else None,
+            "net_forward_m": round(push - pull, 2),
+        }
+
+    f1 = per_fencer(ip["f1_push_m"], ip["f1_pull_m"])
+    f2 = per_fencer(ip["f2_push_m"], ip["f2_pull_m"])
+    stats["in_play_only"] = {
+        "share_of_recording_pct": round(100.0 * scoped["in_play_fraction"], 1),
+        "mean_distance_m": ip["mean_distance_m"],
+        "fencer_1": f1,
+        "fencer_2": f2,
+    }
+
+    # A piste is 14 m long and fencers reset between touches, so net forward
+    # displacement across a bout should be small. Anything large is the
+    # panning artefact, and the reader must be told rather than left to
+    # interpret it as behaviour.
+    worst_net = max(abs(f1["net_forward_m"]), abs(f2["net_forward_m"]))
+    if worst_net > 5.0:
+        stats["data_quality_warnings"] = [
+            f"net_forward_m is unreliable on this recording (largest magnitude "
+            f"{worst_net:.1f} m). Fencers reset between touches, so net "
+            f"displacement over a bout should be near zero; a large value "
+            f"indicates uncorrected camera motion inflating the movement "
+            f"totals. Do not interpret net_forward_m as aggression or "
+            f"territorial gain. push_share_pct is affected by the same cause "
+            f"and should be treated as indicative only."
+        ]
+    return stats
+
+
 # --- prompt -------------------------------------------------------------
 
-SYSTEM_PROMPT = (
+_PROMPT_HEAD = (
     "You are a fencing coach's assistant. You are given automatically "
     "extracted metrics from a single epee bout video. Write a tactical "
     "summary for the fencers and their coach.\n"
@@ -123,11 +193,43 @@ SYSTEM_PROMPT = (
     "Important honesty constraints - respect them strictly:\n"
     "- The data comes from a computer-vision prototype. Distances are "
     "estimates (normalised via fencer height), not precise measurements.\n"
+)
+
+# Used when no touch data was supplied.
+_PROMPT_NO_TOUCHES = (
     "- The metrics are measured over the WHOLE video, including breaks "
     "between touches and walk-backs, because the system does not yet know "
     "when touches happen. Do not treat totals as in-play-only values.\n"
     "- There is no touch/score data yet. Never invent touches, scores, "
     "actions, or events that are not in the data.\n"
+)
+
+# Used when touch events are available. The constraints have to change with
+# the payload: telling the model there is no touch data while supplying it
+# would be contradictory, and would waste the one signal that lets it
+# separate active fencing from resets.
+_PROMPT_WITH_TOUCHES = (
+    "- Touch timestamps ARE available and are listed in the payload. You may "
+    "refer to how many touches occurred and to their timing and spacing.\n"
+    "- Two sets of movement figures are given. Those under 'in_play_only' "
+    "exclude the reset after each touch and are the ones to reason from. The "
+    "top-level totals span the whole recording, including walk-backs, and "
+    "should only be mentioned if the difference between the two is itself "
+    "interesting.\n"
+    "- The touch list says WHEN touches happened, not who scored them. Never "
+    "attribute a touch to a fencer, state a score, or name a winner. Never "
+    "describe the action that produced a touch, since that is not in the "
+    "data.\n"
+    "- Check the touch list's 'provenance' field. 'human_confirmed' means a "
+    "person labelled these touches and the count is reliable. "
+    "'automatic_detector' means they were proposed by the system and the "
+    "count is approximate, which you must say. Do not guess which it is.\n"
+    "- If a 'data_quality_warnings' field is present, treat every warning in "
+    "it as binding and do not use the metrics it names as evidence for any "
+    "tactical claim. Mention the limitation in the caveats section.\n"
+)
+
+_PROMPT_TAIL = (
     "- If the data is too thin to support a claim, say so rather than "
     "speculating.\n"
     "\n"
@@ -143,6 +245,23 @@ SYSTEM_PROMPT = (
     "dashes or en dashes anywhere in the output. This matters because the "
     "summary is pasted into a report whose house style forbids them."
 )
+
+
+def build_system_prompt(has_touches=False):
+    """
+    Assemble the system prompt to match the payload actually supplied.
+
+    The constraints are not static: whether touch data exists changes what the
+    model may say and which figures it should reason from. Keeping one fixed
+    prompt would either forbid using data that is present or permit claims the
+    data cannot support.
+    """
+    middle = _PROMPT_WITH_TOUCHES if has_touches else _PROMPT_NO_TOUCHES
+    return _PROMPT_HEAD + middle + _PROMPT_TAIL
+
+
+# Retained for callers and tests that want the no-touch prompt by name.
+SYSTEM_PROMPT = build_system_prompt(has_touches=False)
 
 USER_TEMPLATE = (
     "Here are the extracted metrics for one epee bout (JSON):\n"
@@ -203,14 +322,20 @@ def call_llm(model, system_prompt, user_prompt):
 
 # --- main ---------------------------------------------------------------
 
-def generate(csv_path, model=DEFAULT_MODEL, force=False):
+def generate(csv_path, model=DEFAULT_MODEL, force=False, touches=None):
     base = os.path.splitext(csv_path)[0]
     out_md = f"{base}_summary.md"
     out_meta = f"{base}_summary.meta.json"
 
-    stats = compute_stats(load_rows(csv_path))
+    rows = load_rows(csv_path)
+    stats = compute_stats(rows)
+    if touches:
+        stats = add_in_play_scope(stats, rows, touches)
+    has_touches = "touches" in stats
+    system_prompt = build_system_prompt(has_touches=has_touches)
+
     user_prompt = build_prompt(stats)
-    key = cache_key(model, SYSTEM_PROMPT, user_prompt)
+    key = cache_key(model, system_prompt, user_prompt)
 
     # cache: skip the API call when data + model + prompts are unchanged
     if not force and os.path.exists(out_md) and os.path.exists(out_meta):
@@ -227,8 +352,9 @@ def generate(csv_path, model=DEFAULT_MODEL, force=False):
             "    export ANTHROPIC_API_KEY=sk-ant-..."
         )
 
-    print(f"Generating summary with {model}...")
-    summary = call_llm(model, SYSTEM_PROMPT, user_prompt)
+    scope = "in-play scoped" if has_touches else "whole recording"
+    print(f"Generating summary with {model} ({scope})...")
+    summary = call_llm(model, system_prompt, user_prompt)
 
     with open(out_md, "w") as f:
         f.write(summary.rstrip() + "\n")
@@ -244,8 +370,12 @@ def main():
     parser.add_argument("--csv", required=True, help="Path to a *_distance.csv produced by run_detection.py")
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Claude model ID (default {DEFAULT_MODEL})")
     parser.add_argument("--force", action="store_true", help="Regenerate even if the cached summary is current")
+    parser.add_argument("--touches", default=None,
+                        help="Touch times CSV (ground truth or detector output). Adds touch "
+                             "events and in-play-only metrics to the payload, and switches the "
+                             "prompt constraints accordingly.")
     args = parser.parse_args()
-    generate(args.csv, model=args.model, force=args.force)
+    generate(args.csv, model=args.model, force=args.force, touches=args.touches)
 
 
 if __name__ == "__main__":
