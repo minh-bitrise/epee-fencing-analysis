@@ -32,9 +32,14 @@ import statistics
 # The LLM to use. Claude Opus 4.8 is the current recommended default.
 DEFAULT_MODEL = "claude-opus-4-8"
 
-# Tactical distance zones in metres - mirror the values in run_detection.py.
-DIST_CLOSE_M = 1.0   # within touch range
-DIST_MEDIUM_M = 1.8  # engagement range
+# Tactical distance bands in metres, front foot to front foot - these mirror
+# the values in run_detection.py, where the derivation from weapon geometry
+# is documented. Briefly: reach from the front foot is about 1.2 m standing
+# and about 2.3 m through a lunge, so a lunge-scored touch lands at roughly
+# 2.0 to 2.6 m of front-foot separation.
+DIST_CLOSE_M         = 1.5   # infighting; a touch lands without a lunge
+DIST_LUNGE_M         = 2.6   # lunge distance; a touch can land with a lunge
+DIST_ADVANCE_LUNGE_M = 3.5   # needs a step plus a lunge to reach
 
 
 # --- data loading and statistics ---------------------------------------
@@ -68,8 +73,9 @@ def compute_stats(rows):
 
     # share of time spent in each tactical distance band
     close = sum(1 for d in distances if d <= DIST_CLOSE_M)
-    medium = sum(1 for d in distances if DIST_CLOSE_M < d <= DIST_MEDIUM_M)
-    far = len(distances) - close - medium
+    lunge = sum(1 for d in distances if DIST_CLOSE_M < d <= DIST_LUNGE_M)
+    adv   = sum(1 for d in distances if DIST_LUNGE_M < d <= DIST_ADVANCE_LUNGE_M)
+    out   = len(distances) - close - lunge - adv
 
     # cumulative push/pull totals are running sums, so the last row holds them
     last = rows[-1]
@@ -97,9 +103,10 @@ def compute_stats(rows):
             "std": round(statistics.pstdev(distances), 2),
         },
         "time_in_zone_pct": {
-            "close_under_1m": round(100.0 * close / len(distances), 1),
-            "engagement_1_to_1.8m": round(100.0 * medium / len(distances), 1),
-            "far_over_1.8m": round(100.0 * far / len(distances), 1),
+            "close_infighting_under_1.5m": round(100.0 * close / len(distances), 1),
+            "lunge_distance_1.5_to_2.6m": round(100.0 * lunge / len(distances), 1),
+            "advance_lunge_2.6_to_3.5m": round(100.0 * adv / len(distances), 1),
+            "out_of_distance_over_3.5m": round(100.0 * out / len(distances), 1),
         },
         "fencer_1": fencers["f1"],
         "fencer_2": fencers["f2"],
@@ -123,6 +130,14 @@ SYSTEM_PROMPT = (
     "actions, or events that are not in the data.\n"
     "- If the data is too thin to support a claim, say so rather than "
     "speculating.\n"
+    "\n"
+    "Reading the distance bands: distances are front foot to front foot, and "
+    "the bands follow the standard fencing taxonomy. 'Lunge distance' is the "
+    "band in which a touch can actually be scored with a lunge, so it is the "
+    "tactically live range, not a safe one. 'Close/infighting' is nearer than "
+    "that. 'Advance-lunge' requires a step before a lunge will reach, and "
+    "'out of distance' is beyond that. Do not describe lunge distance as "
+    "cautious or long range.\n"
     "\n"
     "Formatting constraint: write with short hyphens only. Do not use em "
     "dashes or en dashes anywhere in the output. This matters because the "

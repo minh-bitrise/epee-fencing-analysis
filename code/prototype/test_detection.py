@@ -23,6 +23,7 @@ from run_detection import (
     box_height_pixels,
     pixel_distance,
     normalise_distance,
+    distance_zone,
     distance_zone_colour,
     # pose helpers
     get_front_foot,
@@ -38,8 +39,12 @@ from run_detection import (
     smooth_distance,
     # constants
     COLOUR_CLOSE,
-    COLOUR_MEDIUM,
-    COLOUR_FAR,
+    COLOUR_LUNGE,
+    COLOUR_ADVANCE_LUNGE,
+    COLOUR_OUT,
+    DIST_CLOSE_M,
+    DIST_LUNGE_M,
+    DIST_ADVANCE_LUNGE_M,
     MAX_FRAME_MOVEMENT_M,
     PUSH_PULL_NOISE_FLOOR_M,
 )
@@ -116,23 +121,58 @@ class TestNormaliseDistance:
         assert math.isclose(normalise_distance(100, 100, real_height_m=2.0), 2.0)
 
 
+class TestDistanceZone:
+    """
+    Bands are front foot to front foot and follow the fencing taxonomy:
+    close/infighting, lunge distance (where a touch can actually land),
+    advance-lunge, and out of distance.
+    """
+
+    def test_none_distance(self):
+        assert distance_zone(None) is None
+
+    def test_close_band(self):
+        assert distance_zone(0.5) == "close"
+        assert distance_zone(DIST_CLOSE_M) == "close"          # boundary inclusive
+
+    def test_lunge_band(self):
+        assert distance_zone(DIST_CLOSE_M + 0.01) == "lunge"
+        assert distance_zone(2.2) == "lunge"
+        assert distance_zone(DIST_LUNGE_M) == "lunge"          # boundary inclusive
+
+    def test_advance_lunge_band(self):
+        assert distance_zone(DIST_LUNGE_M + 0.01) == "advance_lunge"
+        assert distance_zone(DIST_ADVANCE_LUNGE_M) == "advance_lunge"
+
+    def test_out_of_distance_band(self):
+        assert distance_zone(DIST_ADVANCE_LUNGE_M + 0.01) == "out"
+        assert distance_zone(10.0) == "out"
+
+    def test_a_typical_lunge_touch_is_in_the_lunge_band(self):
+        """
+        Regression guard for the bug this taxonomy replaced. A touch scored
+        with a lunge lands at roughly 2.0-2.6 m of front-foot separation; the
+        previous thresholds (1.0 / 1.8 m) binned all of those as "far", which
+        made the generated summaries report close-range fencing as absent.
+        """
+        for d in (2.0, 2.2, 2.4, 2.6):
+            assert distance_zone(d) == "lunge", f"{d} m should be a scoring distance"
+
+
 class TestDistanceZoneColour:
     def test_none_returns_neutral(self):
-        # exact value not critical, but it should be a 3-tuple (BGR)
         c = distance_zone_colour(None)
         assert isinstance(c, tuple) and len(c) == 3
 
-    def test_close_zone(self):
+    def test_each_band_has_its_colour(self):
         assert distance_zone_colour(0.5) == COLOUR_CLOSE
-        assert distance_zone_colour(1.0) == COLOUR_CLOSE  # boundary inclusive
+        assert distance_zone_colour(2.2) == COLOUR_LUNGE
+        assert distance_zone_colour(3.0) == COLOUR_ADVANCE_LUNGE
+        assert distance_zone_colour(5.0) == COLOUR_OUT
 
-    def test_medium_zone(self):
-        assert distance_zone_colour(1.5) == COLOUR_MEDIUM
-        assert distance_zone_colour(1.8) == COLOUR_MEDIUM  # boundary inclusive
-
-    def test_far_zone(self):
-        assert distance_zone_colour(2.5) == COLOUR_FAR
-        assert distance_zone_colour(10.0) == COLOUR_FAR
+    def test_colours_are_distinct(self):
+        cols = {COLOUR_CLOSE, COLOUR_LUNGE, COLOUR_ADVANCE_LUNGE, COLOUR_OUT}
+        assert len(cols) == 4
 
 
 # -------------------- pose helpers --------------------

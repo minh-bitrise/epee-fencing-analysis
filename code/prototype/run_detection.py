@@ -58,12 +58,29 @@ DEFAULT_POSE_STRIDE = 3
 # rolling-median window for the distance value shown on screen
 SMOOTH_WINDOW    = 5
 
-# tactical zones for the coloured distance overlay (metres)
-DIST_CLOSE_M     = 1.0    # within touch range
-DIST_MEDIUM_M    = 1.8    # engagement range
-COLOUR_CLOSE     = (0,   0,   255)    # red    (close, touch range)
-COLOUR_MEDIUM    = (0,   165, 255)    # orange (engagement range)
-COLOUR_FAR       = (0,   220, 100)    # green  (safe distance)
+# Tactical distance bands, in metres, measured front foot to front foot.
+#
+# These follow the standard fencing taxonomy (close / lunge / advance-lunge /
+# out of distance) and are derived from weapon geometry rather than chosen by
+# eye. An epee blade is 90 cm and arm extension adds roughly 60 cm from the
+# shoulder, so reach from the front foot is about 1.2 m standing and about
+# 2.3 m through a lunge, which advances the front foot a further 0.6 to 0.9 m.
+# Subtracting the offset between the defender's front foot and their torso
+# puts a lunge-scored touch at roughly 2.0 to 2.6 m of front-foot separation.
+#
+# NOTE: an earlier version used 1.0 m for "touch range" and 1.8 m for
+# "engagement range". Both were invented rather than derived and were far too
+# tight: they placed almost every real touch outside "touch range" entirely,
+# which made the generated summaries report that close-range fencing was
+# essentially absent when it was simply mis-binned. See TODO B1a.
+DIST_CLOSE_M         = 1.5   # infighting; a touch lands without a lunge
+DIST_LUNGE_M         = 2.6   # lunge distance; a touch can land with a lunge
+DIST_ADVANCE_LUNGE_M = 3.5   # needs a step plus a lunge to reach
+
+COLOUR_CLOSE         = (0,   0,   255)    # red     (infighting)
+COLOUR_LUNGE         = (0,   165, 255)    # orange  (touch possible)
+COLOUR_ADVANCE_LUNGE = (0,   255, 255)    # yellow  (needs a step first)
+COLOUR_OUT           = (0,   220, 100)    # green   (out of distance)
 
 # max plausible per-frame fencer motion in metres
 # (at 60fps, > 0.15 m/frame = > 9 m/s which exceeds the fastest lunges)
@@ -145,15 +162,31 @@ def normalise_distance(dist_px, ref_height_px, real_height_m=REAL_HEIGHT_M):
     return (dist_px / ref_height_px) * real_height_m
 
 
+def distance_zone(dist_m):
+    """
+    Name the tactical band a distance falls into, front foot to front foot.
+    Returns one of "close", "lunge", "advance_lunge", "out", or None.
+    """
+    if dist_m is None:
+        return None
+    if dist_m <= DIST_CLOSE_M:
+        return "close"
+    if dist_m <= DIST_LUNGE_M:
+        return "lunge"
+    if dist_m <= DIST_ADVANCE_LUNGE_M:
+        return "advance_lunge"
+    return "out"
+
+
 def distance_zone_colour(dist_m):
     """Pick an overlay colour based on the tactical range of the current distance."""
-    if dist_m is None:
-        return (200, 200, 200)
-    if dist_m <= DIST_CLOSE_M:
-        return COLOUR_CLOSE
-    if dist_m <= DIST_MEDIUM_M:
-        return COLOUR_MEDIUM
-    return COLOUR_FAR
+    return {
+        None:            (200, 200, 200),
+        "close":         COLOUR_CLOSE,
+        "lunge":         COLOUR_LUNGE,
+        "advance_lunge": COLOUR_ADVANCE_LUNGE,
+        "out":           COLOUR_OUT,
+    }[distance_zone(dist_m)]
 
 
 # --- pose --------------------------------------------------------------

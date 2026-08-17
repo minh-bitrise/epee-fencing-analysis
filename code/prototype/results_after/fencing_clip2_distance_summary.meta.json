@@ -1,5 +1,5 @@
 {
-  "cache_key": "c5a07ffbfd7949291aac70c17efa05cd82c8c581e48f040d6406a4ffa4ad2fb9",
+  "cache_key": "571dd33823053cffeb1d88b6450a7e03d98939bd50d488f6d62163a57e7430ef",
   "model": "claude-opus-4-8",
   "stats": {
     "duration_s": 180.0,
@@ -13,9 +13,10 @@
       "std": 1.21
     },
     "time_in_zone_pct": {
-      "close_under_1m": 3.2,
-      "engagement_1_to_1.8m": 1.9,
-      "far_over_1.8m": 94.9
+      "close_infighting_under_1.5m": 3.9,
+      "lunge_distance_1.5_to_2.6m": 18.7,
+      "advance_lunge_2.6_to_3.5m": 48.1,
+      "out_of_distance_over_3.5m": 29.3
     },
     "fencer_1": {
       "push_m": 38.22,

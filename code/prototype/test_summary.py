@@ -68,12 +68,29 @@ class TestComputeStats:
         assert math.isclose(stats["distance_m"]["mean"], 1.43, abs_tol=0.01)
 
     def test_zone_split(self):
-        # distances: 2.0 (far), 0.8 (close), 1.5 (engagement)
+        # distances present are 0.8 and 1.5 (both close/infighting, since the
+        # close band runs to 1.5 m inclusive) and 2.0 (lunge distance)
         stats = compute_stats(make_rows())
         zones = stats["time_in_zone_pct"]
-        assert math.isclose(zones["close_under_1m"], 33.3, abs_tol=0.1)
-        assert math.isclose(zones["engagement_1_to_1.8m"], 33.3, abs_tol=0.1)
-        assert math.isclose(zones["far_over_1.8m"], 33.3, abs_tol=0.1)
+        assert math.isclose(zones["close_infighting_under_1.5m"], 66.7, abs_tol=0.1)
+        assert math.isclose(zones["lunge_distance_1.5_to_2.6m"], 33.3, abs_tol=0.1)
+        assert zones["advance_lunge_2.6_to_3.5m"] == 0.0
+        assert zones["out_of_distance_over_3.5m"] == 0.0
+
+    def test_zone_split_spans_all_four_bands(self):
+        """One sample per band, so each band is exercised and sums to 100."""
+        def row(i, d):
+            return {"frame": str(i), "time_s": f"{i*0.5}", "distance_raw_m": str(d),
+                    "distance_smooth_m": str(d), "method": "pose",
+                    "f1_advance_m": "0.0", "f1_retreat_m": "0.0",
+                    "f2_advance_m": "0.0", "f2_retreat_m": "0.0"}
+        rows = [row(0, 1.0), row(1, 2.2), row(2, 3.0), row(3, 6.0)]
+        zones = compute_stats(rows)["time_in_zone_pct"]
+        assert math.isclose(zones["close_infighting_under_1.5m"], 25.0, abs_tol=0.1)
+        assert math.isclose(zones["lunge_distance_1.5_to_2.6m"], 25.0, abs_tol=0.1)
+        assert math.isclose(zones["advance_lunge_2.6_to_3.5m"], 25.0, abs_tol=0.1)
+        assert math.isclose(zones["out_of_distance_over_3.5m"], 25.0, abs_tol=0.1)
+        assert math.isclose(sum(zones.values()), 100.0, abs_tol=0.1)
 
     def test_push_pull_from_last_row(self):
         stats = compute_stats(make_rows())

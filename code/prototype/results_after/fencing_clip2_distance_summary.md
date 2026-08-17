@@ -1,17 +1,17 @@
 ## Bout summary
-This bout was played almost entirely at long range, with fencers spending roughly 95 percent of the tracked time beyond 1.8m apart and a mean estimated gap of about 3.34m. Close-quarters exchanges were rare, with only about 3.2 percent of time under 1m. Both fencers covered similar total ground, and their push and pull distances are close to balanced, suggesting a cautious, distance-managed encounter rather than sustained pressure from either side. Fencer 1 finished with a slightly positive net forward movement while Fencer 2 finished slightly negative, but both figures are small relative to the total distance each covered.
+This was a bout fought largely at longer range. The mean front-foot to front-foot distance was about 3.34m, and the pair spent most of their time in the advance-lunge band or beyond, with roughly 77 percent of the video at 2.6m or further. Genuine lunge distance accounted for under a fifth of the time, and true infighting was rare. Both fencers were busy movers, but neither committed to sustained ground gains. Fencer 1 pushed marginally more than they pulled for a small net forward figure, while Fencer 2 covered more total distance in both directions yet ended slightly net backward. Bear in mind these totals span the whole video, including breaks and walk-backs.
 
 ## Observed tendencies
-- Time was dominated by the far zone at 94.9 percent over 1.8m, indicating the fencers held distance for most of the video rather than staying in engagement range.
-- Engagement range of 1 to 1.8m accounted for only 1.9 percent of time, so genuine blade-threat distance appears to have been brief and infrequent.
-- Fencer 1 had a near-even push share of 51.1 percent with net forward movement of 1.64m, pointing to a marginal tendency to press without strong commitment.
-- Fencer 2 covered more total ground (47.57m push, 48.89m pull) but ended with negative net forward movement of -1.32m, suggesting slightly more give-ground activity.
-- The minimum estimated distance of 0.14m shows at least one very close moment occurred, even though such moments were a small share of the overall time.
+- The pair spent 48.1 percent of the time in the advance-lunge band (2.6 to 3.5m) and a further 29.3 percent out of distance, so most of the video was played at ranges where a step is needed before a lunge can land.
+- Only 18.7 percent of the time fell in lunge distance, the range where a touch can actually be scored with a lunge, suggesting few moments of live commitment.
+- Close infighting was minimal at 3.9 percent, and the minimum recorded distance of 0.14m points to at least one very brief close exchange rather than a pattern.
+- Fencer 1 shows a near-even push share of 51.1 percent with a small net forward figure of 1.64m, consistent with a fencer who edged the ground battle slightly.
+- Fencer 2 covered more total distance (47.57m push, 48.89m pull) but finished 1.32m net backward, which fits a more mobile, ground-giving pattern.
 
 ## Suggestions to explore
-- Consider reviewing the video around the moments where estimated distance dropped toward the minimum, to see how those close encounters developed and resolved.
-- Both fencers might explore why so little time was spent in the 1 to 1.8m band, and whether more deliberate entries into that range would create scoring chances.
-- The coach could look at whether Fencer 2's higher total movement reflects productive footwork or reactive retreating, since the numbers alone cannot distinguish the two.
+- Review the video for how often either fencer converted an advance into a genuine lunge-distance threat, since so much time sat just outside that band.
+- Look at the moments around the closest exchanges to see whether infighting was deliberate or accidental, and whether either fencer was comfortable there.
+- Consider whether Fencer 2's greater total movement is creating scoring chances or mainly managing distance, and whether Fencer 1's slight forward pressure is being used to set up actions.
 
 ## Data caveats
-These metrics come from a computer-vision prototype, so distances are height-normalised estimates rather than precise measurements. All totals cover the whole video, including breaks between touches and walk-backs, because the system cannot yet identify when touches occur. There is no touch or score data here, so nothing about points, hits, or specific actions can be inferred from these numbers alone.
+These figures come from a computer-vision prototype, so distances are height-normalised estimates rather than precise measurements. Every total covers the whole 180 seconds of video, including breaks between touches and walk-backs, because the system cannot yet tell when touches occur. There is no touch or score data here, so nothing above should be read as points won or specific actions landed. Pose-based tracking was used for only about 31 percent of frames, which is worth keeping in mind when weighing the distance estimates.
