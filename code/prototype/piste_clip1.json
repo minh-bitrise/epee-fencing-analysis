@@ -1,0 +1,9 @@
+{
+  "_comment": "Piste polygon for fencing_clip.mp4. Frame 1280x720. Top edge at y=470 sits below the officials-behind-desk band (their bbox bottoms fall around y=430-460 behind the tables). Bottom of frame is fully piste.",
+  "polygon": [
+    [0,    470],
+    [1280, 480],
+    [1280, 720],
+    [0,    720]
+  ]
+}

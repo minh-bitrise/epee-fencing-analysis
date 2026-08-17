@@ -7,7 +7,10 @@ Run with:
     python3 -m pytest test_detection.py -v
 """
 
+import json
 import math
+import os
+import tempfile
 from collections import deque
 
 import numpy as np
@@ -30,6 +33,7 @@ from run_detection import (
     LM_RIGHT_HIP,
     # trackers and smoothing
     FencerTracker,
+    PisteRegion,
     PushPullTracker,
     smooth_distance,
     # constants
@@ -468,3 +472,324 @@ class TestSmoothDistance:
         result = smooth_distance(buf, 99.0, window=5)
         # median is much closer to 2 than the mean would be (~21.8)
         assert 1.5 < result < 2.5
+
+
+# -------------------- PisteRegion --------------------
+
+class TestPisteRegionContains:
+    """Point-in-polygon acceptance for the piste filter."""
+
+    def _rect(self):
+        # 100..500 x 200..600
+        return PisteRegion([[100, 200], [500, 200], [500, 600], [100, 600]])
+
+    def test_inside_point_accepted(self):
+        assert self._rect().contains((300, 400)) is True
+
+    def test_outside_point_rejected(self):
+        # far to the right of the polygon
+        assert self._rect().contains((900, 400)) is False
+
+    def test_above_polygon_rejected(self):
+        # above the top edge
+        assert self._rect().contains((300, 100)) is False
+
+    def test_on_edge_is_inside(self):
+        # cv2.pointPolygonTest returns 0 for on-edge; contains() treats that as inside
+        assert self._rect().contains((100, 400)) is True
+
+    def test_at_vertex_is_inside(self):
+        assert self._rect().contains((500, 600)) is True
+
+    def test_polygon_with_fewer_than_three_vertices_raises(self):
+        with pytest.raises(ValueError):
+            PisteRegion([[0, 0], [10, 10]])
+
+    def test_none_polygon_raises(self):
+        with pytest.raises(ValueError):
+            PisteRegion(None)
+
+
+class TestPisteRegionFromJsonFile:
+    def test_none_path_returns_none(self):
+        # calling from_json_file(None) is the "no piste config" path,
+        # not an error
+        assert PisteRegion.from_json_file(None) is None
+
+    def test_loads_polygon_from_valid_file(self):
+        polygon = [[10, 10], [200, 10], [200, 200], [10, 200]]
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False,
+        ) as f:
+            json.dump({"polygon": polygon}, f)
+            path = f.name
+        try:
+            region = PisteRegion.from_json_file(path)
+            assert region.contains((100, 100)) is True
+            assert region.contains((500, 500)) is False
+        finally:
+            os.unlink(path)
+
+
+class TestPisteRegionDraw:
+    """The diagnostic overlay must mark the frame without altering its shape."""
+
+    def test_draw_modifies_frame_in_place(self):
+        region = PisteRegion([[10, 10], [200, 10], [200, 200], [10, 200]])
+        frame = np.zeros((300, 300, 3), dtype=np.uint8)
+        out = region.draw(frame)
+        assert out.shape == (300, 300, 3)
+        assert out.any(), "draw() should have written some non-zero pixels"
+
+    def test_draw_leaves_polygon_interior_mostly_untouched(self):
+        # the outline is drawn, not a fill, so the centre should stay black
+        region = PisteRegion([[10, 10], [200, 10], [200, 200], [10, 200]])
+        frame = np.zeros((300, 300, 3), dtype=np.uint8)
+        region.draw(frame)
+        assert frame[105, 105].sum() == 0
+
+
+class TestPisteRegionFilterDetections:
+    """
+    filter_detections() must drop detections whose feet fall outside the
+    piste, and it must preserve the parallel-array shape (ids, xyxys,
+    confs) so downstream code does not have to change.
+    """
+
+    def _rect(self):
+        return PisteRegion([[100, 200], [500, 200], [500, 600], [100, 600]])
+
+    def test_empty_input_returns_empty(self):
+        region = self._rect()
+        ids, xyxys, confs = region.filter_detections(
+            np.array([], dtype=int), np.empty((0, 4)), np.array([]),
+        )
+        assert len(ids) == 0
+        assert xyxys.shape == (0, 4)
+        assert len(confs) == 0
+
+    def test_keeps_inside_detection(self):
+        region = self._rect()
+        # bbox with feet at (200, 500) - inside the rectangle
+        boxes = np.array([[150, 300, 250, 500]])
+        ids, xyxys, confs = region.filter_detections(
+            np.array([7]), boxes, np.array([0.9]),
+        )
+        assert len(ids) == 1
+        assert ids[0] == 7
+
+    def test_drops_outside_detection(self):
+        region = self._rect()
+        # bbox with feet at (800, 500) - outside the rectangle
+        boxes = np.array([[750, 300, 850, 500]])
+        ids, xyxys, confs = region.filter_detections(
+            np.array([7]), boxes, np.array([0.9]),
+        )
+        assert len(ids) == 0
+        assert xyxys.shape == (0, 4)
+        assert len(confs) == 0
+
+    def test_mixed_detections_keeps_only_inside(self):
+        region = self._rect()
+        # first detection is inside, second is way outside (a referee)
+        boxes = np.array([
+            [150, 300, 250, 500],   # feet at (200, 500), inside
+            [800, 300, 900, 500],   # feet at (850, 500), outside
+        ])
+        ids, xyxys, confs = region.filter_detections(
+            np.array([5, 9]), boxes, np.array([0.9, 0.8]),
+        )
+        assert list(ids) == [5]
+        assert confs[0] == 0.9
+
+
+# -------------------- Motion model (predicted_pos) --------------------
+
+class TestFencerTrackerPredictedPos:
+    """
+    The tracker keeps a two-point position history per slot so that the
+    matcher can gate against where each slot is HEADED, not just where
+    it last was - the fix for the "bystander steps into the old position
+    while the fencer keeps moving" case.
+    """
+
+    def test_predicted_pos_none_when_slot_uninitialised(self):
+        t = FencerTracker()
+        assert t.predicted_pos(0) is None
+        assert t.predicted_pos(1) is None
+
+    def test_predicted_pos_equals_last_after_first_commit(self):
+        # only one commit -> no velocity information yet; predicted == last
+        t = FencerTracker()
+        t.select(
+            np.array([5, 7]),
+            np.array([[50, 100, 150, 400], [400, 100, 500, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        assert t.predicted_pos(0) == t.last_pos[0]
+        assert t.predicted_pos(1) == t.last_pos[1]
+
+    def test_predicted_pos_extrapolates_velocity(self):
+        # two commits with the left fencer drifting +20px per frame in x
+        t = FencerTracker()
+        t.select(
+            np.array([5, 7]),
+            np.array([[50, 100, 150, 400], [400, 100, 500, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        t.select(
+            np.array([5, 7]),
+            np.array([[70, 100, 170, 400], [420, 100, 520, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        # slot 0: last centre = (120, 250), prev centre = (100, 250);
+        # predicted = (120 + 20, 250) = (140, 250)
+        pred = t.predicted_pos(0)
+        assert math.isclose(pred[0], 140.0)
+        assert math.isclose(pred[1], 250.0)
+
+    def test_bystander_stepping_into_old_position_is_rejected(self):
+        """
+        The whole point of the motion model: a bystander walks INTO where
+        the fencer used to be, while the fencer keeps moving forward.
+        Under last-known-position gating the bystander would look like a
+        perfect match; under predicted-position gating it should not.
+        """
+        t = FencerTracker()
+        # frame 1: fencers at x=100 and x=1000
+        t.select(
+            np.array([5, 7]),
+            np.array([[ 50, 100, 150, 400],     # slot 0 centre = (100, 250)
+                      [950, 100, 1050, 400]]),  # slot 1 centre = (1000, 250)
+            np.array([0.9, 0.8]),
+        )
+        # frame 2: slot 0 fencer has ADVANCED to x=400; slot 1 unchanged
+        t.select(
+            np.array([5, 7]),
+            np.array([[350, 100, 450, 400],     # slot 0 centre = (400, 250)
+                      [950, 100, 1050, 400]]),  # slot 1 centre = (1000, 250)
+            np.array([0.9, 0.8]),
+        )
+        # frame 3: two detections. The FENCER is at x=700 (kept moving),
+        # a BYSTANDER (identical size) is at x=100 - exactly where slot 0
+        # started. Old code compared to last_pos=(400,250) and would have
+        # picked the bystander (dist 300) over the real fencer (dist 300),
+        # tied by original assignment; and the bystander was well inside
+        # 3.5 * box height. The motion-model gate predicts slot 0 should
+        # now be near x=700 and rejects the bystander at x=100.
+        slots = t.select(
+            np.array([5, 9]),
+            np.array([[650, 100,  750, 400],   # real fencer 1 at (700, 250)
+                      [ 50, 100,  150, 400]]),  # bystander at (100, 250)
+            np.array([0.9, 0.85]),
+        )
+        # slot 0 must match the real fencer, not the bystander
+        assert slots[0] is not None
+        assert slots[0][1] == 5   # the real fencer's id
+        assert 650 <= slots[0][0][0] <= 750
+
+
+class TestMotionModelGapHandling:
+    """
+    Regression tests for a bug found on real footage: velocity was being
+    differenced between two commits that were many frames apart, which
+    measures total displacement over the gap rather than per-frame
+    velocity. Extrapolating from it threw the predicted position far
+    outside the frame, after which every real detection failed the gate
+    and the slot could never commit again - and because nothing was
+    committed, the bad history was never replaced. Coverage on the second
+    test clip collapsed from 87% to 13% as a result.
+    """
+
+    def _init_both_slots(self, t):
+        t.select(
+            np.array([5, 7]),
+            np.array([[ 50, 100, 150, 400],
+                      [900, 100, 1000, 400]]),
+            np.array([0.9, 0.8]),
+        )
+
+    def test_velocity_not_extrapolated_across_a_long_gap(self):
+        t = FencerTracker()
+        self._init_both_slots(t)
+        # slot 1 goes unmatched for many frames: only a slot-0 detection
+        # arrives, far from slot 1, so slot 1 is never committed.
+        for _ in range(10):
+            t.select(
+                np.array([5]),
+                np.array([[50, 100, 150, 400]]),
+                np.array([0.9]),
+            )
+        # slot 1 now commits again, but far from where it last was
+        t.select(
+            np.array([5, 7]),
+            np.array([[ 50, 100, 150, 400],
+                      [300, 100, 400, 400]]),   # centre now (350, 250)
+            np.array([0.9, 0.8]),
+        )
+        # gap between slot 1's two commits is > VELOCITY_MAX_GAP_FRAMES,
+        # so the prediction must NOT extrapolate; it must equal last_pos.
+        assert t.predicted_pos(1) == t.last_pos[1]
+
+    def test_prediction_stays_on_screen_after_a_gap(self):
+        """The concrete symptom: predicted position must not go negative."""
+        t = FencerTracker()
+        self._init_both_slots(t)
+        for _ in range(10):
+            t.select(
+                np.array([5]),
+                np.array([[1100, 100, 1200, 400]]),
+                np.array([0.9]),
+            )
+        t.select(
+            np.array([5, 7]),
+            np.array([[1100, 100, 1200, 400],
+                      [ 400, 100,  500, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        for slot in (0, 1):
+            pred = t.predicted_pos(slot)
+            if pred is not None:
+                assert pred[0] >= 0, f"slot {slot} predicted x went negative"
+                assert pred[1] >= 0, f"slot {slot} predicted y went negative"
+
+    def test_slot_recovers_after_long_dropout(self):
+        """
+        A slot that has gone unmatched for longer than STALE_RESET_FRAMES
+        must discard its history so it can re-acquire, rather than
+        rejecting every candidate forever.
+        """
+        t = FencerTracker()
+        self._init_both_slots(t)
+        # slot 1 receives no detections for well over the stale threshold
+        for _ in range(FencerTracker.STALE_RESET_FRAMES + 5):
+            t.select(
+                np.array([5]),
+                np.array([[50, 100, 150, 400]]),
+                np.array([0.9]),
+            )
+        assert t.last_pos[1] is None, "stale slot history should be cleared"
+
+        # a fencer reappears somewhere new; the freed slot must accept it
+        slots = t.select(
+            np.array([5, 7]),
+            np.array([[ 50, 100, 150, 400],
+                      [600, 100, 700, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        assert slots[1] is not None, "slot should have re-acquired after dropout"
+
+    def test_slot_history_survives_a_short_dropout(self):
+        """
+        The stale reset must not fire on brief dropouts - those are the
+        cases spatial continuity is supposed to ride out.
+        """
+        t = FencerTracker()
+        self._init_both_slots(t)
+        for _ in range(3):
+            t.select(
+                np.array([5]),
+                np.array([[50, 100, 150, 400]]),
+                np.array([0.9]),
+            )
+        assert t.last_pos[1] is not None, "short dropout should keep history"

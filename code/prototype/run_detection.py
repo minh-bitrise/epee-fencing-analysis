@@ -28,6 +28,7 @@ Usage:
 
 import argparse
 import csv
+import json
 import math
 import os
 from collections import deque
@@ -117,7 +118,7 @@ def get_box_centre(box):
 
 
 def get_box_bottom_centre(box):
-    """Return (x, y) of the bottom-centre of a bounding box — a feet-position proxy."""
+    """Return (x, y) of the bottom-centre of a bounding box - a feet-position proxy."""
     x1, _, x2, y2 = box
     return ((x1 + x2) / 2, y2)
 
@@ -227,6 +228,78 @@ def get_front_foot(landmarks, fencer_ref_x, opponent_ref_x):
         return left_ankle if left_ankle[0] < right_ankle[0] else right_ankle
 
 
+# --- piste region -----------------------------------------------------
+
+class PisteRegion:
+    """
+    A polygon in pixel coordinates that marks the fencing strip (piste)
+    in the frame. A detection is accepted only if its feet-proxy point
+    (bounding-box bottom-centre) lies inside the polygon.
+
+    This filter is applied BEFORE the FencerTracker matching stage, so
+    it can also reject bystanders on the very first frame - the case
+    where the tracker's motion / size gates have no history to work
+    with and would otherwise let anything through.
+
+    Piste polygons are loaded from a small JSON file so they can be
+    hand-authored once per clip:
+
+        { "polygon": [[x1,y1], [x2,y2], [x3,y3], [x4,y4]] }
+
+    Any convex or concave polygon is supported. cv2.pointPolygonTest
+    is used for the point-in-polygon check because OpenCV is already a
+    dependency; there is no need to reimplement it.
+    """
+
+    def __init__(self, polygon):
+        if polygon is None or len(polygon) < 3:
+            raise ValueError("Piste polygon must have at least 3 vertices")
+        self.polygon = np.array(polygon, dtype=np.float32).reshape(-1, 1, 2)
+
+    @classmethod
+    def from_json_file(cls, path):
+        """Load a PisteRegion from a JSON file. Returns None if path is None."""
+        if path is None:
+            return None
+        with open(path) as f:
+            data = json.load(f)
+        return cls(data["polygon"])
+
+    def contains(self, point):
+        """Return True if point (x, y) is inside (or on) the polygon."""
+        # cv2.pointPolygonTest returns +1 inside, 0 on the edge, -1 outside
+        result = cv2.pointPolygonTest(self.polygon, (float(point[0]), float(point[1])), False)
+        return result >= 0
+
+    def draw(self, frame, colour=(255, 200, 0), thickness=2):
+        """
+        Outline the piste region on a frame. Purely diagnostic: the filter
+        is otherwise invisible in the output, so without this the only
+        evidence it ran is the absence of boxes on bystanders.
+        """
+        pts = self.polygon.astype(np.int32)
+        cv2.polylines(frame, [pts], isClosed=True, color=colour, thickness=thickness)
+        label_pt = pts.reshape(-1, 2).min(axis=0)
+        cv2.putText(frame, "piste region", (int(label_pt[0]) + 6, int(label_pt[1]) + 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, colour, 2)
+        return frame
+
+    def filter_detections(self, ids, xyxys, confs):
+        """
+        Keep only detections whose bounding-box bottom-centre falls inside
+        the piste polygon. Returns filtered (ids, xyxys, confs) arrays.
+        """
+        if len(ids) == 0:
+            return ids, xyxys, confs
+        keep = [self.contains(get_box_bottom_centre(b)) for b in xyxys]
+        keep_idx = np.array([i for i, k in enumerate(keep) if k], dtype=int)
+        if len(keep_idx) == 0:
+            return (np.array([], dtype=int),
+                    np.empty((0, 4)),
+                    np.array([]))
+        return ids[keep_idx], xyxys[keep_idx], confs[keep_idx]
+
+
 # --- fencer identity --------------------------------------------------
 
 class FencerTracker:
@@ -244,10 +317,10 @@ class FencerTracker:
     Each candidate assignment must additionally pass two gates,
     designed to keep background bystanders out of the fencer slots:
 
-      * spatial gate — the candidate centre must be within
+      * spatial gate - the candidate centre must be within
         GATE_DISTANCE_RATIO box-heights of the slot's last known
         centre (rejects detections that have jumped across the frame).
-      * size gate — the candidate box height must be within
+      * size gate - the candidate box height must be within
         [MIN_SIZE_RATIO, MAX_SIZE_RATIO] of the slot's last accepted
         height (rejects much smaller background people further from
         the camera).
@@ -259,13 +332,63 @@ class FencerTracker:
     is None if no detection was matched to it in this frame.
     """
 
-    GATE_DISTANCE_RATIO = 3.5   # max jump from last position, in box-heights
+    GATE_DISTANCE_RATIO = 3.5   # max jump from predicted position, in box-heights
     MIN_SIZE_RATIO      = 0.4   # candidate height must be >= this * last height
     MAX_SIZE_RATIO      = 2.2   # candidate height must be <= this * last height
 
+    # Velocity is only extrapolated from two commits this close together.
+    # Differencing two positions recorded many frames apart does not measure
+    # velocity - it measures the total displacement over the gap - and
+    # extrapolating from it throws the prediction far outside the frame.
+    VELOCITY_MAX_GAP_FRAMES = 3
+
+    # After this many consecutive frames with no match, a slot's history is
+    # discarded so the slot can re-acquire a fencer. Without this, a slot
+    # that stops matching can never recover: its stale history keeps
+    # rejecting every candidate, and because nothing is committed the
+    # history never updates.
+    STALE_RESET_FRAMES = 30
+
     def __init__(self):
-        self.last_pos = [None, None]   # last (x, y) centre per slot
-        self.last_h   = [None, None]   # last accepted box height per slot
+        self.last_pos  = [None, None]   # last (x, y) centre per slot
+        self.prev_pos  = [None, None]   # centre one commit before last_pos
+        self.last_h    = [None, None]   # last accepted box height per slot
+        self.last_seen = [None, None]   # frame number of the last commit
+        self.prev_seen = [None, None]   # frame number of the commit before that
+        self.frame_no  = 0
+
+    def predicted_pos(self, slot_idx):
+        """
+        Constant-velocity prediction of where slot_idx should be this frame.
+
+        Velocity is estimated from the last two committed centres, but only
+        when those commits were close enough together in time to represent
+        an actual per-frame velocity. Otherwise the last known position is
+        returned unextrapolated. Returns None if the slot has no history.
+        """
+        last = self.last_pos[slot_idx]
+        if last is None:
+            return None
+        prev = self.prev_pos[slot_idx]
+        if prev is None:
+            return last
+        gap = self.last_seen[slot_idx] - self.prev_seen[slot_idx]
+        if gap > self.VELOCITY_MAX_GAP_FRAMES:
+            return last
+        return (last[0] + (last[0] - prev[0]),
+                last[1] + (last[1] - prev[1]))
+
+    def _expire_stale_slots(self):
+        """Discard the history of any slot that has gone unmatched too long."""
+        for slot in (0, 1):
+            if self.last_seen[slot] is None:
+                continue
+            if self.frame_no - self.last_seen[slot] > self.STALE_RESET_FRAMES:
+                self.last_pos[slot]  = None
+                self.prev_pos[slot]  = None
+                self.last_h[slot]    = None
+                self.last_seen[slot] = None
+                self.prev_seen[slot] = None
 
     def _passes_gate(self, slot_idx, new_centre, new_height):
         """Return True if a candidate is consistent with the slot's history."""
@@ -274,7 +397,12 @@ class FencerTracker:
         ref_h = self.last_h[slot_idx]
         if ref_h <= 0 or new_height <= 0:
             return False
-        if pixel_distance(new_centre, self.last_pos[slot_idx]) > self.GATE_DISTANCE_RATIO * ref_h:
+        # gate distance is measured against the predicted position rather
+        # than the last-known one - this catches the "bystander stepping
+        # into the old position while the fencer has moved on" case, which
+        # last-known-position gating cannot see.
+        anchor = self.predicted_pos(slot_idx)
+        if pixel_distance(new_centre, anchor) > self.GATE_DISTANCE_RATIO * ref_h:
             return False
         ratio = new_height / ref_h
         if ratio < self.MIN_SIZE_RATIO or ratio > self.MAX_SIZE_RATIO:
@@ -284,10 +412,20 @@ class FencerTracker:
     def _commit(self, result, slot, box, tid):
         """Record a successful match into the slot and update history."""
         result[slot] = (box, tid)
-        self.last_pos[slot] = get_box_centre(box)
-        self.last_h[slot]   = box_height_pixels(box)
+        # shift last -> prev before overwriting, so predicted_pos() can
+        # use a two-point history to estimate velocity next frame. The
+        # frame numbers are shifted alongside the positions so the gap
+        # between the two samples is known.
+        self.prev_pos[slot]  = self.last_pos[slot]
+        self.prev_seen[slot] = self.last_seen[slot]
+        self.last_pos[slot]  = get_box_centre(box)
+        self.last_seen[slot] = self.frame_no
+        self.last_h[slot]    = box_height_pixels(box)
 
     def select(self, ids, xyxys, confs, max_fencers=MAX_FENCERS):
+        self.frame_no += 1
+        self._expire_stale_slots()
+
         result = [None, None]
         if len(ids) == 0:
             return result
@@ -299,7 +437,7 @@ class FencerTracker:
         centres    = [get_box_centre(b)     for b in boxes]
         heights    = [box_height_pixels(b)  for b in boxes]
 
-        # case 1: not initialised yet — no gates, just establish slots
+        # case 1: not initialised yet - no gates, just establish slots
         if self.last_pos[0] is None and self.last_pos[1] is None:
             if len(boxes) >= 2:
                 if centres[0][0] <= centres[1][0]:
@@ -312,11 +450,19 @@ class FencerTracker:
                 self._commit(result, 0, boxes[0], chosen_ids[0])
             return result
 
-        # case 2: one detection — assign to the closer slot, then gate
+        # anchors used for matching costs. The predicted position (last
+        # position projected forward by the slot's velocity) is preferred
+        # over the raw last-known position - it makes the matcher choose
+        # the detection consistent with where each fencer WAS GOING,
+        # which is exactly what disambiguates close-range crossings.
+        anchor0 = self.predicted_pos(0) or self.last_pos[0]
+        anchor1 = self.predicted_pos(1) or self.last_pos[1]
+
+        # case 2: one detection - assign to the closer slot, then gate
         if len(boxes) == 1:
             c, hgt = centres[0], heights[0]
-            d0 = pixel_distance(c, self.last_pos[0]) if self.last_pos[0] else float("inf")
-            d1 = pixel_distance(c, self.last_pos[1]) if self.last_pos[1] else float("inf")
+            d0 = pixel_distance(c, anchor0) if anchor0 else float("inf")
+            d1 = pixel_distance(c, anchor1) if anchor1 else float("inf")
             slot = 0 if d0 <= d1 else 1
             if self._passes_gate(slot, c, hgt):
                 self._commit(result, slot, boxes[0], chosen_ids[0])
@@ -325,22 +471,23 @@ class FencerTracker:
         # case 3: two detections, both slots have history
         # pick the cheaper assignment, then gate each match independently
         if self.last_pos[0] is not None and self.last_pos[1] is not None:
-            cost_straight = (pixel_distance(centres[0], self.last_pos[0]) +
-                             pixel_distance(centres[1], self.last_pos[1]))
-            cost_swapped  = (pixel_distance(centres[0], self.last_pos[1]) +
-                             pixel_distance(centres[1], self.last_pos[0]))
+            cost_straight = (pixel_distance(centres[0], anchor0) +
+                             pixel_distance(centres[1], anchor1))
+            cost_swapped  = (pixel_distance(centres[0], anchor1) +
+                             pixel_distance(centres[1], anchor0))
             pairs = [(0, 0), (1, 1)] if cost_straight <= cost_swapped else [(0, 1), (1, 0)]
             for det_idx, slot_idx in pairs:
                 if self._passes_gate(slot_idx, centres[det_idx], heights[det_idx]):
                     self._commit(result, slot_idx, boxes[det_idx], chosen_ids[det_idx])
             return result
 
-        # case 4: only one slot has history — assign closer detection there
+        # case 4: only one slot has history - assign closer detection there
         # (gated), and the other to the empty slot (no gate possible).
         known   = 0 if self.last_pos[0] is not None else 1
         unknown = 1 - known
-        d0 = pixel_distance(centres[0], self.last_pos[known])
-        d1 = pixel_distance(centres[1], self.last_pos[known])
+        known_anchor = self.predicted_pos(known) or self.last_pos[known]
+        d0 = pixel_distance(centres[0], known_anchor)
+        d1 = pixel_distance(centres[1], known_anchor)
         best_for_known, other = (0, 1) if d0 <= d1 else (1, 0)
         if self._passes_gate(known, centres[best_for_known], heights[best_for_known]):
             self._commit(result, known, boxes[best_for_known], chosen_ids[best_for_known])
@@ -528,13 +675,18 @@ def save_plot(times, distances, methods, output_path):
 
 # --- main pipeline ----------------------------------------------------
 
-def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE):
+def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=None,
+        show_piste=False):
     os.makedirs(output_dir, exist_ok=True)
 
     base      = os.path.splitext(os.path.basename(video_path))[0]
     out_video = os.path.join(output_dir, f"{base}_annotated.mp4")
     out_csv   = os.path.join(output_dir, f"{base}_distance.csv")
     out_plot  = os.path.join(output_dir, f"{base}_distance_plot.png")
+
+    piste = PisteRegion.from_json_file(piste_config)
+    if piste is not None:
+        print(f"Piste region loaded from: {piste_config}")
 
     print(f"Loading model: {MODEL_NAME}")
     model = YOLO(MODEL_NAME)
@@ -585,6 +737,11 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE):
             xyxys = results[0].boxes.xyxy.cpu().numpy()
             confs = results[0].boxes.conf.cpu().numpy()
 
+        # drop detections outside the piste region (referees, adjacent
+        # pistes, audience). No-op when no piste config was provided.
+        if piste is not None:
+            ids, xyxys, confs = piste.filter_detections(ids, xyxys, confs)
+
         # map detections to stable Fencer 1 / Fencer 2 slots
         slots = fencer_tracker.select(ids, xyxys, confs)
 
@@ -627,7 +784,7 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE):
                 dist_method = "pose"
                 pose_success += 1
             else:
-                # fallback: bbox bottom-centres (feet proxy) — more accurate than centre
+                # fallback: bbox bottom-centres (feet proxy) - more accurate than centre
                 p0 = get_box_bottom_centre(box0)
                 p1 = get_box_bottom_centre(box1)
                 dist_px     = pixel_distance(p0, p1)
@@ -642,6 +799,10 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE):
         dist_display_m = None
         if dist_raw_m is not None:
             dist_display_m = smooth_distance(dist_buffer, dist_raw_m)
+
+        # outline the piste before the boxes, so boxes draw on top of it
+        if piste is not None and show_piste:
+            piste.draw(frame)
 
         frame = draw_overlay(frame, slots, pose_data,
                              dist_display_m, dist_raw_m, dist_method,
@@ -711,8 +872,17 @@ def main():
     parser.add_argument("--pose-stride", type=int, default=DEFAULT_POSE_STRIDE,
                         help=f"Run pose estimation every Nth frame (default {DEFAULT_POSE_STRIDE}, "
                              f"set to 1 for every frame)")
+    parser.add_argument("--piste-config", default=None,
+                        help="Path to a JSON file describing the piste polygon "
+                             "(pixel-space vertices). Detections outside the "
+                             "polygon are rejected before tracking.")
+    parser.add_argument("--show-piste", action="store_true",
+                        help="Draw the piste polygon on the annotated video. "
+                             "Diagnostic only; useful for checking that a "
+                             "polygon actually matches the strip.")
     args = parser.parse_args()
-    run(args.video, args.output, pose_stride=args.pose_stride)
+    run(args.video, args.output, pose_stride=args.pose_stride,
+        piste_config=args.piste_config, show_piste=args.show_piste)
 
 
 if __name__ == "__main__":

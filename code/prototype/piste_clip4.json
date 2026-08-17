@@ -1,0 +1,9 @@
+{
+  "_comment": "Piste polygon for fencing_clip4.mp4 (640x360, 360p - the only resolution obtainable for this source). Bounds derived from measurement: sampling every 10th frame and taking the two tallest detections gives real-fencer feet y in [288, 353] (median 304, p95 353). Detections form two clear clusters: y 100-139 are distant spectators behind the curtain, y 260-379 is the piste area. Top edge 260 removes the spectator cluster with wide margin. Bottom edge 358 is deliberately tight: the centre referee stands close to the camera and is cut off by the frame edge, so his bounding-box bottom lands at y=360 rather than at his feet, placing him just past the fencer band instead of well clear of it. This bound is therefore the weakest part of this configuration and is expected to reject the referee only marginally.",
+  "polygon": [
+    [0,   260],
+    [640, 260],
+    [640, 358],
+    [0,   358]
+  ]
+}

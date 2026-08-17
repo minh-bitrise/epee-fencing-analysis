@@ -122,7 +122,11 @@ SYSTEM_PROMPT = (
     "- There is no touch/score data yet. Never invent touches, scores, "
     "actions, or events that are not in the data.\n"
     "- If the data is too thin to support a claim, say so rather than "
-    "speculating."
+    "speculating.\n"
+    "\n"
+    "Formatting constraint: write with short hyphens only. Do not use em "
+    "dashes or en dashes anywhere in the output. This matters because the "
+    "summary is pasted into a report whose house style forbids them."
 )
 
 USER_TEMPLATE = (
