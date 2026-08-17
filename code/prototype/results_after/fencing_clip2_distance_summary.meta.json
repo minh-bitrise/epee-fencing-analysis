@@ -1,0 +1,33 @@
+{
+  "cache_key": "c5a07ffbfd7949291aac70c17efa05cd82c8c581e48f040d6406a4ffa4ad2fb9",
+  "model": "claude-opus-4-8",
+  "stats": {
+    "duration_s": 180.0,
+    "frames_total": 9000,
+    "coverage_pct": 98.0,
+    "pose_method_pct": 31.4,
+    "distance_m": {
+      "mean": 3.34,
+      "min": 0.14,
+      "max": 6.82,
+      "std": 1.21
+    },
+    "time_in_zone_pct": {
+      "close_under_1m": 3.2,
+      "engagement_1_to_1.8m": 1.9,
+      "far_over_1.8m": 94.9
+    },
+    "fencer_1": {
+      "push_m": 38.22,
+      "pull_m": 36.59,
+      "net_forward_m": 1.64,
+      "push_share_pct": 51.1
+    },
+    "fencer_2": {
+      "push_m": 47.57,
+      "pull_m": 48.89,
+      "net_forward_m": -1.32,
+      "push_share_pct": 49.3
+    }
+  }
+}
