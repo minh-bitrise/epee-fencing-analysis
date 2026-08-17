@@ -363,6 +363,70 @@ a human supplies what the recording does not contain.
 This argument should replace the weaker "models are noisy" framing wherever it appears in the
 literature review and design chapters.
 
+### Touch detection: implementation and first evaluation
+
+Implemented as `detect_touches.py`, with `evaluate_touches.py` scoring its output against
+hand-labelled ground truth. Ground truth for clip 3 (fourteen awarded touches, four of them
+doubles) was labelled by the author from audio and video together and is stored in
+`ground_truth/`.
+
+**Result at the tuned operating point:** precision 0.79, recall 0.79, F1 0.79, with eleven of
+fourteen touches found. Expressed as user effort, six corrections against a manual baseline of
+fourteen entries.
+
+Per-clip band calibration proved necessary rather than merely tidy. The buzzer's pitch differs by
+venue and machine: 1200-1700 Hz on clip 3, 2700-3200 Hz on clip 2, 1700-2200 Hz on clip 4. A
+hardcoded frequency would have worked on at most one of them.
+
+#### Two features that failed, and why
+
+Both failures are worth recording because in each case the code was correct and the reasoning
+behind it was not.
+
+**The halt feature measured the wrong thing.** The design predicted that fencers stop after a
+touch, so the first implementation tested whether combined push and pull movement fell to near
+zero afterwards. Measured against ground truth this separated real touches from false positives
+by a factor of 1.04, which is to say not at all. Two causes compounded. Push and pull are
+inflated by camera panning, so on hand-held footage the metric never goes quiet even when the
+fencers do, meaning a known defect in one metric silently disabled a feature in a later stage.
+More fundamentally the premise was wrong: a referee's halt does not make the fencers still, it
+ends the phrase and sends them back to their guard lines, which is movement, not its absence.
+
+Replacing it with post-event **separation**, the change in mean distance across the event,
+measures the reset directly. It is also largely immune to panning, because a pan shifts both
+fencers together and distance is a difference between them. Measured separation is +0.47 m median
+after a real touch against -0.03 m for a false positive, and recall rose from 0.50 to 0.79.
+
+The general lesson is that a feature can be implemented exactly as specified and still measure
+nothing, and that only ground truth reveals which case one is in. The unit tests for the halt
+feature passed throughout.
+
+**The band-calibration metric discarded amplitude.** Candidate frequency bands were scored by the
+kurtosis of their energy envelope, standardised per band. Standardising divides out amplitude, so
+a band containing only faint spectral leakage against near-silence scored higher than the band
+containing the actual tone. Weighting peakiness by absolute peak fixed it and improved F1 from
+0.73 to 0.79 on its own.
+
+#### Honest limits on these numbers
+
+The operating point is tuned on a single clip with fourteen touches, so overfitting is a genuine
+risk and a second labelled bout is needed before the settings can be called general. The
+separation feature is on firmer ground than the thresholds around it, because it follows from how
+fencing is refereed rather than from the fit.
+
+The three missed touches are instructive. One falls at 179 s in a 180 s clip, so the window used
+to measure separation runs past the end of the recording and the strongest feature cannot fire at
+all. That is an edge effect of the method rather than a detection failure, and it would disappear
+on footage that continues past the final touch.
+
+Finally, the corrections metric flatters nothing but is still not a fair measure. It counts a
+rejection and a manual addition as equally expensive. Rejecting a proposal is one click on an
+event already located and timestamped; adding a missed touch requires scrubbing the recording to
+find it, which is exactly the labour the system exists to remove. Recall is therefore worth more
+than the raw count implies, and the six-corrections figure is a lower bound on the benefit rather
+than a measurement of it. Establishing the real ratio requires the user study set out in the
+design chapter, which has not been carried out.
+
 ---
 
 
