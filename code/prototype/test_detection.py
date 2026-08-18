@@ -431,13 +431,24 @@ class TestPushPullTracker:
         assert math.isclose(p.advance_m[1], 0.1, abs_tol=1e-9)
         assert p.retreat_m[1] == 0.0
 
-    def test_camera_pan_jump_is_ignored(self):
+    def test_camera_pan_jump_is_bounded_not_dropped(self):
+        """
+        A jump beyond MAX_FRAME_MOVEMENT_M is capped at that limit rather than
+        discarded.
+
+        This test previously asserted the jump was dropped entirely, and that
+        behaviour turned out to be a source of bias rather than robustness.
+        Measured on the club clip, the threshold was exceeded on about one per
+        cent of frames, and those frames carried roughly ten metres of net
+        retreat, so discarding them injected ten metres of false advance.
+        Capping bounds how much a single bad frame can contribute while keeping
+        the direction of the movement underneath it.
+        """
         p = PushPullTracker(smooth_window=1)
         p.update(0, 100, 500, 100)
-        # a jump > MAX_FRAME_MOVEMENT_M -> dropped entirely
         jump_px = (MAX_FRAME_MOVEMENT_M + 0.1) * 100
         p.update(0, 100 + jump_px, 500, 100)
-        assert p.advance_m[0] == 0.0
+        assert math.isclose(p.advance_m[0], MAX_FRAME_MOVEMENT_M, abs_tol=1e-9)
         assert p.retreat_m[0] == 0.0
 
     def test_noise_floor_ignores_tiny_moves(self):
@@ -1016,14 +1027,139 @@ class TestPushPullBanking:
             p.update(0, x, 500.0, 100.0)
         assert p.advance_m[0] > 0, "banked movement should have committed by now"
 
-    def test_implausible_jump_is_not_banked(self):
+    def test_implausible_jump_is_capped_not_discarded(self):
         """
-        A camera cut must not sit in the buffer waiting to corrupt a later
-        commit, so it is discarded rather than banked.
+        An implausible single-frame jump is capped, not deleted. Deleting it
+        biased the result: on the club clip the threshold was exceeded on about
+        one per cent of frames, but those frames carried roughly ten metres of
+        net retreat, so discarding them injected ten metres of false advance.
+        Capping bounds a glitch's influence while keeping its direction.
         """
         p = PushPullTracker(n_fencers=2, smooth_window=1)
         p.update(0, 100.0, 500.0, 100.0)
         huge = (MAX_FRAME_MOVEMENT_M + 0.5) * 100.0
         p.update(0, 100.0 + huge, 500.0, 100.0)
+        assert math.isclose(p.advance_m[0], MAX_FRAME_MOVEMENT_M, abs_tol=1e-9)
+        assert p.retreat_m[0] == 0.0
+
+    def test_a_capped_jump_keeps_its_direction(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 500.0, 900.0, 100.0)
+        huge = (MAX_FRAME_MOVEMENT_M + 0.5) * 100.0
+        p.update(0, 500.0 - huge, 900.0, 100.0)   # a big jump AWAY from the opponent
+        assert math.isclose(p.retreat_m[0], MAX_FRAME_MOVEMENT_M, abs_tol=1e-9)
         assert p.advance_m[0] == 0.0
-        assert p.pending_m[0] == 0.0
+
+
+# -------------------- push/pull direction stability --------------------
+
+class TestPushPullDirectionIsFixed:
+    """
+    "Toward the opponent" is established once per fencer and then held for the
+    bout. The original implementation re-derived it every frame by comparing the
+    opponent's current position against this fencer's previous one. On the club
+    clip that returned the wrong side on 3 frames out of 5,109 and cost 10
+    metres, because the comparison only fails when a position jumps, and a jump
+    is exactly when the frame's displacement is large. A large movement given the
+    wrong sign contributes twice its magnitude as error.
+    """
+
+    SCALE = 150.0
+
+    def test_direction_is_learned_on_first_update(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 100.0, 500.0, self.SCALE)     # opponent to the right
+        p.update(1, 500.0, 100.0, self.SCALE)     # opponent to the left
+        assert p.toward_opponent[0] == 1.0
+        assert p.toward_opponent[1] == -1.0
+
+    def test_direction_does_not_change_afterwards(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 100.0, 500.0, self.SCALE)
+        # a glitch frame reporting the opponent on the wrong side
+        p.update(0, 110.0, 50.0, self.SCALE)
+        assert p.toward_opponent[0] == 1.0
+
+    def test_a_single_glitch_frame_cannot_invert_a_large_movement(self):
+        """
+        The regression this fixes. A large displacement arriving on a frame where
+        the opponent appears on the wrong side must still be counted in the
+        correct direction.
+        """
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 100.0, 500.0, self.SCALE)     # establishes: right is forward
+        # move toward the opponent while the opponent's reported x is corrupted
+        p.update(0, 112.0, 20.0, self.SCALE)
+        assert p.advance_m[0] > 0, "movement toward the opponent must count as advance"
+        assert p.retreat_m[0] == 0.0
+
+    def test_accumulated_net_matches_endpoint_displacement(self):
+        """
+        The arithmetic identity any correct accumulator must satisfy: summing
+        signed per-frame movement equals the difference between first and last
+        position. This is what the per-frame sign test broke.
+        """
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        # steps chosen to stay inside MAX_FRAME_MOVEMENT_M so this measures the
+        # sign handling rather than the cap, which has its own tests below
+        xs = [100.0, 118.0, 111.0, 129.0, 122.0, 140.0]
+        for x in xs:
+            p.update(0, x, 900.0, self.SCALE)
+        net = p.advance_m[0] - p.retreat_m[0]
+        expected = (xs[-1] - xs[0]) / self.SCALE
+        assert math.isclose(net, expected, abs_tol=0.02), f"{net} vs {expected}"
+
+    def test_identity_holds_with_a_corrupted_opponent_position(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        xs = [100.0, 118.0, 111.0, 129.0, 122.0, 140.0]
+        for i, x in enumerate(xs):
+            # every third frame reports the opponent on the wrong side
+            opp = 20.0 if i % 3 == 0 and i > 0 else 900.0
+            p.update(0, x, opp, self.SCALE)
+        net = p.advance_m[0] - p.retreat_m[0]
+        expected = (xs[-1] - xs[0]) / self.SCALE
+        assert math.isclose(net, expected, abs_tol=0.02)
+
+    def test_no_opponent_position_means_no_accumulation(self):
+        """Without an opponent the sign is undetermined, so nothing is counted."""
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 100.0, None, self.SCALE)
+        p.update(0, 140.0, None, self.SCALE)
+        assert p.advance_m[0] == 0.0 and p.retreat_m[0] == 0.0
+
+
+# -------------------- plot rendering --------------------
+
+class TestSavePlot:
+    """
+    save_plot runs only at the very end of a pipeline run, after the CSV is
+    written, so a NameError in it is silent: the data survives and the run
+    appears to finish. Renaming the distance-band constants did exactly that and
+    it went unnoticed for hours, because the only visible symptom was a missing
+    plot and a missing printed summary. These tests exercise it directly.
+    """
+
+    def test_renders_a_plot_file(self, tmp_path):
+        from run_detection import save_plot
+        out = tmp_path / "p.png"
+        save_plot([0.0, 0.5, 1.0, 1.5], [2.0, 2.4, 1.8, 3.1],
+                  ["pose", "bbox", "pose", "bbox"], str(out))
+        assert out.exists() and out.stat().st_size > 0
+
+    def test_handles_pose_only_samples(self, tmp_path):
+        from run_detection import save_plot
+        out = tmp_path / "p.png"
+        save_plot([0.0, 0.5], [2.0, 2.4], ["pose", "pose"], str(out))
+        assert out.exists()
+
+    def test_handles_bbox_only_samples(self, tmp_path):
+        from run_detection import save_plot
+        out = tmp_path / "p.png"
+        save_plot([0.0, 0.5], [2.0, 2.4], ["bbox", "bbox"], str(out))
+        assert out.exists()
+
+    def test_every_band_constant_it_draws_still_exists(self):
+        """Guards against a constant rename silently breaking the plot again."""
+        import run_detection as rd
+        for name in ("DIST_CLOSE_M", "DIST_LUNGE_M", "DIST_ADVANCE_LUNGE_M"):
+            assert hasattr(rd, name), f"save_plot draws {name}, which is missing"
