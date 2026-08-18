@@ -92,18 +92,77 @@ class TestComputeStats:
         assert math.isclose(zones["out_of_distance_over_3.5m"], 25.0, abs_tol=0.1)
         assert math.isclose(sum(zones.values()), 100.0, abs_tol=0.1)
 
-    def test_push_pull_from_last_row(self):
+    def test_net_displacement_is_the_headline_movement_figure(self):
+        """
+        Fencer 1 advances 1.5 m and retreats 0.5 m, so finishes 1.0 m forward.
+        Fencer 2 advances and retreats 1.0 m each, so finishes where they began.
+        """
         stats = compute_stats(make_rows())
-        assert stats["fencer_1"]["push_m"] == 1.5
-        assert stats["fencer_1"]["pull_m"] == 0.5
-        assert stats["fencer_1"]["net_forward_m"] == 1.0
-        assert stats["fencer_1"]["push_share_pct"] == 75.0
-        assert stats["fencer_2"]["net_forward_m"] == 0.0
+        assert stats["fencer_1"]["net_displacement_m"] == 1.0
+        assert stats["fencer_2"]["net_displacement_m"] == 0.0
 
-    def test_zero_movement_has_no_push_share(self):
+    def test_closing_share_counts_directions_not_distances(self):
+        """
+        Both of Fencer 1's moving frames go forward, so 100 per cent. Fencer 2
+        has one frame each way, so 50 per cent, even though the two movements
+        differ in size. That magnitude-independence is the whole point of the
+        metric: it is why noise contributes symmetrically instead of accumulating.
+        """
+        stats = compute_stats(make_rows())
+        assert stats["fencer_1"]["closing_share_pct"] == 100.0
+        assert stats["fencer_2"]["closing_share_pct"] == 50.0
+
+    def test_cumulative_totals_reach_the_payload_in_no_form(self):
+        """
+        The totals are wrong rather than approximate. B1g traced their error to the
+        per-frame movement cap and measured it at 24 m on a 14 m piste, so no
+        caveat makes them usable, and every key ending "_indicative" has gone with
+        them. Including them cost three sentences of prompt spent talking the model
+        out of a number worth nothing. They stay in the CSV, which is evidence.
+        """
+        f1 = compute_stats(make_rows())["fencer_1"]
+        assert set(f1) == {"net_displacement_m", "closing_share_pct"}
+        assert not any("indicative" in k for k in f1)
+
+    def test_zero_movement_has_no_closing_share(self):
         rows = make_rows()[:1]  # single frame, all zeros
         stats = compute_stats(rows)
-        assert stats["fencer_1"]["push_share_pct"] is None
+        assert stats["fencer_1"]["closing_share_pct"] is None
+        assert stats["fencer_1"]["net_displacement_m"] == 0.0
+
+    def test_movement_basis_records_the_derivation_route(self):
+        """
+        These rows carry no position columns, so the figures come from the
+        cumulative fallback and the payload must say so. The two routes disagreed
+        by 3.5 m on clip 3, so which one was used is not a detail.
+        """
+        basis = compute_stats(make_rows())["movement_basis"]
+        assert "cumulative" in basis["source"]
+        assert basis["closing_share_is_window_dependent"] is True
+
+    def test_movement_basis_reports_positions_when_available(self):
+        rows = [dict(r, f1_pos_m=str(i * 0.5), f2_pos_m=str(4.0 - i * 0.5))
+                for i, r in enumerate(make_rows())]
+        basis = compute_stats(rows)["movement_basis"]
+        assert basis["source"] == "raw per-frame positions"
+
+    def test_implausible_net_displacement_is_flagged(self):
+        """
+        Play resets to the guard lines after every touch, so a fencer finishing
+        far up the piste means the position measurement drifted. That physical
+        constraint is a correctness check needing no ground truth.
+        """
+        rows = make_rows()
+        rows[-1]["f1_advance_m"] = "30.0"
+        stats = compute_stats(rows)
+        assert "data_quality_warnings" in stats
+        warning = stats["data_quality_warnings"][0]
+        assert "net_displacement_m" in warning
+        # panning was tested and ruled out, so the warning must not blame it
+        assert "closing_share_pct" in warning
+
+    def test_plausible_net_displacement_is_not_flagged(self):
+        assert "data_quality_warnings" not in compute_stats(make_rows())
 
     def test_empty_rows_raise(self):
         with pytest.raises(ValueError):
@@ -131,6 +190,32 @@ class TestPrompt:
     def test_system_prompt_has_honesty_constraints(self):
         assert "Never invent touches" in SYSTEM_PROMPT
         assert "estimates" in SYSTEM_PROMPT
+
+    def test_prompt_forbids_claims_from_indicative_figures(self):
+        """
+        Both prompt variants must carry the movement-reading rules. The payload
+        cannot convey them: every number in it looks equally authoritative, and
+        this pipeline has already produced a summary that faithfully reported a
+        mis-specified input as fact.
+        """
+        for has_touches in (False, True):
+            prompt = generate_summary.build_system_prompt(has_touches=has_touches)
+            assert "net_displacement_m" in prompt
+            assert "closing_share_pct" in prompt
+            # the totals are absent from the payload, so the prompt must forbid
+            # reconstructing them rather than caveat a figure that is not there
+            assert "total distance covered" in prompt
+            assert "do not describe a fencer as having covered any distance" in prompt
+
+    def test_prompt_separates_displacement_from_scoped_movement(self):
+        """
+        The scoped figure can exceed the whole-recording displacement, so the
+        prompt has to say it is not an endpoint measurement or the model will
+        report a fencer as finishing 7.6 m up a 14 m piste.
+        """
+        prompt = generate_summary.build_system_prompt(has_touches=True)
+        assert "net_forward_movement_m" in prompt
+        assert "NOT a displacement" in prompt
 
 
 class TestCacheKey:

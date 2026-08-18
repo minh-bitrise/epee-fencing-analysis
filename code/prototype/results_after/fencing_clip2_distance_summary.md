@@ -1,17 +1,21 @@
 ## Bout summary
-This was a bout fought largely at longer range. The mean front-foot to front-foot distance was about 3.34m, and the pair spent most of their time in the advance-lunge band or beyond, with roughly 77 percent of the video at 2.6m or further. Genuine lunge distance accounted for under a fifth of the time, and true infighting was rare. Both fencers were busy movers, but neither committed to sustained ground gains. Fencer 1 pushed marginally more than they pulled for a small net forward figure, while Fencer 2 covered more total distance in both directions yet ended slightly net backward. Bear in mind these totals span the whole video, including breaks and walk-backs.
+
+This was a patient, distance-managing bout. The fencers spent most of their time at advance-lunge range (48.1 per cent) or further out (29.3 per cent), with only 18.7 per cent in the live lunge band and a scant 3.9 per cent in close/infighting. Four touches over 180 seconds gives a low touch rate of about 1.33 per minute, consistent with a controlled, spacing-first approach. Both fencers spent almost exactly half their moving frames closing, so ground was traded fairly evenly, though fencer 1 pressed a little more than fencer 2 on the in-play figures.
 
 ## Observed tendencies
-- The pair spent 48.1 percent of the time in the advance-lunge band (2.6 to 3.5m) and a further 29.3 percent out of distance, so most of the video was played at ranges where a step is needed before a lunge can land.
-- Only 18.7 percent of the time fell in lunge distance, the range where a touch can actually be scored with a lunge, suggesting few moments of live commitment.
-- Close infighting was minimal at 3.9 percent, and the minimum recorded distance of 0.14m points to at least one very brief close exchange rather than a pattern.
-- Fencer 1 shows a near-even push share of 51.1 percent with a small net forward figure of 1.64m, consistent with a fencer who edged the ground battle slightly.
-- Fencer 2 covered more total distance (47.57m push, 48.89m pull) but finished 1.32m net backward, which fits a more mobile, ground-giving pattern.
+
+- Nearly half the recording (48.1 per cent) sat in the advance-lunge band, meaning a step was usually needed before a lunge would reach. This points to a bout fought largely outside immediate scoring range, with both fencers waiting to be invited in.
+- The tempo quickened noticeably: the mean gap between touches fell from 48.0 seconds in the first half to 29.5 seconds in the second, a change of -18.5 seconds. The action tightened up as the bout went on.
+- Touches were spread out and irregular, with gaps ranging from 21 to 48 seconds (mean 35.67, std 11.15) and exchange durations from 15 to 42 seconds. Long build-ups were the norm rather than the exception.
+- On the in-play figures, fencer 1 showed a higher closing share (54.2 per cent) than fencer 2 (51.7 per cent), suggesting fencer 1 carried the forward initiative more often, though the gap is small enough to read with caution.
+- Time in the close/infighting band was minimal (3.9 per cent), so genuine infighting was rare. Neither fencer seems to have sought or been forced into the very close game.
 
 ## Suggestions to explore
-- Review the video for how often either fencer converted an advance into a genuine lunge-distance threat, since so much time sat just outside that band.
-- Look at the moments around the closest exchanges to see whether infighting was deliberate or accidental, and whether either fencer was comfortable there.
-- Consider whether Fencer 2's greater total movement is creating scoring chances or mainly managing distance, and whether Fencer 1's slight forward pressure is being used to set up actions.
+
+- Review the second half specifically, since the tempo quickened there. It is worth checking whether one fencer drove that change or whether both committed more readily once the range was established.
+- Look at how the advance-lunge range was broken. With so much time spent one step out, the moments where a fencer chose to close into lunge distance are the decisive ones to study on video.
+- Given fencer 1's slightly higher closing share, watch whether that forward pressure created openings or simply gave ground back, and how fencer 2 handled being pressed.
 
 ## Data caveats
-These figures come from a computer-vision prototype, so distances are height-normalised estimates rather than precise measurements. Every total covers the whole 180 seconds of video, including breaks between touches and walk-backs, because the system cannot yet tell when touches occur. There is no touch or score data here, so nothing above should be read as points won or specific actions landed. Pose-based tracking was used for only about 31 percent of frames, which is worth keeping in mind when weighing the distance estimates.
+
+These metrics come from a computer-vision prototype, so distances are height-normalised estimates rather than precise measurements. The touch count of four is human-confirmed and reliable for timing, but the touch list does not record who scored each hit, so the scorer_counts and any notion of momentum should not be read into individual actions; do not infer a winner or a score. The closing-share figures are window-dependent and accurate only to a few percentage points, so treat the small gap between the two fencers as noise. The movement figures inherit a noise floor and buffering from an older data format. Net displacement values are the reliable movement measure but here both are near 1 m or above; treat them as rough, and note there is no valid figure for total distance covered.

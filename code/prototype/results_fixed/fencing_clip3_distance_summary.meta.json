@@ -1,5 +1,5 @@
 {
-  "cache_key": "15f5b8e56f6cd5b868a171af537181b57e7f15cdba49883ff1cbd6194d6d3ad8",
+  "cache_key": "55daa85dea7fd06031faafb2238b27bfa256f4ce9e1373b9e9404abff51bf149",
   "model": "claude-opus-4-8",
   "stats": {
     "duration_s": 180.0,
@@ -19,21 +19,18 @@
       "out_of_distance_over_3.5m": 10.8
     },
     "movement_basis": {
-      "source": "differenced cumulative totals (older CSV, no position columns; inherits the noise floor, movement cap and banking buffer)",
+      "source": "raw per-frame positions",
       "closing_share_is_window_dependent": true,
       "closing_share_note": "Measured on unsmoothed positions. A 1-to-121 frame median smoothing sweep moved this figure from 52.4 to 60.9 per cent on one clip, so read it as approximate to a few points rather than exact."
     },
     "fencer_1": {
-      "net_displacement_m": 10.18,
-      "closing_share_pct": 56.6
+      "net_displacement_m": 3.43,
+      "closing_share_pct": 52.4
     },
     "fencer_2": {
-      "net_displacement_m": 21.88,
-      "closing_share_pct": 59.5
+      "net_displacement_m": 0.43,
+      "closing_share_pct": 52.0
     },
-    "data_quality_warnings": [
-      "net_displacement_m is implausible on this recording (largest magnitude 21.9 m). Play resets to the guard lines after every touch, so each fencer should finish within about a metre of where they started; a value this large means the underlying position measurement drifted. Do not interpret net_displacement_m as aggression or territorial gain on this bout. Camera panning has been tested and ruled out as the cause, because panning moves the two fencers' net figures in opposite directions, and the real cause has not yet been identified. closing_share_pct counts directions rather than magnitudes, so it is unaffected; use it instead."
-    ],
     "touches": {
       "count": 14,
       "times_s": [
@@ -59,12 +56,12 @@
       "share_of_recording_pct": 56.7,
       "mean_distance_m": 2.42,
       "fencer_1": {
-        "net_forward_movement_m": 7.43,
-        "closing_share_pct": 56.3
+        "net_forward_movement_m": 7.63,
+        "closing_share_pct": 51.2
       },
       "fencer_2": {
-        "net_forward_movement_m": 10.84,
-        "closing_share_pct": 56.6
+        "net_forward_movement_m": 12.87,
+        "closing_share_pct": 52.6
       }
     },
     "tempo": {

@@ -289,7 +289,7 @@ class TestNetDisplacementWarning:
         try:
             stats = add_in_play_scope(compute_stats(rows), rows, path)
             assert "data_quality_warnings" in stats
-            assert "net_forward_m" in stats["data_quality_warnings"][0]
+            assert "net_displacement_m" in stats["data_quality_warnings"][0]
         finally:
             os.unlink(path)
 
@@ -308,9 +308,9 @@ class TestNetDisplacementWarning:
 
     def test_in_play_block_carries_derived_figures(self):
         """
-        in_play_only must include push_share_pct and net_forward_m, or the
-        model falls back to the whole-recording values, which is the bug that
-        produced the impossible reading.
+        in_play_only must include the reliable movement figures, or the model
+        falls back to the whole-recording values, which is the bug that produced
+        the impossible reading.
         """
         from generate_summary import add_in_play_scope, compute_stats
         import tempfile, os
@@ -322,6 +322,9 @@ class TestNetDisplacementWarning:
             stats = add_in_play_scope(compute_stats(rows), rows, path)
             for fencer in ("fencer_1", "fencer_2"):
                 block = stats["in_play_only"][fencer]
-                assert {"push_m", "pull_m", "push_share_pct", "net_forward_m"} <= set(block)
+                assert set(block) == {"net_forward_movement_m", "closing_share_pct"}
+                # the scoped figure is not an endpoint measurement, so it must
+                # not be named as a displacement anywhere in the payload
+                assert "net_displacement_m" not in block
         finally:
             os.unlink(path)

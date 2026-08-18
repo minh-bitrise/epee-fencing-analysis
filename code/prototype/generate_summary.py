@@ -50,6 +50,73 @@ def load_rows(csv_path):
         return list(csv.DictReader(f))
 
 
+# Play resets to the guard lines after every touch, so over a whole recording
+# each fencer should finish within roughly a metre of where they started. That
+# physical constraint is a correctness check on net displacement needing no
+# ground truth, and this is the magnitude above which it is clearly violated on
+# a 14 m piste.
+IMPLAUSIBLE_NET_M = 5.0
+
+# Below this magnitude a net displacement says only "finished where they
+# started". Fencer 2 on clip 3 measures +0.43 m from raw positions and -0.94 m
+# from smoothed endpoints: both readings agree on the substance and disagree on
+# the sign, which is what makes the sign meaningless at this scale.
+NET_SIGN_FLOOR_M = 1.0
+
+
+def movement_basis(rows):
+    """
+    Say where the movement figures were derived from, so the payload records it.
+
+    The route matters. The raw position columns are the measurement; the
+    cumulative advance and retreat columns are written after the noise floor, the
+    movement cap and the banking buffer have been applied, so anything derived
+    from them inherits all three. On clip 3 the two routes disagreed by 3.5 m on
+    net displacement, which is why the position columns were added.
+    """
+    from_positions = bool(rows) and "f1_pos_m" in rows[0]
+    return {
+        "source": ("raw per-frame positions" if from_positions
+                   else "differenced cumulative totals (older CSV, no position "
+                        "columns; inherits the noise floor, movement cap and "
+                        "banking buffer)"),
+        "closing_share_is_window_dependent": True,
+        "closing_share_note": (
+            "Measured on unsmoothed positions. A 1-to-121 frame median smoothing "
+            "sweep moved this figure from 52.4 to 60.9 per cent on one clip, so "
+            "read it as approximate to a few points rather than exact."
+        ),
+    }
+
+
+def movement_quality_warnings(stats):
+    """
+    Warnings about the whole-recording movement figures, or an empty list.
+
+    The check applies to net displacement over the whole recording and to nothing
+    else. That figure is a genuine first-to-last displacement and so is subject to
+    the reset-to-guard-lines constraint. The in-play figure is not a displacement
+    and legitimately exceeds it, so applying the same test there would flag
+    correct data as broken.
+    """
+    worst = max(abs(stats["fencer_1"]["net_displacement_m"]),
+                abs(stats["fencer_2"]["net_displacement_m"]))
+    if worst <= IMPLAUSIBLE_NET_M:
+        return []
+    return [
+        f"net_displacement_m is implausible on this recording (largest "
+        f"magnitude {worst:.1f} m). Play resets to the guard lines after every "
+        f"touch, so each fencer should finish within about a metre of where "
+        f"they started; a value this large means the underlying position "
+        f"measurement drifted. Do not interpret net_displacement_m as "
+        f"aggression or territorial gain on this bout. Camera panning has been "
+        f"tested and ruled out as the cause, because panning moves the two "
+        f"fencers' net figures in opposite directions, and the real cause has "
+        f"not yet been identified. closing_share_pct counts directions rather "
+        f"than magnitudes, so it is unaffected; use it instead."
+    ]
+
+
 def compute_stats(rows):
     """
     Aggregate the per-frame rows into the bout-level statistics that the
@@ -77,21 +144,44 @@ def compute_stats(rows):
     adv   = sum(1 for d in distances if DIST_LUNGE_M < d <= DIST_ADVANCE_LUNGE_M)
     out   = len(distances) - close - lunge - adv
 
-    # cumulative push/pull totals are running sums, so the last row holds them
-    last = rows[-1]
+    # Movement. The headline figures are net displacement and closing share, not
+    # the cumulative push and pull totals.
+    #
+    # Cumulative path length is not a measurement. Re-measuring clip 3's position
+    # series under median smoothing windows from 1 to 121 frames moved the total
+    # from 161 m to 33 m with no asymptote, while net displacement stayed at
+    # exactly +3.43 m. Path length sums the magnitude of every frame's change, so
+    # measurement noise adds to it and never cancels; net is a difference between
+    # two positions, so noise cancels. A quantity that changes fivefold with an
+    # arbitrary smoothing parameter measures the filter, not the fencer.
+    #
+    # The totals are NOT passed to the model at all. They were briefly included
+    # under names ending "_indicative", and the model handled them correctly,
+    # writing "the cumulative push and pull totals are indicative only and are not
+    # quoted as distance or aggression". They are dropped anyway, for a reason that
+    # is about the prompt rather than the model: a figure that cannot support any
+    # claim has no business in the payload, and keeping it meant spending three
+    # sentences of prompt talking the model out of a number worth nothing. B1g
+    # measured the error at 24 m on a 14 m piste, so this is not an approximation
+    # that might be useful with caveats. The totals stay in the CSV, which is the
+    # evidence artefact and where the before/after comparison lives.
+    from in_play import closing_share, net_forward_movement
+    import numpy as np
+
+    all_frames = np.ones(total_frames, dtype=bool)
     fencers = {}
     for key in ("f1", "f2"):
-        push = float(last[f"{key}_advance_m"])
-        pull = float(last[f"{key}_retreat_m"])
-        total = push + pull
+        cs = closing_share(rows, key, all_frames)
         fencers[key] = {
-            "push_m": round(push, 2),
-            "pull_m": round(pull, 2),
-            "net_forward_m": round(push - pull, 2),
-            "push_share_pct": round(100.0 * push / total, 1) if total > 0 else None,
+            # Summed over EVERY frame the signed movement telescopes to the
+            # first-to-last position difference, so this is a true displacement.
+            # The scoped figure in add_in_play_scope is not, and is named
+            # differently for that reason.
+            "net_displacement_m": round(net_forward_movement(rows, key, all_frames), 2),
+            "closing_share_pct": round(100.0 * cs, 1) if cs is not None else None,
         }
 
-    return {
+    stats = {
         "duration_s": round(duration_s, 1),
         "frames_total": total_frames,
         "coverage_pct": round(coverage_pct, 1),
@@ -108,20 +198,29 @@ def compute_stats(rows):
             "advance_lunge_2.6_to_3.5m": round(100.0 * adv / len(distances), 1),
             "out_of_distance_over_3.5m": round(100.0 * out / len(distances), 1),
         },
+        "movement_basis": movement_basis(rows),
         "fencer_1": fencers["f1"],
         "fencer_2": fencers["f2"],
     }
+    warnings = movement_quality_warnings(stats)
+    if warnings:
+        stats["data_quality_warnings"] = warnings
+    return stats
 
 
 def add_in_play_scope(stats, rows, touch_path):
     """
     Enrich the payload with touch events and in-play-only metrics.
 
-    Without this the totals span the whole recording, including the walk back
-    to the guard line after every touch, which on clip 3 is 43 per cent of the
-    frames and inflates movement totals by a third. Adding both the scoped and
-    unscoped figures lets the model say which is which rather than having to
-    hedge every number.
+    Without this the figures span the whole recording, including the walk back to
+    the guard line after every touch, which on clip 3 is 43 per cent of the
+    frames. Adding both the scoped and unscoped figures lets the model say which
+    is which rather than having to hedge every number.
+
+    Note that scoping does not simply shrink the numbers. It raises the net
+    movement figure on clip 3, from +3.4 m to +7.6 m, because the resets are
+    where ground gained during a phrase is given back. See per_fencer below for
+    why the scoped figure is therefore named as movement and not displacement.
     """
     from in_play import load_touch_times, scope_metrics, touch_provenance
 
@@ -138,31 +237,34 @@ def add_in_play_scope(stats, rows, touch_path):
         "reset_excluded_s": scoped["reset_s"],
     }
 
-    def per_fencer(push, pull):
+    def per_fencer(prefix):
         """
-        Derived movement figures for one fencer, in-play only.
+        Movement figures for one fencer, in-play only.
 
-        net_forward_m is included but flagged, because it is the metric most
-        corrupted by camera panning: over a whole bout a fencer returns to
-        roughly where they started, so a large net value indicates measurement
-        error rather than tactics. Supplying it unflagged previously led the
-        model to report an impossible +21.88 m as decisive aggression.
+        The scoped figure is deliberately NOT called a displacement, and the
+        distinction is not pedantry. Summed over every frame the signed movement
+        telescopes to the first-to-last position difference, so it is a true
+        displacement. Summed over a masked subset it does not, because the
+        excluded resets break the series and the sum jumps across them.
+
+        On clip 3 the in-play figure (+7.6 m) is larger than the whole-recording
+        one (+3.4 m), and correctly so: fencers gain ground during a phrase and
+        give it back walking to the guard line, so removing the resets removes
+        the giving-back. Presenting the scoped number as displacement would
+        suggest a fencer finished 7.6 m up a 14 m piste when they finished
+        roughly where they started.
         """
-        total = push + pull
+        cs = ip[f"{prefix}_closing_share"]
         return {
-            "push_m": round(push, 2),
-            "pull_m": round(pull, 2),
-            "push_share_pct": round(100.0 * push / total, 1) if total > 0 else None,
-            "net_forward_m": round(push - pull, 2),
+            "net_forward_movement_m": ip[f"{prefix}_net_m"],
+            "closing_share_pct": round(100.0 * cs, 1) if cs is not None else None,
         }
 
-    f1 = per_fencer(ip["f1_push_m"], ip["f1_pull_m"])
-    f2 = per_fencer(ip["f2_push_m"], ip["f2_pull_m"])
     stats["in_play_only"] = {
         "share_of_recording_pct": round(100.0 * scoped["in_play_fraction"], 1),
         "mean_distance_m": ip["mean_distance_m"],
-        "fencer_1": f1,
-        "fencer_2": f2,
+        "fencer_1": per_fencer("f1"),
+        "fencer_2": per_fencer("f2"),
     }
 
     # Tempo. This is the group of metrics Chapter 1 promises and the pipeline
@@ -176,21 +278,11 @@ def add_in_play_scope(stats, rows, touch_path):
     tempo.pop("exchanges", None)
     stats["tempo"] = tempo
 
-    # A piste is 14 m long and fencers reset between touches, so net forward
-    # displacement across a bout should be small. Anything large is the
-    # panning artefact, and the reader must be told rather than left to
-    # interpret it as behaviour.
-    worst_net = max(abs(f1["net_forward_m"]), abs(f2["net_forward_m"]))
-    if worst_net > 5.0:
-        stats["data_quality_warnings"] = [
-            f"net_forward_m is unreliable on this recording (largest magnitude "
-            f"{worst_net:.1f} m). Fencers reset between touches, so net "
-            f"displacement over a bout should be near zero; a large value "
-            f"indicates uncorrected camera motion inflating the movement "
-            f"totals. Do not interpret net_forward_m as aggression or "
-            f"territorial gain. push_share_pct is affected by the same cause "
-            f"and should be treated as indicative only."
-        ]
+    # The reset-to-guard-lines plausibility check is NOT repeated here. It belongs
+    # to the whole-recording net displacement, which compute_stats already tests,
+    # because only that figure is an endpoint measurement. Applying it to the
+    # in-play figure would flag correct data: the scoped sum is expected to be
+    # larger, for the reason given in per_fencer above.
     return stats
 
 
@@ -224,9 +316,14 @@ _PROMPT_WITH_TOUCHES = (
     "refer to how many touches occurred and to their timing and spacing.\n"
     "- Two sets of movement figures are given. Those under 'in_play_only' "
     "exclude the reset after each touch and are the ones to reason from. The "
-    "top-level totals span the whole recording, including walk-backs, and "
+    "top-level figures span the whole recording, including walk-backs, and "
     "should only be mentioned if the difference between the two is itself "
     "interesting.\n"
+    "- The in-play figure is called 'net_forward_movement_m' and is NOT a "
+    "displacement. Excluding the resets breaks the position series, so it can "
+    "legitimately be larger than the whole-recording 'net_displacement_m': "
+    "fencers gain ground during a phrase and give it back walking to the guard "
+    "line. Do not say a fencer finished that far up the piste.\n"
     "- The touch list says WHEN touches happened, not who scored them. Never "
     "attribute a touch to a fencer, state a score, or name a winner. Never "
     "describe the action that produced a touch, since that is not in the "
@@ -244,6 +341,34 @@ _PROMPT_WITH_TOUCHES = (
     "- If a 'data_quality_warnings' field is present, treat every warning in "
     "it as binding and do not use the metrics it names as evidence for any "
     "tactical claim. Mention the limitation in the caveats section.\n"
+)
+
+# How to read the movement figures. This is in the prompt rather than left to
+# the model because the payload alone cannot convey it: the numbers look
+# equally authoritative whatever their provenance, and an earlier version of
+# this pipeline showed the model interpreting a mis-specified input entirely
+# faithfully. Constraining the reading is the only place the caveat can live.
+_PROMPT_MOVEMENT = (
+    "\n"
+    "Reading the movement figures - follow this exactly:\n"
+    f"- 'net_displacement_m' is where a fencer finished relative to where they "
+    f"started, positive meaning toward the opponent. It is the reliable "
+    f"movement measurement. Under about {NET_SIGN_FLOOR_M:.0f} m it means the "
+    f"fencer finished roughly where they began and the SIGN CARRIES NO "
+    f"MEANING, so do not describe such a value as gaining or losing ground.\n"
+    "- 'closing_share_pct' is the proportion of moving frames spent reducing "
+    "the distance to the opponent. This is the figure to use for who pressed "
+    "forward more, because it counts the direction of each movement rather "
+    "than its size. Near 50 per cent means the fencers traded ground evenly. "
+    "It is accurate to a few percentage points only, so treat a small "
+    "difference between the two fencers as noise rather than a tendency.\n"
+    "- There is deliberately NO figure for total distance covered, or for total "
+    "ground advanced versus retreated. That quantity is not measurable from this "
+    "data: summing the size of every frame's movement accumulates tracking noise "
+    "that never cancels, and on one clip the identical footage gave totals "
+    "anywhere between 33 m and 161 m depending only on an arbitrary smoothing "
+    "setting. Do not estimate it, do not derive it from the figures that are "
+    "present, and do not describe a fencer as having covered any distance.\n"
 )
 
 _PROMPT_TAIL = (
@@ -274,7 +399,7 @@ def build_system_prompt(has_touches=False):
     data cannot support.
     """
     middle = _PROMPT_WITH_TOUCHES if has_touches else _PROMPT_NO_TOUCHES
-    return _PROMPT_HEAD + middle + _PROMPT_TAIL
+    return _PROMPT_HEAD + middle + _PROMPT_TAIL + _PROMPT_MOVEMENT
 
 
 # Retained for callers and tests that want the no-touch prompt by name.

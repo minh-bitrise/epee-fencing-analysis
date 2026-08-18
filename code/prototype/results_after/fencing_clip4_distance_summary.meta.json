@@ -1,5 +1,5 @@
 {
-  "cache_key": "8b9008f467ff51b3c1ba50f5d7269f44b9f4d40913900223b602553fd288dfa6",
+  "cache_key": "486887de77e33225e861c0916048061260f20604e93b3293b520b0ae39106805",
   "model": "claude-opus-4-8",
   "stats": {
     "duration_s": 190.0,
@@ -18,17 +18,78 @@
       "advance_lunge_2.6_to_3.5m": 51.3,
       "out_of_distance_over_3.5m": 32.9
     },
+    "movement_basis": {
+      "source": "differenced cumulative totals (older CSV, no position columns; inherits the noise floor, movement cap and banking buffer)",
+      "closing_share_is_window_dependent": true,
+      "closing_share_note": "Measured on unsmoothed positions. A 1-to-121 frame median smoothing sweep moved this figure from 52.4 to 60.9 per cent on one clip, so read it as approximate to a few points rather than exact."
+    },
     "fencer_1": {
-      "push_m": 25.67,
-      "pull_m": 28.92,
-      "net_forward_m": -3.25,
-      "push_share_pct": 47.0
+      "net_displacement_m": -3.25,
+      "closing_share_pct": 47.9
     },
     "fencer_2": {
-      "push_m": 33.44,
-      "pull_m": 32.51,
-      "net_forward_m": 0.93,
-      "push_share_pct": 50.7
+      "net_displacement_m": 0.93,
+      "closing_share_pct": 51.7
+    },
+    "touches": {
+      "count": 6,
+      "times_s": [
+        21.0,
+        81.0,
+        113.0,
+        128.0,
+        158.0,
+        180.0
+      ],
+      "provenance": "human_confirmed",
+      "reset_excluded_s": 6.0
+    },
+    "in_play_only": {
+      "share_of_recording_pct": 81.1,
+      "mean_distance_m": 3.38,
+      "fencer_1": {
+        "net_forward_movement_m": 1.6,
+        "closing_share_pct": 54.0
+      },
+      "fencer_2": {
+        "net_forward_movement_m": 7.95,
+        "closing_share_pct": 58.2
+      }
+    },
+    "tempo": {
+      "touches": 6,
+      "duration_s": 190.0,
+      "touches_per_minute": 1.89,
+      "time_between_touches_s": {
+        "mean": 31.8,
+        "median": 30.0,
+        "min": 15.0,
+        "max": 60.0,
+        "std": 15.34
+      },
+      "exchange_duration_s": {
+        "mean": 25.0,
+        "median": 22.5,
+        "min": 9.0,
+        "max": 54.0,
+        "std": 14.12
+      },
+      "reset_assumed_s": 6.0,
+      "tempo_trend": {
+        "first_half_mean_gap_s": 46.0,
+        "second_half_mean_gap_s": 22.33,
+        "change_s": -23.67,
+        "direction": "quickening"
+      },
+      "scorer_counts": {
+        "left": 2,
+        "double": 3,
+        "right": 1
+      },
+      "longest_streak": {
+        "scorer": "double",
+        "touches": 2
+      }
     }
   }
 }
