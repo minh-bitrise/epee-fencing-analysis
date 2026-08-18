@@ -233,6 +233,140 @@ def get_metrics(bout_id: str):
     }
 
 
+# Fields in the cached stats that do not depend on which touch file was used. A
+# summary is stale when any of these has moved, which means the metrics were
+# recomputed after the summary was written.
+_SUMMARY_INVARIANTS = ("duration_s", "frames_total", "coverage_pct",
+                       "pose_method_pct", "distance_m", "time_in_zone_pct",
+                       "movement_basis", "fencer_1", "fencer_2")
+
+
+@app.get("/api/bouts/{bout_id}/summary")
+def get_summary(bout_id: str):
+    """
+    The cached LLM summary for a bout, and whether it still matches the metrics.
+
+    Reading only. Generating a summary costs an API call, so it stays a deliberate
+    command-line step rather than something a button can trigger by accident.
+
+    The staleness check earns its place. A summary is a file on disk with no link to
+    the data it was written from, so re-running detection leaves a confident piece
+    of prose describing numbers that no longer exist. This project has already
+    shipped one summary that faithfully reported a mis-specified input, and the
+    movement metrics have been redefined three times, so a summary that silently
+    predates the current CSV is a real hazard rather than a hypothetical one.
+
+    Staleness compares the stats fields that do not depend on the touch file. The
+    touch list is excluded on purpose: the summary may have been generated from
+    ground truth, from detector output or from an exported review, and disagreeing
+    with whichever is on disk now is not the same as being out of date.
+    """
+    b = _get_bout(bout_id)
+    base = os.path.splitext(b.metrics_csv)[0]
+    # discover_bouts already resolves the summary path, so prefer it and fall back
+    # to the naming convention. Deriving it twice invites the two to disagree.
+    md_path = b.summary_md or f"{base}_summary.md"
+    meta_path = f"{base}_summary.meta.json"
+    if not os.path.exists(md_path):
+        return {"exists": False,
+                "hint": (f'python3 generate_summary.py --csv "{b.metrics_csv}" '
+                         f'--touches <touches.csv>')}
+
+    import json as _json
+    meta = {}
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path) as f:
+                meta = _json.load(f)
+        except ValueError:
+            meta = {}
+
+    stale, reason = False, None
+    cached = meta.get("stats")
+    if cached is None:
+        stale, reason = True, "no cached stats to compare against"
+    else:
+        from generate_summary import compute_stats, load_rows
+        current = compute_stats(load_rows(b.metrics_csv))
+        moved = [k for k in _SUMMARY_INVARIANTS if cached.get(k) != current.get(k)]
+        if moved:
+            stale = True
+            reason = ("the metrics changed after this was written: "
+                      + ", ".join(moved))
+
+    with open(md_path) as f:
+        markdown = f.read()
+    return {"exists": True, "markdown": markdown,
+            "model": meta.get("model"), "stale": stale, "stale_reason": reason,
+            "generated_from": ("touch data" if (cached or {}).get("touches")
+                               else "the whole recording, no touch data")}
+
+
+@app.post("/api/bouts/{bout_id}/export-touches")
+def export_touches(bout_id: str):
+    """
+    Write the user's confirmed touches to a CSV the rest of the pipeline can read.
+
+    WHY THIS EXISTS. The loop was open at the last step. A user could confirm,
+    correct, add and reject touches, and the review interface would rescope its own
+    metrics accordingly, but nothing downstream could see any of it: in_play.py and
+    generate_summary.py take a touch file by path, and the only files available were
+    the detector's raw proposals and the hand-labelled ground truth. So the summary
+    a reader actually sees was still built from unreviewed detector output, which
+    undercuts the project's central claim that user correction improves the output.
+    This writes the reviewed list in the same schema as the ground-truth files, so
+    both downstream stages accept it unchanged.
+
+    The file is written beside the metrics CSV under a new name. Nothing existing is
+    modified, which is the same guarantee the annotation store makes: a reprocess
+    must never destroy user work and user work must never require recovering a
+    mutated artefact.
+
+    Pending proposals are excluded, because a proposal nobody has looked at is not
+    evidence. That makes a partially reviewed export quietly incomplete, so the
+    header records how many were confirmed, added, rejected and still pending, and
+    the response says whether review was finished.
+    """
+    b = _get_bout(bout_id)
+    proposed = load_proposed_touches(b.touches_csv)
+    confirmed = store.confirmed_touch_times(bout_id, proposed)
+    if not confirmed:
+        raise HTTPException(
+            400, "nothing to export: no touches confirmed or added yet. An empty "
+                 "touch file would scope every metric to nothing, which is worse "
+                 "than having no file at all.")
+
+    progress = store.review_progress(bout_id, proposed)
+    base = os.path.splitext(b.metrics_csv)[0]
+    out_path = f"{base}_touches_confirmed.csv"
+
+    import csv as _csv
+    with open(out_path, "w", newline="") as f:
+        f.write(f"# Touches confirmed through the review interface for {bout_id}.\n")
+        f.write(f"# {progress['confirmed']} detector proposals confirmed, "
+                f"{progress['user_added']} added by hand, "
+                f"{progress['rejected']} rejected, "
+                f"{progress['proposed'] - progress['reviewed']} left pending.\n")
+        if not progress["complete"]:
+            f.write("# REVIEW INCOMPLETE: pending proposals are absent from this "
+                    "file, so the touch count is a lower bound.\n")
+        f.write("# Schema matches ground_truth/*_touches.csv so in_play.py and "
+                "generate_summary.py read it unchanged. A scorer column means "
+                "touch_provenance() reports these as human_confirmed, which is "
+                "what they are.\n")
+        w = _csv.DictWriter(f, fieldnames=["time_s", "scorer", "annulled", "notes"])
+        w.writeheader()
+        for t in confirmed:
+            w.writerow({"time_s": round(t["time_s"], 2),
+                        "scorer": t["scorer"],
+                        "annulled": 0,
+                        "notes": t["origin"]})
+    return {"path": out_path, "touches": len(confirmed),
+            "review_complete": progress["complete"],
+            "next": (f'python3 generate_summary.py --csv "{b.metrics_csv}" '
+                     f'--touches "{out_path}"')}
+
+
 class LungeIn(BaseModel):
     time_s: float = Field(..., ge=0)
     slot: int = Field(..., ge=0, le=1)
@@ -311,15 +445,6 @@ def get_video(bout_id: str):
     if not b.video:
         raise HTTPException(404, "no annotated video for this bout")
     return FileResponse(_web_playable(b.video), media_type="video/mp4")
-
-
-@app.get("/api/bouts/{bout_id}/summary")
-def get_summary(bout_id: str):
-    b = _get_bout(bout_id)
-    if not b.summary_md:
-        raise HTTPException(404, "no generated summary for this bout")
-    with open(b.summary_md) as f:
-        return {"bout_id": bout_id, "markdown": f.read()}
 
 
 # --- the four annotation actions ---------------------------------------

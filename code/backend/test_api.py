@@ -435,3 +435,197 @@ class TestLungeLabels:
         store.add_lunge("b", 5.0, 1)
         after = store.load("b")
         assert (after["touch_states"], after["unreliable_segments"]) == snapshot
+
+
+# -------------------- exporting confirmed touches --------------------
+
+class TestExportConfirmedTouches:
+    """
+    The loop was open at the last step: a user could confirm and correct touches,
+    and nothing downstream could read the result, so the summary a reader sees was
+    still built from unreviewed detector output. That undercuts the project's
+    central claim, which is that user correction improves the output.
+    """
+
+    def _confirm_first(self, app_module, bout_id):
+        proposed = load_proposed_touches(app_module._get_bout(bout_id).touches_csv)
+        app_module.store.set_touch_state(bout_id, proposed[0]["id"], CONFIRMED,
+                                        scorer="left")
+        return proposed
+
+    def test_export_writes_a_file_the_pipeline_can_read(self, metrics_bout):
+        """
+        The schema has to match ground_truth/*_touches.csv, because in_play.py and
+        generate_summary.py take a touch file by path and must accept this one
+        unchanged.
+        """
+        app_module, bout_id = metrics_bout
+        self._confirm_first(app_module, bout_id)
+        r = app_module.export_touches(bout_id)
+
+        import csv as _csv
+        with open(r["path"]) as f:
+            rows = list(_csv.DictReader(l for l in f if not l.startswith("#")))
+        assert set(rows[0]) == {"time_s", "scorer", "annulled", "notes"}
+        assert float(rows[0]["time_s"]) == 10.0
+        assert rows[0]["scorer"] == "left"
+
+    def test_in_play_accepts_the_exported_file(self, metrics_bout):
+        """
+        The whole point is that the export is consumable, so read it back with the
+        real loader rather than trusting the header row.
+        """
+        from in_play import load_touch_times, touch_provenance
+        app_module, bout_id = metrics_bout
+        self._confirm_first(app_module, bout_id)
+        r = app_module.export_touches(bout_id)
+        assert load_touch_times(r["path"]) == [10.0]
+        # a scorer column means these read as confirmed rather than as proposals,
+        # which is what they are, and it changes what the summary may claim
+        assert touch_provenance(r["path"]) == "human_confirmed"
+
+    def test_pending_proposals_are_excluded_and_flagged(self, metrics_bout):
+        """
+        A proposal nobody has looked at is not evidence, so it must not appear. That
+        makes a partial export a lower bound, and the file has to say so or a reader
+        will treat the count as complete.
+        """
+        app_module, bout_id = metrics_bout
+        self._confirm_first(app_module, bout_id)      # one of two confirmed
+        r = app_module.export_touches(bout_id)
+        assert r["review_complete"] is False
+        header = "".join(l for l in open(r["path"]) if l.startswith("#"))
+        assert "REVIEW INCOMPLETE" in header
+
+    def test_a_finished_review_is_not_flagged_incomplete(self, metrics_bout):
+        app_module, bout_id = metrics_bout
+        proposed = self._confirm_first(app_module, bout_id)
+        app_module.store.set_touch_state(bout_id, proposed[1]["id"], REJECTED)
+        r = app_module.export_touches(bout_id)
+        assert r["review_complete"] is True
+        assert "REVIEW INCOMPLETE" not in open(r["path"]).read()
+
+    def test_manually_added_touches_are_included(self, metrics_bout):
+        app_module, bout_id = metrics_bout
+        self._confirm_first(app_module, bout_id)
+        app_module.store.add_touch(bout_id, 55.5, scorer="double")
+        r = app_module.export_touches(bout_id)
+        import csv as _csv
+        with open(r["path"]) as f:
+            rows = list(_csv.DictReader(l for l in f if not l.startswith("#")))
+        assert [float(x["time_s"]) for x in rows] == [10.0, 55.5]
+        assert rows[1]["scorer"] == "double"
+
+    def test_exporting_nothing_is_refused(self, metrics_bout):
+        """
+        An empty touch file would scope every metric to nothing, which is a worse
+        failure than having no file: it looks like a valid result.
+        """
+        from fastapi import HTTPException
+        app_module, bout_id = metrics_bout
+        with pytest.raises(HTTPException) as e:
+            app_module.export_touches(bout_id)
+        assert e.value.status_code == 400
+
+    def test_the_pipeline_artefacts_are_not_modified(self, metrics_bout, results_dir):
+        app_module, bout_id = metrics_bout
+        before = {p.name: p.read_text() for p in results_dir.iterdir()}
+        self._confirm_first(app_module, bout_id)
+        app_module.export_touches(bout_id)
+        for name, text in before.items():
+            assert (results_dir / name).read_text() == text, f"{name} was modified"
+
+
+# -------------------- reading the generated summary --------------------
+
+class TestSummaryEndpoint:
+    """
+    A summary is prose on disk with no link to the data it describes, so re-running
+    detection leaves a confident paragraph about numbers that no longer exist. The
+    movement metrics have been redefined three times on this project, so this is a
+    hazard that has already had three chances to bite.
+    """
+
+    def _write_summary(self, results_dir, stats):
+        base = results_dir / "mybout_distance"
+        (results_dir / "mybout_distance_summary.md").write_text(
+            "## Bout summary\nThe fencers held lunge distance.\n")
+        (results_dir / "mybout_distance_summary.meta.json").write_text(
+            json.dumps({"cache_key": "abc", "model": "claude-opus-4-8",
+                        "stats": stats}))
+
+    def test_absent_summary_reports_how_to_make_one(self, metrics_bout):
+        app_module, bout_id = metrics_bout
+        r = app_module.get_summary(bout_id)
+        assert r["exists"] is False
+        assert "generate_summary.py" in r["hint"]
+
+    def test_a_current_summary_is_not_stale(self, metrics_bout, results_dir):
+        from generate_summary import compute_stats, load_rows
+        app_module, bout_id = metrics_bout
+        b = app_module._get_bout(bout_id)
+        self._write_summary(results_dir, compute_stats(load_rows(b.metrics_csv)))
+        r = app_module.get_summary(bout_id)
+        assert r["exists"] is True and r["stale"] is False
+        assert r["model"] == "claude-opus-4-8"
+        assert "lunge distance" in r["markdown"]
+
+    def test_changed_metrics_make_it_stale_and_say_which(self, metrics_bout, results_dir):
+        """
+        The reason matters as much as the flag. "Stale" alone tells a reader to
+        regenerate; naming the field that moved tells them whether it mattered.
+        """
+        from generate_summary import compute_stats, load_rows
+        app_module, bout_id = metrics_bout
+        b = app_module._get_bout(bout_id)
+        stats = compute_stats(load_rows(b.metrics_csv))
+        stats["fencer_1"]["net_displacement_m"] += 5.0     # as if remeasured
+        self._write_summary(results_dir, stats)
+        r = app_module.get_summary(bout_id)
+        assert r["stale"] is True
+        assert "fencer_1" in r["stale_reason"]
+
+    def test_a_summary_with_no_cached_stats_is_stale(self, metrics_bout, results_dir):
+        """Nothing to compare against is not the same as matching."""
+        app_module, bout_id = metrics_bout
+        (results_dir / "mybout_distance_summary.md").write_text("## Bout summary\n")
+        (results_dir / "mybout_distance_summary.meta.json").write_text(
+            json.dumps({"cache_key": "abc", "model": "m"}))
+        r = app_module.get_summary(bout_id)
+        assert r["stale"] is True and "no cached stats" in r["stale_reason"]
+
+    def test_a_corrupt_meta_file_does_not_break_the_read(self, metrics_bout, results_dir):
+        """
+        The summary itself is still readable and useful, so a damaged sidecar must
+        degrade to "stale, unknown" rather than failing the request.
+        """
+        app_module, bout_id = metrics_bout
+        (results_dir / "mybout_distance_summary.md").write_text("## Bout summary\nx\n")
+        (results_dir / "mybout_distance_summary.meta.json").write_text("{not json")
+        r = app_module.get_summary(bout_id)
+        assert r["exists"] is True and r["stale"] is True
+
+    def test_a_differing_touch_file_does_not_count_as_stale(self, metrics_bout, results_dir):
+        """
+        A summary may have been generated from ground truth, detector output or an
+        exported review. Disagreeing with whichever file is on disk now is not the
+        same as describing out-of-date metrics, and conflating them would mark every
+        summary stale forever.
+        """
+        from generate_summary import compute_stats, load_rows
+        app_module, bout_id = metrics_bout
+        b = app_module._get_bout(bout_id)
+        stats = compute_stats(load_rows(b.metrics_csv))
+        stats["touches"] = {"count": 99, "times_s": [1.0], "provenance": "whatever"}
+        self._write_summary(results_dir, stats)
+        assert app_module.get_summary(bout_id)["stale"] is False
+
+    def test_only_one_route_serves_the_summary_path(self):
+        """
+        Two handlers were registered on this path at one point and the second was
+        unreachable, so the endpoint's behaviour depended on definition order.
+        """
+        import app as app_module
+        paths = [r.path for r in app_module.app.routes
+                 if getattr(r, "path", "") == "/api/bouts/{bout_id}/summary"]
+        assert len(paths) == 1
