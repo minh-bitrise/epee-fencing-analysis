@@ -271,6 +271,26 @@ class AnnotationStore:
         })
         return self.save(bout_id, data)
 
+    def mark_reanchors_applied(self, bout_id):
+        """
+        Record that the pipeline has been rerun with the corrections in force.
+
+        This is the user asserting a reprocess happened, not the system observing
+        one, and the distinction is deliberate. Nothing in a rerun writes back here,
+        and inferring it from a newer CSV timestamp would be guessing. Leaving the
+        flag as the user's assertion keeps the interface honest about what it knows:
+        it can say "you told me these are applied", which is weaker and truer than
+        "these are applied".
+        """
+        data = self.load(bout_id)
+        changed = 0
+        for a in data["reanchors"]:
+            if not a["applied"]:
+                a["applied"] = True
+                changed += 1
+        self.save(bout_id, data)
+        return changed
+
     # --- lunge labelling (evaluation only, not one of the four actions) ---
 
     def add_lunge(self, bout_id, time_s, slot, note=""):

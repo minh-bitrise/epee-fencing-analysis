@@ -327,6 +327,34 @@ def _fmt_stance(features, key):
 
 # --- scale calibration ------------------------------------------------
 
+def load_reanchors(path, fps):
+    """
+    Read user re-anchor corrections and index them by frame number.
+
+    Annotation action 4 is the only one that changes tracking rather than
+    interpretation, so it cannot be honoured in the review interface and takes
+    effect here, on a reprocess. The interface records each correction as pending
+    for exactly that reason.
+
+    Corrections are keyed to a frame, since a timestamp has no meaning to the
+    tracker. Rounding rather than truncating matters: a user pausing on the frame
+    where tracking visibly fails is identifying that frame, and truncating a
+    timestamp of 12.999 s at 30 fps would apply the fix to frame 389 instead of
+    390, one frame before the one they were looking at.
+
+    Returns {frame_number: [(slot, x, y), ...]}, several corrections on one frame
+    being legitimate when both fencers are wrong at once.
+    """
+    with open(path) as f:
+        entries = json.load(f)
+    by_frame = {}
+    for e in entries:
+        frame = int(round(float(e["time_s"]) * fps))
+        by_frame.setdefault(frame, []).append(
+            (int(e["slot"]), float(e["x"]), float(e["y"])))
+    return by_frame
+
+
 def calibrate_fixed_scale(video_path, sample_every=15, max_frames=4500,
                           min_height_px=60):
     """
@@ -651,6 +679,35 @@ class FencerTracker:
         self.last_seen = [None, None]   # frame number of the last commit
         self.prev_seen = [None, None]   # frame number of the commit before that
         self.frame_no  = 0
+
+    def reanchor(self, slot_idx, x, y):
+        """
+        Accept the user's word that slot_idx's fencer is at (x, y) on this frame.
+
+        This is annotation action 4, and it is the only one that changes tracking
+        rather than interpretation, which is why it can only take effect on a
+        reprocess. The correction is deliberately minimal: it moves the slot's
+        reference point and forgets everything that would argue with it, then lets
+        the ordinary matching resume. Nothing is force-assigned, because the click
+        says where the fencer is, not which detection box is correct.
+
+        Three pieces of state are cleared and the reason differs for each.
+        `prev_pos` and `prev_seen` go because velocity estimated across a
+        correction is meaningless: it would measure the tracker's error rather than
+        the fencer's motion, and extrapolating from it is the defect that once took
+        clip 2's coverage from 87 to 13 per cent. `last_h` goes because a click
+        carries no box height, and with it unset both gates pass for one frame,
+        which is intended: the user's correction has to be able to overrule the
+        gates that were rejecting the right fencer, otherwise the action cannot
+        repair the failure it exists for.
+        """
+        if slot_idx not in (0, 1):
+            raise ValueError("slot_idx must be 0 or 1")
+        self.last_pos[slot_idx]  = (float(x), float(y))
+        self.prev_pos[slot_idx]  = None
+        self.prev_seen[slot_idx] = None
+        self.last_seen[slot_idx] = self.frame_no
+        self.last_h[slot_idx]    = None
 
     def predicted_pos(self, slot_idx):
         """
@@ -1191,7 +1248,8 @@ def _fmt_net(v):
 # --- main pipeline ----------------------------------------------------
 
 def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=None,
-        show_piste=False, stabilise_camera=False, fixed_scale_calibration=True):
+        show_piste=False, stabilise_camera=False, fixed_scale_calibration=True,
+        reanchor_path=None):
     os.makedirs(output_dir, exist_ok=True)
 
     base      = os.path.splitext(os.path.basename(video_path))[0]
@@ -1221,7 +1279,15 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
 
     fencer_tracker = FencerTracker()
     push_pull      = PushPullTracker(n_fencers=2)
+    reanchors      = {}
+    reanchors_applied = 0
     camera         = CameraMotionEstimator() if stabilise_camera else None
+
+    if reanchor_path:
+        reanchors = load_reanchors(reanchor_path, fps)
+        total = sum(len(v) for v in reanchors.values())
+        print(f"  {total} user re-anchor correction(s) loaded, "
+              f"on {len(reanchors)} frame(s)")
 
     fixed_scale = None
     if fixed_scale_calibration:
@@ -1266,6 +1332,14 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
         # pistes, audience). No-op when no piste config was provided.
         if piste is not None:
             ids, xyxys, confs = piste.filter_detections(ids, xyxys, confs)
+
+        # Apply any user correction for this frame BEFORE matching, so the click
+        # is what the ordinary matching resolves from. Applying it afterwards would
+        # let the tracker commit the wrong fencer for one more frame and then
+        # overwrite the correction with that commit.
+        for slot, rx, ry in reanchors.get(frame_idx, ()):
+            fencer_tracker.reanchor(slot, rx, ry)
+            reanchors_applied += 1
 
         # map detections to stable Fencer 1 / Fencer 2 slots
         slots = fencer_tracker.select(ids, xyxys, confs)
@@ -1447,6 +1521,8 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
         pose_pct = (pose_success / len(distances)) * 100
         print("\n--- Summary ---")
         print(f"  Frames processed:           {frame_idx}")
+        if reanchors:
+            print(f"  User re-anchors applied:    {reanchors_applied}")
         print(f"  Frames with both fencers:   {len(distances)}")
         print(f"  Pose-based distance:        {pose_success} ({pose_pct:.1f}%)")
         print(f"  Fallback (bbox) distance:   {len(distances) - pose_success}")
@@ -1488,6 +1564,12 @@ def main():
                         help="Path to a JSON file describing the piste polygon "
                              "(pixel-space vertices). Detections outside the "
                              "polygon are rejected before tracking.")
+    parser.add_argument("--reanchors", default=None,
+                        help="JSON file of user re-anchor corrections, as exported by "
+                             "the review interface. Each entry needs time_s, slot, x "
+                             "and y. This is the only annotation action that changes "
+                             "tracking, so it is applied here rather than in the "
+                             "interface.")
     parser.add_argument("--no-fixed-scale", action="store_true",
                         help="Use the per-frame bounding-box scale for push/pull instead\n"
                              "of a clip-wide fixed one. The per-frame scale tracks posture\n"
@@ -1510,7 +1592,8 @@ def main():
     run(args.video, args.output, pose_stride=args.pose_stride,
         piste_config=args.piste_config, show_piste=args.show_piste,
         stabilise_camera=args.stabilise,
-        fixed_scale_calibration=not args.no_fixed_scale)
+        fixed_scale_calibration=not args.no_fixed_scale,
+        reanchor_path=args.reanchors)
 
 
 if __name__ == "__main__":
