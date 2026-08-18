@@ -61,7 +61,8 @@ def load_labels(bout_id):
     lunges = data.get("lunges", [])
     if not lunges:
         raise SystemExit(f"Bout {bout_id!r} has no lunge labels yet.")
-    return sorted((float(l["time_s"]), int(l["slot"])) for l in lunges)
+    return sorted((float(l["time_s"]), int(l["slot"]), l.get("note", ""))
+                  for l in lunges)
 
 
 def load_series(csv_path):
@@ -126,15 +127,26 @@ def main():
                     help="Bout id as the interface shows it, e.g. results_pose:fencing_clip3")
     ap.add_argument("--seed", type=int, default=20260818,
                     help="Baseline RNG seed, fixed so the result is reproducible")
+    ap.add_argument("--exclude-flagged", action="store_true",
+                    help="Drop labels the labeller annotated as doubtful. Run BOTH "
+                         "ways: if the conclusion depends on three borderline cases "
+                         "out of thirty-six, it is not a conclusion.")
     args = ap.parse_args()
 
     labels = load_labels(args.bout)
+    flagged = [l for l in labels if l[2]]
+    if args.exclude_flagged:
+        labels = [l for l in labels if not l[2]]
+        print(f"excluding {len(flagged)} labels the labeller flagged as doubtful")
+    elif flagged:
+        print(f"including {len(flagged)} labels the labeller flagged as doubtful "
+              f"(rerun with --exclude-flagged to see the effect)")
     t, series = load_series(args.csv)
     duration = float(t[-1]) if len(t) else 0.0
     rng = np.random.default_rng(args.seed)
 
-    per_slot = {0: [x for x, s in labels if s == 0],
-                1: [x for x, s in labels if s == 1]}
+    per_slot = {0: [x for x, sl, _ in labels if sl == 0],
+                1: [x for x, sl, _ in labels if sl == 1]}
     print(f"{len(labels)} lunge labels over {duration:.0f}s: "
           f"{len(per_slot[0])} for F1, {len(per_slot[1])} for F2")
     if len(labels) < 15:
@@ -150,7 +162,9 @@ def main():
         if not times:
             print(f"\n=== F{slot+1}: no labels, skipped ===")
             continue
-        print(f"\n=== F{slot+1}: {len(times)} labelled lunges ===")
+        note = ("  (too few for the binomial test to have any power; "
+                "read the effect size, not p)" if len(times) < 12 else "")
+        print(f"\n=== F{slot+1}: {len(times)} labelled lunges ==={note}")
         for name, mode, above in features:
             s = series[slot][name]
             avail = 100.0 * np.sum(~np.isnan(s)) / len(s)

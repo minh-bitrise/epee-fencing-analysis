@@ -108,6 +108,32 @@ def load_proposed_touches(path):
     return out
 
 
+def _next_id(items, prefix):
+    """
+    An id unique among the records currently in `items`.
+
+    Deriving it from len() looks equivalent and is not: removing a record lowers the
+    count, so the next insert reuses an id that is still LIVE. Two records then
+    share one id and a delete takes both. Found in real data after a review session
+    that used the remove button, which left two `l1` records and a hole where `l32`
+    had been.
+
+    One past the highest number present cannot collide with anything present, which
+    is the property that prevents that bug. It is deliberately not the stronger
+    "never reuse an id at all": an id freed by a removal can come round again. That
+    would only matter if a caller held a stale id across a removal, and the
+    interface reloads after every mutation, so it does not. Making it stronger means
+    persisting a counter and migrating every existing annotation file, which is not
+    worth it for a guarantee nothing needs.
+    """
+    used = []
+    for it in items:
+        raw = str(it.get("id", ""))
+        if raw.startswith(prefix) and raw[len(prefix):].isdigit():
+            used.append(int(raw[len(prefix):]))
+    return f"{prefix}{max(used) + 1 if used else 0}"
+
+
 class AnnotationStore:
     """
     Per-bout annotation state, persisted as JSON.
@@ -180,7 +206,7 @@ class AnnotationStore:
         data = self.load(bout_id)
         if scorer not in SCORERS:
             raise ValueError(f"scorer must be one of {SCORERS}")
-        new_id = f"u{len(data['added_touches'])}"
+        new_id = _next_id(data["added_touches"], "u")
         data["added_touches"].append({
             "id": new_id, "time_s": float(time_s), "scorer": scorer,
             "note": note, "origin": "user", "created": time.time(),
@@ -207,7 +233,7 @@ class AnnotationStore:
             raise ValueError("end_s must be greater than start_s")
         data = self.load(bout_id)
         data["unreliable_segments"].append({
-            "id": f"s{len(data['unreliable_segments'])}",
+            "id": _next_id(data["unreliable_segments"], "s"),
             "start_s": float(start_s), "end_s": float(end_s),
             "reason": reason, "created": time.time(),
         })
@@ -238,7 +264,7 @@ class AnnotationStore:
             raise ValueError("slot must be 0 or 1")
         data = self.load(bout_id)
         data["reanchors"].append({
-            "id": f"a{len(data['reanchors'])}",
+            "id": _next_id(data["reanchors"], "a"),
             "time_s": float(time_s), "slot": int(slot),
             "x": float(x), "y": float(y),
             "applied": False, "created": time.time(),
@@ -273,7 +299,7 @@ class AnnotationStore:
             raise ValueError("time_s must not be negative")
         data = self.load(bout_id)
         data["lunges"].append({
-            "id": f"l{len(data['lunges'])}",
+            "id": _next_id(data["lunges"], "l"),
             "time_s": float(time_s), "slot": int(slot),
             "note": note, "created": time.time(),
         })

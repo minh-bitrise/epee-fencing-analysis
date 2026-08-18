@@ -1,0 +1,261 @@
+{
+  "bout_id": "results_pose:fencing_clip3",
+  "touch_states": {},
+  "added_touches": [],
+  "unreliable_segments": [],
+  "reanchors": [],
+  "lunges": [
+    {
+      "id": "l0",
+      "time_s": 5.271,
+      "slot": 1,
+      "note": "",
+      "created": 1787066711.247555
+    },
+    {
+      "id": "l1",
+      "time_s": 7.317,
+      "slot": 0,
+      "note": "",
+      "created": 1787066733.519549
+    },
+    {
+      "id": "l2",
+      "time_s": 9.551,
+      "slot": 1,
+      "note": "",
+      "created": 1787066759.27773
+    },
+    {
+      "id": "l3",
+      "time_s": 10.084,
+      "slot": 1,
+      "note": "",
+      "created": 1787066766.419012
+    },
+    {
+      "id": "l4",
+      "time_s": 14.884,
+      "slot": 1,
+      "note": "",
+      "created": 1787066787.6000588
+    },
+    {
+      "id": "l5",
+      "time_s": 18.517,
+      "slot": 1,
+      "note": "labeller flagged: very small lunge, unsure whether to count it",
+      "created": 1787066815.093929
+    },
+    {
+      "id": "l6",
+      "time_s": 24.65,
+      "slot": 1,
+      "note": "",
+      "created": 1787066867.15974
+    },
+    {
+      "id": "l7",
+      "time_s": 30.417,
+      "slot": 1,
+      "note": "",
+      "created": 1787066899.050279
+    },
+    {
+      "id": "l8",
+      "time_s": 34.85,
+      "slot": 0,
+      "note": "",
+      "created": 1787066922.8844721
+    },
+    {
+      "id": "l9",
+      "time_s": 35.217,
+      "slot": 1,
+      "note": "",
+      "created": 1787066929.0506392
+    },
+    {
+      "id": "l10",
+      "time_s": 38.617,
+      "slot": 0,
+      "note": "labeller flagged: very small, more a fake lunge or invitation",
+      "created": 1787066948.700586
+    },
+    {
+      "id": "l11",
+      "time_s": 39.35,
+      "slot": 1,
+      "note": "",
+      "created": 1787066976.329688
+    },
+    {
+      "id": "l12",
+      "time_s": 43.05,
+      "slot": 1,
+      "note": "",
+      "created": 1787067003.480723
+    },
+    {
+      "id": "l13",
+      "time_s": 46.683,
+      "slot": 1,
+      "note": "",
+      "created": 1787067047.974135
+    },
+    {
+      "id": "l14",
+      "time_s": 52.611,
+      "slot": 1,
+      "note": "",
+      "created": 1787067072.976492
+    },
+    {
+      "id": "l15",
+      "time_s": 54.377,
+      "slot": 1,
+      "note": "",
+      "created": 1787067083.026455
+    },
+    {
+      "id": "l16",
+      "time_s": 56.044,
+      "slot": 1,
+      "note": "",
+      "created": 1787067091.697978
+    },
+    {
+      "id": "l17",
+      "time_s": 62.573,
+      "slot": 1,
+      "note": "",
+      "created": 1787067120.525974
+    },
+    {
+      "id": "l18",
+      "time_s": 63.073,
+      "slot": 1,
+      "note": "",
+      "created": 1787067125.117475
+    },
+    {
+      "id": "l19",
+      "time_s": 68.666,
+      "slot": 1,
+      "note": "",
+      "created": 1787067143.552001
+    },
+    {
+      "id": "l20",
+      "time_s": 75.095,
+      "slot": 1,
+      "note": "",
+      "created": 1787067161.46228
+    },
+    {
+      "id": "l21",
+      "time_s": 75.828,
+      "slot": 1,
+      "note": "",
+      "created": 1787067169.007798
+    },
+    {
+      "id": "l22",
+      "time_s": 77.995,
+      "slot": 0,
+      "note": "",
+      "created": 1787067177.919668
+    },
+    {
+      "id": "l23",
+      "time_s": 78.861,
+      "slot": 1,
+      "note": "",
+      "created": 1787067187.547379
+    },
+    {
+      "id": "l24",
+      "time_s": 88.145,
+      "slot": 1,
+      "note": "",
+      "created": 1787067218.088755
+    },
+    {
+      "id": "l25",
+      "time_s": 96.873,
+      "slot": 1,
+      "note": "",
+      "created": 1787067255.454892
+    },
+    {
+      "id": "l26",
+      "time_s": 106.477,
+      "slot": 1,
+      "note": "",
+      "created": 1787067284.748092
+    },
+    {
+      "id": "l27",
+      "time_s": 119.47,
+      "slot": 1,
+      "note": "",
+      "created": 1787067323.6062431
+    },
+    {
+      "id": "l28",
+      "time_s": 123.47,
+      "slot": 1,
+      "note": "",
+      "created": 1787067337.323877
+    },
+    {
+      "id": "l29",
+      "time_s": 127.07,
+      "slot": 1,
+      "note": "",
+      "created": 1787067350.7512069
+    },
+    {
+      "id": "l30",
+      "time_s": 132.055,
+      "slot": 1,
+      "note": "",
+      "created": 1787067372.84658
+    },
+    {
+      "id": "l31",
+      "time_s": 135.236,
+      "slot": 0,
+      "note": "",
+      "created": 1787067386.931045
+    },
+    {
+      "id": "l32",
+      "time_s": 163.53,
+      "slot": 1,
+      "note": "",
+      "created": 1787067460.266518
+    },
+    {
+      "id": "l33",
+      "time_s": 165.247,
+      "slot": 0,
+      "note": "",
+      "created": 1787067474.3526511
+    },
+    {
+      "id": "l34",
+      "time_s": 166.247,
+      "slot": 1,
+      "note": "",
+      "created": 1787067481.911592
+    },
+    {
+      "id": "l35",
+      "time_s": 168.08,
+      "slot": 1,
+      "note": "labeller flagged: very small lunge",
+      "created": 1787067492.741823
+    }
+  ]
+}

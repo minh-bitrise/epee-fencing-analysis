@@ -629,3 +629,72 @@ class TestSummaryEndpoint:
         paths = [r.path for r in app_module.app.routes
                  if getattr(r, "path", "") == "/api/bouts/{bout_id}/summary"]
         assert len(paths) == 1
+
+
+class TestRecordIdsStayUniqueAmongLiveRecords:
+    """
+    Ids were derived from list length, so removing a record lowered the count and the
+    next insert reused an id that was still live. Two records then shared one id and
+    a delete took both. Found in real data after a review session that used the
+    remove button: two `l1` records and a hole where `l32` had been. All four record
+    types had the same line, so all four are covered.
+
+    The guarantee asserted here is uniqueness among records PRESENT, not that an id
+    is never issued twice in the lifetime of a bout. An id freed by a removal may
+    come round again, which is harmless because the interface reloads after every
+    mutation and so never holds a stale id.
+    """
+
+    def test_no_two_live_lunges_share_an_id(self, store):
+        store.add_lunge("b", 1.0, 0)
+        store.add_lunge("b", 2.0, 0)
+        store.remove_lunge("b", "l0")          # free an id from the middle
+        store.add_lunge("b", 3.0, 0)
+        store.add_lunge("b", 4.0, 0)
+        ids = [l["id"] for l in store.load("b")["lunges"]]
+        assert len(set(ids)) == len(ids), ids
+
+    def test_removing_one_record_cannot_take_another(self, store):
+        """The failure this actually caused, asserted directly."""
+        for t in (1.0, 2.0, 3.0):
+            store.add_lunge("b", t, 0)
+        store.remove_lunge("b", "l1")
+        store.add_lunge("b", 4.0, 0)           # reuses l1 under the old code
+        before = len(store.load("b")["lunges"])
+        store.remove_lunge("b", store.load("b")["lunges"][-1]["id"])
+        assert len(store.load("b")["lunges"]) == before - 1
+
+    def test_the_old_length_scheme_would_have_failed_this(self, store):
+        """
+        Pins the specific sequence, so a revert to len()-based ids fails here rather
+        than silently corrupting a review session.
+        """
+        store.add_lunge("b", 1.0, 0)           # l0
+        store.add_lunge("b", 2.0, 0)           # l1
+        store.remove_lunge("b", "l1")          # len() now 1, so len() gives l1 again
+        store.add_lunge("b", 3.0, 0)
+        live = store.load("b")["lunges"]
+        assert len({l["id"] for l in live}) == 2
+
+    def test_added_touch_ids_stay_unique(self, store):
+        store.add_touch("b", 1.0)
+        store.add_touch("b", 2.0)
+        store.remove_added_touch("b", "u0")
+        store.add_touch("b", 3.0)
+        ids = [t["id"] for t in store.load("b")["added_touches"]]
+        assert len(set(ids)) == len(ids), ids
+
+    def test_segment_ids_stay_unique(self, store):
+        store.add_unreliable_segment("b", 1.0, 2.0)
+        store.add_unreliable_segment("b", 3.0, 4.0)
+        store.remove_unreliable_segment("b", "s0")
+        store.add_unreliable_segment("b", 5.0, 6.0)
+        ids = [x["id"] for x in store.load("b")["unreliable_segments"]]
+        assert len(set(ids)) == len(ids), ids
+
+    def test_ids_restart_when_the_list_is_emptied(self, store):
+        """Nothing is left to collide with, so restarting is safe and tidy."""
+        store.add_lunge("b", 1.0, 0)
+        store.remove_lunge("b", "l0")
+        store.add_lunge("b", 2.0, 0)
+        assert [l["id"] for l in store.load("b")["lunges"]] == ["l0"]
