@@ -89,6 +89,10 @@ MAX_FRAME_MOVEMENT_M = 0.15
 
 # minimum movement (m) to count toward push/pull (ignore detection jitter)
 PUSH_PULL_NOISE_FLOOR_M = 0.03
+# Below this magnitude a net displacement says only "finished where they started",
+# and its sign is not meaningful. Kept in step with the same constant in
+# generate_summary.py and the review interface.
+NET_SIGN_FLOOR_M = 1.0
 
 # rolling median window applied to each fencer's reference x before
 # computing frame-to-frame movement, to suppress bounding-box jitter
@@ -1051,8 +1055,23 @@ def _draw_panel(frame, x, y, w, h, alpha=0.55):
 
 
 def draw_overlay(frame, slots, pose_data, dist_display_m, dist_raw_m,
-                 dist_method, push_pull, frame_idx, fps):
-    """Draw bounding boxes, pose keypoints, distance overlay, and push/pull stats."""
+                 dist_method, push_pull, frame_idx, fps, net_scale=None):
+    """
+    Draw bounding boxes, pose keypoints, the distance readout and per-fencer
+    movement.
+
+    The movement columns show net displacement and closing share, not the
+    cumulative push and pull totals they used to show. The totals are wrong rather
+    than approximate: B1g traced their error to the per-frame movement cap and
+    measured it at 24 m on a 14 m piste. Burning them into the video was the last
+    place they still appeared as though they were measurements, and an annotated
+    clip is the most quotable artefact the project produces, so it should not
+    caption a fencer with a figure the project has withdrawn.
+
+    net_scale is the clip-wide fixed scale in pixels per metre. It defaults to None
+    so a caller without one still gets an overlay, showing the closing share and
+    marking the displacement unavailable rather than inventing it.
+    """
 
     h, w = frame.shape[:2]
 
@@ -1108,17 +1127,29 @@ def draw_overlay(frame, slots, pose_data, dist_display_m, dist_raw_m,
     cv2.putText(frame, dist_text, (col1_x, inner_top + 92),
                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, zone_colour, 2)
 
-    # columns 2 & 3: per-fencer push / pull
+    # columns 2 & 3: per-fencer net displacement and closing share
     for i in range(2):
         col_x = panel_x + 16 + col_w * (i + 1)
-        adv = push_pull.advance_m[i]
-        ret = push_pull.retreat_m[i]
+
+        net = push_pull.net_displacement_m(i, net_scale) if net_scale else None
+        # Under a metre the sign is not meaningful: the same fencer measures
+        # +0.43 m from raw positions and -0.94 m from smoothed endpoints, so the
+        # two readings agree on the substance and disagree on the direction.
+        if net is None:
+            net_text = "net      -- "
+        elif abs(net) < NET_SIGN_FLOOR_M:
+            net_text = "net    ~0 m"
+        else:
+            net_text = f"net  {net:+5.2f} m"
+
+        share = push_pull.closing_share(i)
+        share_text = "closing   -- " if share is None else f"closing {share*100:4.1f}%"
 
         cv2.putText(frame, f"Fencer {i + 1}", (col_x, inner_top + 22),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLOURS[i], 2)
-        cv2.putText(frame, f"push  {adv:6.2f} m", (col_x, inner_top + 56),
+        cv2.putText(frame, net_text, (col_x, inner_top + 56),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (230, 230, 230), 2)
-        cv2.putText(frame, f"pull  {ret:6.2f} m", (col_x, inner_top + 92),
+        cv2.putText(frame, share_text, (col_x, inner_top + 92),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (230, 230, 230), 2)
 
     return frame
@@ -1362,7 +1393,8 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
 
         frame = draw_overlay(frame, slots, pose_data,
                              dist_display_m, dist_raw_m, dist_method,
-                             push_pull, frame_idx, fps)
+                             push_pull, frame_idx, fps,
+                             net_scale=fixed_scale if fixed_scale else None)
         writer.write(frame)
 
         time_sec = frame_idx / fps

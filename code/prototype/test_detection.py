@@ -16,6 +16,7 @@ from collections import deque
 import numpy as np
 import pytest
 
+import run_detection
 from run_detection import (
     # geometry helpers
     get_box_centre,
@@ -1396,3 +1397,86 @@ class TestStanceFeatures:
         f = get_stance_features(lms, self.SCALE)
         assert math.isclose(f["stance_m"], 0.60, abs_tol=1e-9)
         assert f["hip_height_m"] is None
+
+
+class TestOverlayShowsOnlyDefensibleMetrics:
+    """
+    The annotated video is the project's most quotable artefact, so what it captions
+    a fencer with matters. It burnt in cumulative push and pull until B1g measured
+    their error at 24 m on a 14 m piste; it was the last surface still presenting
+    them as measurements. draw_overlay had no test coverage at all, which is how
+    that survived three rounds of metric revision.
+    """
+
+    SCALE = 100.0
+
+    def _frame(self):
+        return np.zeros((720, 1280, 3), dtype=np.uint8)
+
+    def _tracker(self, moved_px=400.0):
+        """A tracker that has seen one fencer advance a long way."""
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        for x in np.linspace(100.0, 100.0 + moved_px, 40):
+            p.update(0, float(x), 900.0, self.SCALE)
+            p.update(1, 900.0, float(x), self.SCALE)
+        return p
+
+    def _drawn_text(self, monkeypatch, net_scale, tracker=None):
+        """Capture every string draw_overlay renders."""
+        captured = []
+        real = run_detection.cv2.putText
+
+        def spy(img, text, org, *a, **kw):
+            captured.append(text)
+            return real(img, text, org, *a, **kw)
+
+        monkeypatch.setattr(run_detection.cv2, "putText", spy)
+        run_detection.draw_overlay(
+            self._frame(), [None, None], [None, None],
+            2.4, 2.4, "pose", tracker or self._tracker(), 30, 30.0,
+            net_scale=net_scale)
+        return captured
+
+    def test_push_and_pull_are_not_drawn(self, monkeypatch):
+        text = " ".join(self._drawn_text(monkeypatch, self.SCALE)).lower()
+        assert "push" not in text
+        assert "pull" not in text
+
+    def test_net_displacement_and_closing_share_are_drawn(self, monkeypatch):
+        text = " ".join(self._drawn_text(monkeypatch, self.SCALE)).lower()
+        assert "net" in text
+        assert "closing" in text
+
+    def test_without_a_scale_the_displacement_is_marked_unavailable(self, monkeypatch):
+        """
+        No scale means no metres. Drawing a number anyway would be inventing one,
+        and the closing share needs no scale so it should still appear.
+        """
+        text = " ".join(self._drawn_text(monkeypatch, None))
+        assert "net      --" in text
+        assert "closing" in text
+
+    def test_a_small_net_is_drawn_without_a_sign(self, monkeypatch):
+        """
+        Under a metre the sign is not meaningful, since the same fencer reads
+        +0.43 m from raw positions and -0.94 m from smoothed endpoints.
+        """
+        barely = self._tracker(moved_px=20.0)     # 0.2 m at this scale
+        text = " ".join(self._drawn_text(monkeypatch, self.SCALE, barely))
+        assert "~0 m" in text
+        assert "+0.20" not in text
+
+    def test_a_real_net_is_drawn_with_its_sign_and_magnitude(self, monkeypatch):
+        """
+        Above the floor the direction is the whole point, so it must be shown.
+
+        Only Fencer 1 moves in this fixture, 400 px at 100 px/m, so its line
+        carries +4.00 m while the stationary opponent falls under the floor and
+        renders without a sign. Both halves are asserted, because a change that
+        made every fencer read the same way would be wrong either direction.
+        """
+        drawn = self._drawn_text(monkeypatch, self.SCALE)
+        net_lines = [t for t in drawn if t.startswith("net")]
+        assert len(net_lines) == 2                      # one per fencer
+        assert "+4.00 m" in net_lines[0]                # the fencer that advanced
+        assert "~0 m" in net_lines[1]                   # the one that stood still
