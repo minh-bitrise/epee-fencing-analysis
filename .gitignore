@@ -38,6 +38,11 @@ Thumbs.db
 *.log
 tmp/
 
+# Local editor/agent tooling. launch.json only records how to start the dev server
+# on this machine, and committing it would add an AI-tool trace that B11 then has to
+# clean up before submission.
+.claude/
+
 # Prototype data (too large for git — keep locally)
 code/prototype/results/
 code/prototype/fencing_raw*
