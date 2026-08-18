@@ -21,6 +21,24 @@ cite them, and several exist only to make a negative result reproducible.
 | `results_pose/` | clip 3 at `--pose-stride 1` | the stance-feature experiment in B1h, and the bout to label lunges on. Only directory with the stance columns |
 | `results_clip4_masked/` | clip 4, gallery masked | control for B1i. Removing the spectators made coverage worse |
 | `results_clip4_crop/` | clip 4, cropped to the piste | the crop B1c proposed. Also worse |
+| `results_current/` | all four clips, one pipeline version | **the set to quote from.** First set where every clip has the raw position columns, so movement figures are comparable across clips |
+
+## Flags matter, and are easy to forget
+
+Clips 1, 2 and 4 need their piste configuration; clip 3 does not, because it contains no other
+people. Omitting it is not a small difference: rebuilding `results_current/` without the configs
+gave clip 2 **80.1 per cent** coverage against **98.0** with them, an 18 point gap that looked
+exactly like a code regression until the flags were checked. The tracker had not changed. Record
+the command with the output.
+
+```
+python3 run_detection.py --video fencing_clip.mp4  --output results_current --piste-config piste_clip1.json
+python3 run_detection.py --video fencing_clip2.mp4 --output results_current --piste-config piste_clip2.json
+python3 run_detection.py --video fencing_clip3.mp4 --output results_current
+python3 run_detection.py --video fencing_clip4.mp4 --output results_current --piste-config piste_clip4.json
+```
+
+Everything else is default: pose stride 3, fixed scale on, stabilisation off.
 
 ## Reproducing any of them
 
