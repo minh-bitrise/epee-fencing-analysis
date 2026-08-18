@@ -1,0 +1,93 @@
+{
+  "bout_id": "results_current:fencing_clip2",
+  "touch_states": {},
+  "added_touches": [],
+  "unreliable_segments": [],
+  "reanchors": [],
+  "lunges": [
+    {
+      "id": "l0",
+      "time_s": 2.352,
+      "slot": 1,
+      "note": "labeller flagged: very small, could be an extension with a small advance",
+      "created": 1787087553.782838
+    },
+    {
+      "id": "l1",
+      "time_s": 40.375,
+      "slot": 1,
+      "note": "",
+      "created": 1787087657.853429
+    },
+    {
+      "id": "l2",
+      "time_s": 44.183,
+      "slot": 1,
+      "note": "",
+      "created": 1787087685.842997
+    },
+    {
+      "id": "l3",
+      "time_s": 51.252,
+      "slot": 1,
+      "note": "",
+      "created": 1787087714.0297
+    },
+    {
+      "id": "l4",
+      "time_s": 60.281,
+      "slot": 0,
+      "note": "",
+      "created": 1787087738.046481
+    },
+    {
+      "id": "l5",
+      "time_s": 68.934,
+      "slot": 0,
+      "note": "",
+      "created": 1787087757.590591
+    },
+    {
+      "id": "l6",
+      "time_s": 68.812,
+      "slot": 1,
+      "note": "",
+      "created": 1787087766.2159748
+    },
+    {
+      "id": "l7",
+      "time_s": 85.767,
+      "slot": 1,
+      "note": "",
+      "created": 1787087810.66186
+    },
+    {
+      "id": "l8",
+      "time_s": 88.054,
+      "slot": 0,
+      "note": "",
+      "created": 1787087817.276371
+    },
+    {
+      "id": "l9",
+      "time_s": 127.487,
+      "slot": 0,
+      "note": "",
+      "created": 1787087856.712118
+    },
+    {
+      "id": "l10",
+      "time_s": 158.93,
+      "slot": 1,
+      "note": "",
+      "created": 1787087890.074239
+    },
+    {
+      "id": "l11",
+      "time_s": 161.564,
+      "slot": 0,
+      "note": "",
+      "created": 1787087901.504288
+    }
+  ]
+}
