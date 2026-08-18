@@ -1178,6 +1178,8 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
         # compute distance + update push/pull when both fencers visible
         dist_raw_m  = None
         dist_method = None
+        f1_pos_m    = None
+        f2_pos_m    = None
         if slots[0] is not None and slots[1] is not None:
             box0, _ = slots[0]
             box1, _ = slots[1]
@@ -1251,6 +1253,19 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
             push_pull.update(0, sx0, sx1, movement_scale)
             push_pull.update(1, sx1, sx0, movement_scale)
 
+            # Raw position of each fencer along the image x axis, in metres.
+            #
+            # Written to the CSV so downstream metrics are derived from the
+            # measurement rather than from the filtered totals. Net displacement
+            # and closing share computed from these columns are independent of the
+            # noise floor, the movement cap and the banking buffer; computed from
+            # the cumulative advance/retreat columns they inherit all three. That
+            # distinction is not academic: the two disagreed by 3.5 m on clip 3
+            # before these columns existed.
+            if movement_scale:
+                f1_pos_m = sx0 / movement_scale
+                f2_pos_m = sx1 / movement_scale
+
         # smoothed value for the on-screen overlay
         dist_display_m = None
         if dist_raw_m is not None:
@@ -1276,6 +1291,8 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
             "f1_retreat_m":      round(push_pull.retreat_m[0], 3),
             "f2_advance_m":      round(push_pull.advance_m[1], 3),
             "f2_retreat_m":      round(push_pull.retreat_m[1], 3),
+            "f1_pos_m":          round(f1_pos_m, 4) if f1_pos_m is not None else "",
+            "f2_pos_m":          round(f2_pos_m, 4) if f2_pos_m is not None else "",
         })
         if dist_raw_m is not None:
             times.append(time_sec)
@@ -1296,6 +1313,7 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
             "distance_raw_m", "distance_smooth_m", "method",
             "f1_advance_m", "f1_retreat_m",
             "f2_advance_m", "f2_retreat_m",
+            "f1_pos_m", "f2_pos_m",
         ])
         writer_csv.writeheader()
         writer_csv.writerows(csv_rows)

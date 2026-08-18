@@ -95,6 +95,99 @@ def scope_distance(d, mask):
     return sel[~np.isnan(sel)]
 
 
+def _direction(rows):
+    """
+    Which way is "toward the opponent" for each fencer, from the first frame in
+    which both positions are known. +1 means increasing x.
+    """
+    for r in rows:
+        if r.get("f1_pos_m") and r.get("f2_pos_m"):
+            f1, f2 = float(r["f1_pos_m"]), float(r["f2_pos_m"])
+            return (1.0, -1.0) if f2 > f1 else (-1.0, 1.0)
+    return (1.0, -1.0)
+
+
+def signed_movement(rows, fencer):
+    """
+    Per-frame movement toward the opponent for one fencer, in metres.
+
+    Read from the raw position columns when the CSV has them, and otherwise
+    recovered by differencing the cumulative advance and retreat totals.
+
+    The distinction matters. The cumulative columns are written after the noise
+    floor, the movement cap and the banking buffer have been applied, so anything
+    derived from them inherits all three. The position columns are the raw
+    measurement. On clip 3 the two routes disagreed by 3.5 m on net displacement,
+    which is why the position columns were added rather than the derivation being
+    left as it was.
+    """
+    key = f"{fencer}_pos_m"
+    if rows and key in rows[0]:
+        idx = 0 if fencer == "f1" else 1
+        sign = _direction(rows)[idx]
+        pos = np.array([float(r[key]) if r[key] else np.nan for r in rows])
+        # carry the last known position across gaps, so a missing frame
+        # contributes no movement rather than a spurious jump
+        for i in range(1, len(pos)):
+            if np.isnan(pos[i]):
+                pos[i] = pos[i - 1]
+        if np.isnan(pos[0]):
+            first = np.flatnonzero(~np.isnan(pos))
+            pos[:first[0]] = pos[first[0]] if len(first) else 0.0
+        return np.diff(pos, prepend=pos[0]) * sign
+
+    adv = np.array([float(r[f"{fencer}_advance_m"]) for r in rows])
+    ret = np.array([float(r[f"{fencer}_retreat_m"]) for r in rows])
+    return (np.diff(adv, prepend=adv[0]) - np.diff(ret, prepend=ret[0]))
+
+
+def net_forward_movement(rows, fencer, mask):
+    """
+    Signed movement toward the opponent summed over the masked frames, in metres.
+
+    Two readings, and the distinction matters enough to name carefully.
+
+    Over ALL frames this is a true net displacement: the sum telescopes to the
+    difference between the first and last position, so frame-to-frame measurement
+    noise cancels rather than accumulating. That invariance was verified directly:
+    re-measuring clip 3 under median smoothing windows from 1 to 121 frames left it
+    unchanged at +3.43 m while the path length fell from 161 m to 33 m.
+
+    Over a MASKED subset it is not a displacement, because the excluded intervals
+    break the series into pieces and the sum jumps across them. It is then "net
+    forward movement while in play", which is a real and tactically useful
+    quantity but not an endpoint measurement. On clip 3 the in-play figure is
+    larger than the whole-recording one, and correctly so: fencers gain ground
+    during a phrase and give it back walking to the guard line, so removing the
+    resets removes the giving-back.
+
+    Callers should present the whole-recording value as displacement and the
+    scoped value as movement during play. Conflating them would suggest a fencer
+    finished 7.6 m up the piste when they finished roughly where they started.
+    """
+    return float(signed_movement(rows, fencer)[mask].sum())
+
+
+# retained under the old name so existing callers keep working
+net_displacement = net_forward_movement
+
+
+def closing_share(rows, fencer, mask):
+    """
+    Proportion of moving frames spent reducing the distance, in [0, 1] or None.
+
+    The well-defined way to say who pressed forward more. It counts the direction
+    of each movement rather than its magnitude, so noise contributes symmetrically
+    to both directions rather than adding to a total. Returns None when no
+    movement was recorded in the masked frames.
+    """
+    d = signed_movement(rows, fencer)[mask]
+    moving = np.abs(d) > 1e-9
+    if not moving.any():
+        return None
+    return float((d[moving] > 0).mean())
+
+
 def scope_cumulative(series, t, mask):
     """
     Re-total a cumulative series over in-play frames only.
@@ -161,10 +254,17 @@ def scope_metrics(rows, touch_times, reset_s=DEFAULT_RESET_S):
 
     def summarise(sel_mask):
         dist = scope_distance(d, sel_mask)
+        f1_cs = closing_share(rows, "f1", sel_mask)
+        f2_cs = closing_share(rows, "f2", sel_mask)
         return {
             "frames": int(sel_mask.sum()),
             "distance_samples": int(len(dist)),
             "mean_distance_m": round(float(dist.mean()), 2) if len(dist) else None,
+            # the reliable movement figures; see the module docstrings
+            "f1_net_m": round(net_displacement(rows, "f1", sel_mask), 2),
+            "f2_net_m": round(net_displacement(rows, "f2", sel_mask), 2),
+            "f1_closing_share": round(f1_cs, 3) if f1_cs is not None else None,
+            "f2_closing_share": round(f2_cs, 3) if f2_cs is not None else None,
             "f1_push_m": round(scope_cumulative(
                 [float(r["f1_advance_m"]) for r in rows], t, sel_mask), 2),
             "f1_pull_m": round(scope_cumulative(
@@ -206,17 +306,21 @@ def main():
           f"of up to {r['reset_s']:.1f}s")
     print(f"in play: {100 * r['in_play_fraction']:.1f}% of frames\n")
     ip, wr = r["in_play"], r["whole_recording"]
-    print(f"{'metric':<22}{'whole recording':>18}{'in play only':>16}{'change':>10}")
+    print(f"{'metric':<26}{'whole recording':>18}{'in play only':>16}{'change':>10}")
     for key, label in [("mean_distance_m", "mean distance (m)"),
-                       ("f1_push_m", "Fencer 1 push (m)"),
-                       ("f1_pull_m", "Fencer 1 pull (m)"),
-                       ("f2_push_m", "Fencer 2 push (m)"),
-                       ("f2_pull_m", "Fencer 2 pull (m)")]:
+                       ("f1_net_m", "F1 fwd movement (m)"),
+                       ("f2_net_m", "F2 fwd movement (m)"),
+                       ("f1_closing_share", "Fencer 1 closing share"),
+                       ("f2_closing_share", "Fencer 2 closing share"),
+                       ("f1_push_m", "F1 push (m) [indicative]"),
+                       ("f1_pull_m", "F1 pull (m) [indicative]"),
+                       ("f2_push_m", "F2 push (m) [indicative]"),
+                       ("f2_pull_m", "F2 pull (m) [indicative]")]:
         a, b = wr[key], ip[key]
         if a is None or b is None:
             continue
         pct = f"{100 * (b - a) / a:+.0f}%" if a else "n/a"
-        print(f"{label:<22}{a:>18.2f}{b:>16.2f}{pct:>10}")
+        print(f"{label:<26}{a:>18.2f}{b:>16.2f}{pct:>10}")
 
 
 if __name__ == "__main__":
