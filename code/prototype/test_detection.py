@@ -1163,3 +1163,104 @@ class TestSavePlot:
         import run_detection as rd
         for name in ("DIST_CLOSE_M", "DIST_LUNGE_M", "DIST_ADVANCE_LUNGE_M"):
             assert hasattr(rd, name), f"save_plot draws {name}, which is missing"
+
+
+# -------------------- closing share --------------------
+
+class TestClosingShare:
+    """
+    The well-defined replacement for "how far did each fencer advance in total".
+
+    That question has no answer as a distance in this data. Path length sums the
+    magnitude of every frame's change, so measurement noise adds to it and never
+    cancels: re-measuring clip 3 under median windows from 1 to 121 frames moved
+    one fencer's path length from 161 m to 33 m with no asymptote, while net
+    displacement stayed at exactly +3.43 m throughout. A quantity that changes
+    fivefold with an arbitrary smoothing parameter measures the filter, not the
+    fencer.
+
+    Counting the sign of each movement instead of its magnitude avoids that,
+    because noise contributes symmetrically to both directions. Under the same
+    sweep the closing share moved only from 52.4 to 60.9 per cent.
+    """
+
+    SCALE = 150.0
+
+    def test_none_before_any_movement(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        assert p.closing_share(0) is None
+
+    def test_all_closing_gives_one(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        x = 100.0
+        p.update(0, x, 900.0, self.SCALE)
+        for _ in range(10):
+            x += 8.0                      # steadily toward the opponent
+            p.update(0, x, 900.0, self.SCALE)
+        assert p.closing_share(0) == 1.0
+
+    def test_all_opening_gives_zero(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        x = 500.0
+        p.update(0, x, 900.0, self.SCALE)
+        for _ in range(10):
+            x -= 8.0                      # steadily away
+            p.update(0, x, 900.0, self.SCALE)
+        assert p.closing_share(0) == 0.0
+
+    def test_alternating_gives_about_half(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        x = 500.0
+        p.update(0, x, 900.0, self.SCALE)
+        for i in range(20):
+            x += 8.0 if i % 2 == 0 else -8.0
+            p.update(0, x, 900.0, self.SCALE)
+        assert 0.4 <= p.closing_share(0) <= 0.6
+
+    def test_is_bounded(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        x = 100.0
+        p.update(0, x, 900.0, self.SCALE)
+        rng = np.random.default_rng(0)
+        for _ in range(200):
+            x += rng.normal(0, 10)
+            p.update(0, x, 900.0, self.SCALE)
+        s = p.closing_share(0)
+        assert 0.0 <= s <= 1.0
+
+    def test_magnitude_does_not_affect_it_above_the_noise_floor(self):
+        """
+        The property that makes it usable: scaling every movement leaves the
+        share unchanged, whereas it would scale a path length proportionally.
+
+        This holds only for movements that clear PUSH_PULL_NOISE_FLOOR_M. Below
+        it the banking buffer decides when a movement commits, so magnitude does
+        influence the count. The metric is therefore magnitude-invariant in the
+        regime that matters and not universally, which is worth knowing before
+        quoting it on footage where the fencers barely move.
+        """
+        floor_px = PUSH_PULL_NOISE_FLOOR_M * self.SCALE
+        shares = []
+        for step in (floor_px * 2, floor_px * 4, floor_px * 8):
+            p = PushPullTracker(n_fencers=2, smooth_window=1)
+            x = 100.0
+            p.update(0, x, 900.0, self.SCALE)
+            for i in range(30):
+                x += step if i % 3 else -step
+                p.update(0, x, 900.0, self.SCALE)
+            shares.append(p.closing_share(0))
+        assert max(shares) - min(shares) < 1e-9, shares
+
+    def test_below_the_noise_floor_magnitude_does_matter(self):
+        """Pins the limitation above, so it cannot be forgotten."""
+        floor_px = PUSH_PULL_NOISE_FLOOR_M * self.SCALE
+        shares = []
+        for step in (floor_px * 0.3, floor_px * 4):
+            p = PushPullTracker(n_fencers=2, smooth_window=1)
+            x = 100.0
+            p.update(0, x, 900.0, self.SCALE)
+            for i in range(30):
+                x += step if i % 3 else -step
+                p.update(0, x, 900.0, self.SCALE)
+            shares.append(p.closing_share(0))
+        assert shares[0] != shares[1]

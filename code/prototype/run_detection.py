@@ -780,6 +780,26 @@ class PushPullTracker:
         self.first_smooth = [None] * n_fencers
         self.last_smooth  = [None] * n_fencers
 
+        # Counters for the share of moving frames spent closing distance.
+        #
+        # This is the well-defined replacement for "how far did each fencer
+        # advance in total". That question, as a distance, has no answer in this
+        # data: path length sums the magnitude of every frame's change, so
+        # measurement noise adds to it and never cancels. Re-measuring clip 3's
+        # position series under median windows from 1 to 121 frames moved the path
+        # length from 161 m to 33 m for one fencer, a factor of five, with no
+        # asymptote, while net displacement stayed at exactly +3.43 m throughout.
+        # A quantity that changes fivefold with an arbitrary smoothing parameter
+        # is not a measurement of the fencer; it is a measurement of the filter.
+        #
+        # Counting the SIGN of each frame's movement rather than its magnitude
+        # avoids that, because noise contributes symmetrically to both directions.
+        # Under the same 1-to-121 window sweep the closing share moved only from
+        # 52.4 to 60.9 per cent, so it is mildly window-dependent rather than
+        # scale-free, and the window should be reported alongside it.
+        self.closing_frames = [0] * n_fencers
+        self.moving_frames  = [0] * n_fencers
+
         # Which image direction counts as "toward the opponent" for each fencer,
         # +1 for rightward and -1 for leftward. Established once from the first
         # frame in which both fencers are located, and then held for the bout.
@@ -886,10 +906,31 @@ class PushPullTracker:
         committed = self.pending_m[idx]
         self.pending_m[idx] = 0.0
 
+        self.moving_frames[idx] += 1
         if committed > 0:
             self.advance_m[idx] += committed
+            self.closing_frames[idx] += 1
         else:
             self.retreat_m[idx] += -committed
+
+    def closing_share(self, idx):
+        """
+        Share of committed movements that were toward the opponent, in [0, 1].
+
+        Answers "who pressed forward more" without depending on distance
+        magnitudes, which is what makes it usable where the push and pull totals
+        are not. Returns None before any movement has been committed.
+
+        The magnitude-independence holds for movements that clear
+        PUSH_PULL_NOISE_FLOOR_M. Below it the banking buffer decides when a
+        movement commits, so magnitude does influence the count. The metric is
+        therefore scale-insensitive in the regime that matters rather than
+        universally, and it should be quoted with the smoothing window, since a
+        1-to-121 frame sweep moved it from 52.4 to 60.9 per cent on clip 3.
+        """
+        if self.moving_frames[idx] == 0:
+            return None
+        return self.closing_frames[idx] / self.moving_frames[idx]
 
     def net_displacement_m(self, idx, scale_px_per_m):
         """
@@ -1279,6 +1320,12 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
               f"{_fmt_net(push_pull.net_displacement_m(1, net_scale))}")
         print(f"  (net is a first-to-last position difference and is the reliable"
               f" movement figure)")
+        for k in (0, 1):
+            cs = push_pull.closing_share(k)
+            shown = f"{100*cs:.1f}%" if cs is not None else "unavailable"
+            print(f"  Fencer {k+1}   closing share:    {shown}")
+        print(f"  (share of moving frames spent closing distance; smoothing window"
+              f" {PUSH_PULL_SMOOTH_WINDOW})")
         print(f"  Fencer 1   total advance:   {push_pull.advance_m[0]:.2f} m  [indicative]")
         print(f"  Fencer 1   total retreat:   {push_pull.retreat_m[0]:.2f} m  [indicative]")
         print(f"  Fencer 2   total advance:   {push_pull.advance_m[1]:.2f} m  [indicative]")
