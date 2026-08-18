@@ -46,6 +46,11 @@ from run_detection import (
     DIST_LUNGE_M,
     DIST_ADVANCE_LUNGE_M,
     MAX_FRAME_MOVEMENT_M,
+    LM_LEFT_ANKLE,
+    LM_RIGHT_ANKLE,
+    LM_LEFT_HIP,
+    LM_RIGHT_HIP,
+    get_stance_features,
     PUSH_PULL_NOISE_FLOOR_M,
 )
 
@@ -1109,6 +1114,53 @@ class TestPushPullDirectionIsFixed:
         expected = (xs[-1] - xs[0]) / self.SCALE
         assert math.isclose(net, expected, abs_tol=0.02), f"{net} vs {expected}"
 
+    def test_the_cap_breaks_the_identity_by_exactly_what_it_discards(self):
+        """
+        The counterpart to the test above, and the one that matters on real data.
+
+        That test picks steps inside the cap so it measures sign handling. This one
+        crosses the cap deliberately, because the cap is what breaks the identity
+        on real footage: replaying clip 3's recorded positions through this logic,
+        the cap fires on 63 and 65 frames of 5,246 and destroys -9.26 m and
+        -23.94 m of signed movement, which is the whole of the divergence between
+        the cumulative totals and the endpoint measurement.
+
+        Pinning it here converts that from a surprise into a known property. The
+        assertion is not that the identity holds, because it does not; it is that
+        the shortfall equals the discarded amount and nothing else leaks.
+        """
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        # A ONE-SIDED jump, i.e. the position steps and stays rather than snapping
+        # back. That asymmetry is the point. A symmetric out-and-back glitch
+        # crosses the cap twice in opposite directions and mostly cancels, so it
+        # does little harm. What damages the total is a step that is never
+        # returned, which is what re-acquiring a fencer at a new position after a
+        # tracking gap produces, and it explains why clip 3's 65 capped frames
+        # carried -23.94 m almost entirely in one direction instead of averaging
+        # out.
+        over = (MAX_FRAME_MOVEMENT_M + 0.40) * self.SCALE
+        xs = [100.0, 110.0, 120.0, 120.0 - over]
+        for x in xs:
+            p.update(0, x, 900.0, self.SCALE)
+
+        net = p.advance_m[0] - p.retreat_m[0]
+        endpoint = (xs[-1] - xs[0]) / self.SCALE
+        # the retreat of (cap + 0.40) was kept only as far as the cap, so the
+        # accumulated net overstates advance by exactly the discarded remainder
+        assert math.isclose(net - endpoint, 0.40, abs_tol=1e-6), f"{net} vs {endpoint}"
+
+    def test_no_cap_crossing_means_the_identity_survives(self):
+        """
+        The same series without the glitch closes exactly, which isolates the cap
+        as the cause rather than the smoothing or the banking buffer.
+        """
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        xs = [100.0, 110.0, 120.0, 114.0, 130.0, 140.0]
+        for x in xs:
+            p.update(0, x, 900.0, self.SCALE)
+        net = p.advance_m[0] - p.retreat_m[0]
+        assert math.isclose(net, (xs[-1] - xs[0]) / self.SCALE, abs_tol=1e-6)
+
     def test_identity_holds_with_a_corrupted_opponent_position(self):
         p = PushPullTracker(n_fencers=2, smooth_window=1)
         xs = [100.0, 118.0, 111.0, 129.0, 122.0, 140.0]
@@ -1264,3 +1316,83 @@ class TestClosingShare:
                 p.update(0, x, 900.0, self.SCALE)
             shares.append(p.closing_share(0))
         assert shares[0] != shares[1]
+
+
+class TestStanceFeatures:
+    """
+    Stance geometry exists to answer one question: does pose carry a lunge signal
+    worth keeping? B1c showed pose success can fall from 27 per cent of frames to
+    5.7 per cent with no effect on touch-detection F1, so MediaPipe is currently
+    not load-bearing. These tests pin the feature definitions; whether the signal
+    is real is a measurement against ground truth, not a unit test.
+    """
+
+    SCALE = 100.0        # px per metre, so 100 px = 1 m
+
+    def _lms(self, **overrides):
+        """
+        Landmarks for a fencer on guard: feet 60 cm apart, hips 1 m above them.
+
+        Landmark keys are integers, so overrides are applied by dict merge at the
+        call site rather than through keyword arguments.
+        """
+        return {
+            LM_LEFT_ANKLE:  (100.0, 300.0),
+            LM_RIGHT_ANKLE: (160.0, 300.0),
+            LM_LEFT_HIP:    (125.0, 200.0),
+            LM_RIGHT_HIP:   (135.0, 200.0),
+        }
+
+    def test_guard_stance_is_about_shoulder_width(self):
+        f = get_stance_features(self._lms(), self.SCALE)
+        assert math.isclose(f["stance_m"], 0.60, abs_tol=1e-9)
+        assert math.isclose(f["hip_height_m"], 1.00, abs_tol=1e-9)
+
+    def test_a_lunge_widens_the_stance_and_drops_the_hips(self):
+        """
+        The two features must move in OPPOSITE directions. That is what separates a
+        lunge from the same fencer detected at a different scale, which would move
+        both the same way and is the confound worth guarding against.
+        """
+        guard = get_stance_features(self._lms(), self.SCALE)
+        # front foot thrown forward, hips dropped
+        lunge = get_stance_features({
+            LM_LEFT_ANKLE:  (100.0, 300.0),
+            LM_RIGHT_ANKLE: (230.0, 300.0),
+            LM_LEFT_HIP:    (160.0, 240.0),
+            LM_RIGHT_HIP:   (170.0, 240.0),
+        }, self.SCALE)
+        assert lunge["stance_m"] > guard["stance_m"]
+        assert lunge["hip_height_m"] < guard["hip_height_m"]
+
+    def test_stance_is_horizontal_only(self):
+        """
+        A lunge extends along the piste, and the piste runs across the frame, so
+        vertical ankle separation is camera geometry rather than stance. Raising one
+        ankle must not change the measurement.
+        """
+        flat   = get_stance_features(self._lms(), self.SCALE)
+        raised = get_stance_features({**self._lms(), LM_LEFT_ANKLE: (100.0, 240.0)},
+                                     self.SCALE)
+        assert math.isclose(flat["stance_m"], raised["stance_m"], abs_tol=1e-9)
+
+    def test_one_missing_ankle_yields_no_stance_but_keeps_hip_height(self):
+        """
+        A partial skeleton is the normal case, not a failure. Reporting the feature
+        that survives is what stops pose availability collapsing to all-or-nothing.
+        """
+        lms = {k: v for k, v in self._lms().items() if k != LM_RIGHT_ANKLE}
+        f = get_stance_features(lms, self.SCALE)
+        assert f["stance_m"] is None
+        assert f["hip_height_m"] is not None
+
+    def test_no_landmarks_or_no_scale_yields_none(self):
+        assert get_stance_features(None, self.SCALE) is None
+        assert get_stance_features({}, self.SCALE) is None
+        assert get_stance_features(self._lms(), 0) is None
+
+    def test_ankles_only_yields_stance_but_no_hip_height(self):
+        lms = {LM_LEFT_ANKLE: (100.0, 300.0), LM_RIGHT_ANKLE: (160.0, 300.0)}
+        f = get_stance_features(lms, self.SCALE)
+        assert math.isclose(f["stance_m"], 0.60, abs_tol=1e-9)
+        assert f["hip_height_m"] is None

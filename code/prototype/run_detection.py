@@ -104,6 +104,8 @@ LM_LEFT_HIP       = 23
 LM_RIGHT_HIP      = 24
 LM_LEFT_SHOULDER  = 11
 LM_RIGHT_SHOULDER = 12
+LM_LEFT_KNEE      = 25
+LM_RIGHT_KNEE     = 26
 # ----------------------------------------------------------------------
 
 # lazy-loaded pose landmarker (created on first use, not at import time)
@@ -259,6 +261,64 @@ def get_front_foot(landmarks, fencer_ref_x, opponent_ref_x):
     else:
         # opponent to the left -> front foot has the lower x
         return left_ankle if left_ankle[0] < right_ankle[0] else right_ankle
+
+
+def get_stance_features(landmarks, scale_px_per_m):
+    """
+    Stance geometry for one fencer, in metres, or None where unavailable.
+
+    WHY THIS EXISTS. The resolution ablation in TODO B1c found that pose success
+    can fall from 27 per cent of frames to 5.7 per cent with no effect at all on
+    touch-detection F1, which means MediaPipe is currently not load-bearing for
+    anything the system reports. Distance uses the hip midpoint but falls back to
+    the bounding box, so pose only refines a number it does not determine. Either
+    pose earns a job or it should be dropped, and a lunge is the obvious job: it is
+    the action that produces most epee touches and it is defined by stance rather
+    than by position.
+
+    Two features, both chosen to be readable off a noisy skeleton rather than to
+    be precise:
+
+    - `stance_m`, the horizontal separation of the ankles. A fencer on guard keeps
+      the feet roughly shoulder width apart and a lunge throws the front foot out,
+      so this should roughly double. Horizontal only, because a lunge extends along
+      the piste and the piste runs across the frame.
+    - `hip_height_m`, the hip midpoint above the ankle line. A lunge drops the hips
+      as the rear leg extends, so this should fall while `stance_m` rises. Having
+      two features that move in opposite directions matters: it discriminates a
+      lunge from a fencer simply being detected at a different scale, which would
+      move both the same way.
+
+    Returns a dict so callers can record what was available rather than having to
+    treat a partial skeleton as a total failure.
+    """
+    if not landmarks or not scale_px_per_m:
+        return None
+
+    la = landmarks.get(LM_LEFT_ANKLE)
+    ra = landmarks.get(LM_RIGHT_ANKLE)
+    hip = get_hip_centre(landmarks)
+
+    stance_m = None
+    if la is not None and ra is not None:
+        stance_m = abs(la[0] - ra[0]) / scale_px_per_m
+
+    hip_height_m = None
+    if hip is not None and (la is not None or ra is not None):
+        ankles_y = [a[1] for a in (la, ra) if a is not None]
+        # image y grows downward, so the ankles sit at a LARGER y than the hips
+        hip_height_m = (sum(ankles_y) / len(ankles_y) - hip[1]) / scale_px_per_m
+
+    if stance_m is None and hip_height_m is None:
+        return None
+    return {"stance_m": stance_m, "hip_height_m": hip_height_m}
+
+
+def _fmt_stance(features, key):
+    """CSV cell for one stance feature: rounded metres, or empty when absent."""
+    if not features or features.get(key) is None:
+        return ""
+    return round(features[key], 4)
 
 
 # --- scale calibration ------------------------------------------------
@@ -867,10 +927,28 @@ class PushPullTracker:
         # advance.
         #
         # Capping keeps the sign and a plausible magnitude, which bounds the
-        # influence of a glitch without deleting the movement underneath it. It
-        # also preserves the identity that accumulated net displacement should
-        # equal the difference between first and last position, which trimming
-        # breaks by construction.
+        # influence of a glitch without deleting the movement underneath it.
+        #
+        # It does NOT preserve the identity that accumulated net displacement
+        # equals the difference between first and last position. An earlier
+        # version of this comment claimed it did, and that was wrong. Capping
+        # discards everything above the threshold, so it breaks the identity for
+        # the same reason trimming does, just less. Measured by replaying clip 3's
+        # recorded positions through this exact logic, the cap fires on 63 and 65
+        # frames of 5,246 and destroys -9.26 m and -23.94 m of signed movement,
+        # which is the ENTIRE divergence between the cumulative totals and the
+        # endpoint measurement (F2: accumulated +23.01 m against an endpoint
+        # -0.94 m). The residue left unbanked is 0.015 m, so nothing else
+        # contributes.
+        #
+        # No cap value repairs this. The movements being capped are tracking
+        # glitches of up to 5.4 m in a single frame, so the true displacement
+        # underneath them is not recoverable from the series at all; a larger cap
+        # admits the glitch and a smaller one destroys more real retreat. That is
+        # why the cumulative totals were abandoned as measurements rather than
+        # retuned, and why the metrics that survive are the ones immune to this by
+        # construction: net displacement, which reads only the endpoints, and
+        # closing share, which counts signs.
         if abs(advance_m) > MAX_FRAME_MOVEMENT_M:
             advance_m = MAX_FRAME_MOVEMENT_M if advance_m > 0 else -MAX_FRAME_MOVEMENT_M
 
@@ -1180,6 +1258,7 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
         dist_method = None
         f1_pos_m    = None
         f2_pos_m    = None
+        stance      = [None, None]
         if slots[0] is not None and slots[1] is not None:
             box0, _ = slots[0]
             box1, _ = slots[1]
@@ -1196,6 +1275,12 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
             # per-fencer reference x: prefer mid-hip from pose, else box bottom-centre
             ref0 = get_hip_centre(pose_data[0]) if pose_data[0] else None
             ref1 = get_hip_centre(pose_data[1]) if pose_data[1] else None
+
+            # stance geometry, recorded rather than discarded. See
+            # get_stance_features for why: pose is currently not load-bearing and
+            # this is the data needed to decide whether it should be.
+            stance = [get_stance_features(pose_data[i], movement_scale)
+                      for i in (0, 1)]
             if ref0 is None:
                 ref0 = get_box_bottom_centre(box0)
             if ref1 is None:
@@ -1293,6 +1378,10 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
             "f2_retreat_m":      round(push_pull.retreat_m[1], 3),
             "f1_pos_m":          round(f1_pos_m, 4) if f1_pos_m is not None else "",
             "f2_pos_m":          round(f2_pos_m, 4) if f2_pos_m is not None else "",
+            "f1_stance_m":       _fmt_stance(stance[0], "stance_m"),
+            "f2_stance_m":       _fmt_stance(stance[1], "stance_m"),
+            "f1_hip_height_m":   _fmt_stance(stance[0], "hip_height_m"),
+            "f2_hip_height_m":   _fmt_stance(stance[1], "hip_height_m"),
         })
         if dist_raw_m is not None:
             times.append(time_sec)
@@ -1314,6 +1403,8 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
             "f1_advance_m", "f1_retreat_m",
             "f2_advance_m", "f2_retreat_m",
             "f1_pos_m", "f2_pos_m",
+            "f1_stance_m", "f2_stance_m",
+            "f1_hip_height_m", "f2_hip_height_m",
         ])
         writer_csv.writeheader()
         writer_csv.writerows(csv_rows)
