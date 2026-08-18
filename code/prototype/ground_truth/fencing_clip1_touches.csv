@@ -1,0 +1,9 @@
+# Hand-labelled ground truth for fencing_clip.mp4 (domestic competition, 180 s).
+# Labelled by the author, a competitive epee fencer, from audio and video together.
+# Third clip labelled, and the second held back from tuning. Only three awarded
+# touches in three minutes, which resolves an open question: the detector's two
+# candidates on this clip looked suspiciously few, but the bout is simply sparse.
+time_s,scorer,annulled,notes
+50,left,0,""
+81,double,0,""
+135,left,0,""

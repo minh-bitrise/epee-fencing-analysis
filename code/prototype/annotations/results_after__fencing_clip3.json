@@ -1,0 +1,64 @@
+{
+  "bout_id": "results_after:fencing_clip3",
+  "touch_states": {
+    "p0": {
+      "state": "confirmed",
+      "updated": 1787008024.041166
+    },
+    "p2": {
+      "state": "rejected",
+      "updated": 1787008033.864007
+    },
+    "p1": {
+      "state": "confirmed",
+      "updated": 1787008092.714679
+    },
+    "p3": {
+      "state": "confirmed",
+      "updated": 1787008093.317307
+    },
+    "p4": {
+      "state": "confirmed",
+      "updated": 1787008093.9200408
+    },
+    "p5": {
+      "state": "confirmed",
+      "updated": 1787008094.5241
+    },
+    "p6": {
+      "state": "confirmed",
+      "updated": 1787008095.1253262
+    },
+    "p7": {
+      "state": "confirmed",
+      "updated": 1787008095.727465
+    },
+    "p8": {
+      "state": "confirmed",
+      "updated": 1787008096.328504
+    },
+    "p9": {
+      "state": "confirmed",
+      "updated": 1787008096.931657
+    },
+    "p10": {
+      "state": "confirmed",
+      "updated": 1787008097.535088
+    },
+    "p11": {
+      "state": "confirmed",
+      "updated": 1787008098.139338
+    },
+    "p12": {
+      "state": "confirmed",
+      "updated": 1787008098.744677
+    },
+    "p13": {
+      "state": "rejected",
+      "updated": 1787008100.5479522
+    }
+  },
+  "added_touches": [],
+  "unreliable_segments": [],
+  "reanchors": []
+}

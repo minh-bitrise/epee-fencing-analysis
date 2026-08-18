@@ -1,0 +1,9 @@
+{
+  "_comment": "Piste polygon for fencing_clip2.mp4 (1280x720). Bounds chosen from measured data, not by eye: sampling every 10th frame and taking the two tallest person detections gives real-fencer feet y in [396, 450] (1st percentile 402). The top edge is set to 380 to sit just below that with margin. An earlier hand-picked value of 230 was too generous - adjacent-piste fencers stand with their feet near y=231, and because they are further from the camera their boxes are about half height, which still cleared the relaxed size gate. The bottom edge of 550 excludes the foreground referee, whose feet are at y=716.",
+  "polygon": [
+    [0,    380],
+    [1280, 380],
+    [1280, 550],
+    [0,    550]
+  ]
+}

@@ -1,0 +1,589 @@
+<!-- Assisted-annotation review interface.
+     Vanilla HTML and JS with no build step, so it runs with only the repository
+     and Python. The design chapter specifies React for the finished application;
+     this exists to test whether the workflow actually saves the user effort,
+     which is a claim the project has argued and never measured. -->
+<meta charset="utf-8">
+<!-- Without this a phone lays the page out at 980 px and zooms out, so the
+     narrow-window rule below never fires. This is a keyboard-driven desktop tool
+     and no mobile layout is attempted beyond stacking the columns. -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Epee Bout Review</title>
+<style>
+  :root { --bg:#14161a; --panel:#1d2027; --line:#2c313b; --fg:#e6e8ec;
+          --muted:#9aa3b2; --accent:#4da3ff; --ok:#3ddc84; --no:#ff6b6b;
+          --warn:#ffc857; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  header { padding:12px 18px; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  header > * { flex-shrink:0; }
+  h1 { font-size:15px; margin:0; font-weight:600; }
+  select, button, input { background:var(--panel); color:var(--fg);
+                   border:1px solid var(--line); border-radius:6px;
+                   padding:6px 10px; font-size:13px; }
+  button { cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:#22344a; border-color:var(--accent); }
+  /* Cap the working area. Without a cap the left column takes the full width of
+     a wide display and the video goes with it, which is worse than merely ugly:
+     the fencer labels and the distance readout are drawn INTO the frame by
+     run_detection, so upscaling the video upscales the burnt-in text with it. On
+     a 2000 px monitor the video rendered about 1620 px wide and the overlay
+     filled the screen. Capping the layout fixes the cause; the max-height below
+     covers the other axis, since a 16:9 video 1050 px wide is still 590 px tall
+     and would push the metrics panel out of view on a short window. */
+  main { display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:16px;
+         padding:16px 18px; align-items:start;
+         max-width:1440px; margin:0 auto; }
+  .panel { background:var(--panel); border:1px solid var(--line);
+           border-radius:8px; padding:13px; }
+  .panel + .panel { margin-top:13px; }
+  .panel h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em;
+              color:var(--muted); margin:0 0 9px; font-weight:600; }
+  video { width:100%; height:auto; max-height:62vh; border-radius:6px;
+          background:#000; display:block; }
+  .novid { padding:40px; text-align:center; color:var(--muted);
+           border:1px dashed var(--line); border-radius:6px; }
+
+  /* timeline: touches as markers, excluded ranges shaded */
+  .tl { position:relative; height:44px; margin-top:10px; background:#12141a;
+        border:1px solid var(--line); border-radius:6px; cursor:pointer;
+        overflow:hidden; }
+  .tl .seg { position:absolute; top:0; bottom:0; background:#3a2c2c; }
+  .tl .mk { position:absolute; top:4px; bottom:16px; width:3px;
+            margin-left:-1.5px; border-radius:2px; }
+  .tl .mk.pending   { background:var(--warn); }
+  .tl .mk.confirmed { background:var(--ok); }
+  .tl .mk.rejected  { background:#4a4a4a; }
+  .tl .mk.added     { background:var(--accent); }
+  .tl .cur { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px;
+             background:#fff; pointer-events:none; }
+  .tl .ax { position:absolute; bottom:2px; left:0; right:0; height:12px;
+            color:var(--muted); font-size:10px; }
+  .tl .ax span { position:absolute; transform:translateX(-50%); }
+
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  th, td { text-align:left; padding:5px 7px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  tbody tr { cursor:pointer; }
+  tbody tr:hover { background:#232830; }
+  tbody tr.sel { background:#26313d; }
+  tr.confirmed td:first-child { box-shadow:inset 3px 0 0 var(--ok); }
+  tr.rejected  td:first-child { box-shadow:inset 3px 0 0 var(--no); opacity:.55; }
+  tr.pending   td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
+  tr.added     td:first-child { box-shadow:inset 3px 0 0 var(--accent); }
+  .mini { color:var(--muted); font-size:12px; }
+  .stat { display:flex; justify-content:space-between; padding:3px 0; }
+  .stat b { font-variant-numeric:tabular-nums; font-weight:600; }
+  .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden;
+         margin:7px 0 4px; }
+  .bar > div { height:100%; background:var(--accent); transition:width .2s; }
+  .note { background:#20242c; border-left:3px solid var(--warn);
+          padding:7px 9px; border-radius:4px; color:var(--muted);
+          font-size:12px; margin-top:9px; }
+  .keys { display:flex; gap:12px; flex-wrap:wrap; margin-top:8px; }
+  .keys code { background:#12141a; border:1px solid var(--line); border-radius:4px;
+               padding:1px 6px; font-size:12px; }
+  /* Below this the two columns cannot both hold their content, so stack them
+     rather than squeezing the video into a sliver beside the sidebar. */
+  @media (max-width: 860px) {
+    main { grid-template-columns:minmax(0,1fr); }
+  }
+  form.inline { display:flex; gap:6px; margin-top:9px; }
+  form.inline input { flex:1; min-width:0; }
+</style>
+
+<header>
+  <h1>Epee Bout Review</h1>
+  <select id="bout"></select>
+  <span id="progress" class="mini"></span>
+  <span style="flex:1"></span>
+  <span class="mini" id="clock">0.0s</span>
+</header>
+
+<main>
+  <div>
+    <div class="panel">
+      <div id="videoWrap"></div>
+      <div class="tl" id="tl">
+        <div class="cur" id="cur" style="left:0"></div>
+        <div class="ax" id="ax"></div>
+      </div>
+      <div class="keys mini">
+        <span><code>J</code> prev touch</span>
+        <span><code>K</code> play/pause</span>
+        <span><code>L</code> next touch</span>
+        <span><code>C</code> confirm + next</span>
+        <span><code>X</code> reject + next</span>
+        <span><code>A</code> add at playhead</span>
+        <span><code>,</code> <code>.</code> step 1 frame</span>
+        <span><code>1</code> F1 lunge here</span>
+        <span><code>2</code> F2 lunge here</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Proposed touches</h2>
+      <table id="touches"><thead><tr>
+        <th>Time</th><th>Conf</th><th>Separation</th><th>Scorer</th><th>State</th><th></th>
+      </tr></thead><tbody></tbody></table>
+      <form class="inline" id="addForm">
+        <input id="addTime" type="number" step="0.1" placeholder="time (s)" required>
+        <select id="addScorer">
+          <option value="left">left</option><option value="right">right</option>
+          <option value="double">double</option><option value="unknown">unknown</option>
+        </select>
+        <button type="submit">Add touch</button>
+      </form>
+      <form class="inline" id="segForm">
+        <input id="segStart" type="number" step="0.1" placeholder="exclude from (s)" required>
+        <input id="segEnd" type="number" step="0.1" placeholder="to (s)" required>
+        <button type="submit">Exclude range</button>
+      </form>
+      <div id="segments" class="mini"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Generated summary</h2>
+      <div id="summary" class="mini"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Lunge labels</h2>
+      <div class="note">
+        For evaluating the pose model, not for correcting it. Pause on the frame of
+        maximum extension and press <code>1</code> or <code>2</code>; use
+        <code>,</code> and <code>.</code> to step a frame at a time. Whether a lunge
+        scored is worked out from the touch labels, so it does not need marking.
+        Around 30 is enough to settle whether stance carries a usable signal.
+      </div>
+      <div id="lungeCount" class="mini"></div>
+      <div id="lunges" class="mini"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h2>Review progress</h2>
+      <div class="bar"><div id="progBar" style="width:0%"></div></div>
+      <div id="progDetail" class="mini"></div>
+      <button id="exportBtn" style="margin-top:9px; width:100%">
+        Export confirmed touches</button>
+      <div id="exportOut" class="mini"></div>
+    </div>
+    <div class="panel">
+      <h2>Metrics</h2>
+      <div id="metrics"></div>
+      <div class="note" id="scopeNote"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+let boutId = null, duration = 0, rows = [], selIdx = 0, vid = null;
+
+// The clips are 30 fps. Hard-coded because the API does not report frame rate and
+// this only drives the step size of a keyboard nudge, so being slightly off on a
+// 25 fps clip costs nothing: the label records the timestamp the video actually
+// reached, not this constant.
+const FRAME_S = 1 / 30;
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(((await r.json().catch(()=>({}))).detail) || r.statusText);
+  return r.json();
+}
+const json = (m, b) => ({method:m, headers:{'Content-Type':'application/json'},
+                         body: JSON.stringify(b)});
+const enc = s => encodeURIComponent(s);
+
+async function loadBouts() {
+  const {bouts} = await api('/api/bouts');
+  $('#bout').innerHTML = bouts.map(b => {
+    const tags = [];
+    if (!b.has_touches) tags.push('no touches');
+    if (!b.has_video) tags.push('no video');
+    return `<option value="${b.bout_id}">${b.bout_id}` +
+           `${tags.length ? '  ('+tags.join(', ')+')' : ''}</option>`;
+  }).join('');
+  // open a bout that can actually be reviewed, rather than the first alphabetically
+  const best = bouts.find(b => b.has_touches && b.has_video) || bouts[0];
+  if (best) { boutId = best.bout_id; $('#bout').value = boutId; await load(); }
+}
+
+async function load(keepSelection = false) {
+  const t = await api(`/api/bouts/${enc(boutId)}/touches`);
+  duration = t.duration_s || 0;
+  buildVideo(t.has_video);
+  rows = [
+    ...t.proposed.map(p => ({...p, kind:'proposed',
+                             at: p.corrected_time_s ?? p.time_s})),
+    ...t.added.map(a => ({...a, kind:'added', at:a.time_s, state:'added'})),
+  ].sort((a,b) => a.at - b.at);
+  // Only jump the cursor on a fresh bout. Recomputing it on every refresh made
+  // keyboard review skip proposals, because each decision triggered a reload
+  // that moved the cursor out from under the next keystroke.
+  if (!keepSelection) {
+    selIdx = Math.max(0, rows.findIndex(r => r.state === 'pending'));
+  } else {
+    selIdx = Math.min(selIdx, Math.max(0, rows.length - 1));
+  }
+  renderTable(); renderTimeline(t.unreliable_segments);
+  renderProgress(t.progress); renderSegments(t.unreliable_segments);
+  // confirmed touches are what "did this lunge score" is judged against
+  renderLunges(t.lunges || [],
+               rows.filter(r => r.state === 'confirmed' || r.kind === 'added')
+                   .map(r => r.at));
+  renderMetrics(await api(`/api/bouts/${enc(boutId)}/metrics`));
+  await renderSummary();
+}
+
+function buildVideo(has) {
+  const w = $('#videoWrap');
+  if (!has) {
+    w.innerHTML = '<div class="novid">No annotated video for this bout.<br>' +
+      '<span class="mini">Run run_detection.py to produce one.</span></div>';
+    vid = null; return;
+  }
+  if (vid && vid.dataset.bout === boutId) return;
+  w.innerHTML = `<video id="vid" controls preload="metadata" data-bout="${boutId}"
+                   src="/api/bouts/${enc(boutId)}/video"></video>`;
+  vid = $('#vid');
+  vid.addEventListener('timeupdate', () => {
+    $('#clock').textContent = vid.currentTime.toFixed(1) + 's';
+    if (duration) $('#cur').style.left = (100 * vid.currentTime / duration) + '%';
+  });
+}
+
+function seek(t) {
+  if (vid) { vid.currentTime = Math.max(0, t - 1.5); vid.play().catch(()=>{}); }
+}
+
+function renderTimeline(segs) {
+  const tl = $('#tl');
+  tl.querySelectorAll('.mk,.seg').forEach(e => e.remove());
+  if (!duration) return;
+  for (const s of segs || []) {
+    const d = document.createElement('div');
+    d.className = 'seg';
+    d.style.left = (100 * s.start_s / duration) + '%';
+    d.style.width = (100 * (s.end_s - s.start_s) / duration) + '%';
+    tl.appendChild(d);
+  }
+  rows.forEach((r, i) => {
+    const m = document.createElement('div');
+    m.className = 'mk ' + (r.kind === 'added' ? 'added' : r.state);
+    m.style.left = (100 * r.at / duration) + '%';
+    m.title = `${r.at.toFixed(1)}s ${r.state}`;
+    m.onclick = e => { e.stopPropagation(); selIdx = i; renderTable(); seek(r.at); };
+    tl.appendChild(m);
+  });
+  const ax = $('#ax'); ax.innerHTML = '';
+  const step = duration > 150 ? 30 : 15;
+  for (let s = 0; s <= duration; s += step) {
+    const el = document.createElement('span');
+    el.style.left = (100 * s / duration) + '%';
+    el.textContent = s + 's';
+    ax.appendChild(el);
+  }
+}
+
+$('#tl').addEventListener('click', e => {
+  if (!duration || !vid) return;
+  const r = $('#tl').getBoundingClientRect();
+  vid.currentTime = duration * (e.clientX - r.left) / r.width;
+});
+
+function renderTable() {
+  $('#touches tbody').innerHTML = rows.map((r, i) => r.kind === 'added'
+    ? `<tr class="added ${i===selIdx?'sel':''}" data-i="${i}">
+         <td>${r.at.toFixed(1)}s</td><td class="mini">manual</td><td>-</td>
+         <td>${r.scorer}</td><td>added</td>
+         <td><button data-act="del" data-id="${r.id}">remove</button></td></tr>`
+    : `<tr class="${r.state} ${i===selIdx?'sel':''}" data-i="${i}">
+         <td>${r.at.toFixed(1)}s</td>
+         <td>${r.confidence.toFixed(2)}</td>
+         <td>${r.separation_m != null ? r.separation_m.toFixed(2)+'m' : '-'}</td>
+         <td>${r.scorer ?? '-'}</td><td>${r.state}</td>
+         <td><button data-act="confirm" data-id="${r.id}">confirm</button>
+             <button data-act="reject" data-id="${r.id}">reject</button></td></tr>`
+  ).join('') || '<tr><td colspan="6" class="mini">No proposals for this bout.</td></tr>';
+  const sel = $('#touches tbody tr.sel');
+  if (sel) sel.scrollIntoView({block:'nearest'});
+}
+
+function renderProgress(p) {
+  const pct = p.proposed ? Math.round(100 * p.reviewed / p.proposed) : 0;
+  $('#progBar').style.width = pct + '%';
+  $('#progress').textContent =
+    `${p.reviewed}/${p.proposed} reviewed${p.complete ? ' - complete' : ''}`;
+  $('#progDetail').innerHTML =
+    `<div class="stat"><span>confirmed</span><b>${p.confirmed}</b></div>
+     <div class="stat"><span>rejected</span><b>${p.rejected}</b></div>
+     <div class="stat"><span>added by hand</span><b>${p.user_added}</b></div>
+     <div class="stat"><span>excluded ranges</span><b>${p.unreliable_segments}</b></div>
+     <div class="stat"><span>re-anchors pending</span><b>${p.pending_reanchors}</b></div>`;
+}
+
+// The summary is model output, so it is escaped before any formatting is applied.
+// Treating generated text as trusted markup is how a prompt injection becomes a
+// script tag, and this text is regenerated by a command the user runs unattended.
+const esc = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;');
+
+// Just enough markdown for the four headings, bullets and bold that the summary
+// prompt asks for. A full parser would be more code than the format needs.
+function tinyMarkdown(md) {
+  return esc(md).split('\n').map(line => {
+    const b = line.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    if (/^##\s+/.test(b)) return `<h3 style="font-size:12px; margin:10px 0 4px;
+      text-transform:uppercase; letter-spacing:.05em; color:var(--muted)">` +
+      b.replace(/^##\s+/, '') + '</h3>';
+    if (/^[-*]\s+/.test(b)) return `<div style="margin:0 0 4px 12px">&bull;
+      ${b.replace(/^[-*]\s+/, '')}</div>`;
+    return b.trim() ? `<p style="margin:0 0 7px">${b}</p>` : '';
+  }).join('');
+}
+
+async function renderSummary() {
+  const el = $('#summary');
+  let r;
+  try {
+    r = await api(`/api/bouts/${enc(boutId)}/summary`);
+  } catch (e) {
+    el.innerHTML = `<div class="note">${esc(e.message)}</div>`;
+    return;
+  }
+  if (!r.exists) {
+    el.innerHTML = `<div class="note">No summary for this bout yet. Generating one
+      costs an API call, so it stays a command you run:<br><code>${esc(r.hint)}</code></div>`;
+    return;
+  }
+  // A stale summary is the dangerous case, not the missing one: it reads as current.
+  const warn = r.stale
+    ? `<div class="note"><b>Out of date.</b> ${esc(r.stale_reason || '')}.
+       Regenerate before quoting anything from it.</div>`
+    : '';
+  el.innerHTML = warn + tinyMarkdown(r.markdown) +
+    `<div class="mini" style="margin-top:8px; color:var(--muted)">
+       ${esc(r.model || 'unknown model')}, from ${esc(r.generated_from)}</div>`;
+}
+
+function renderLunges(lunges, touchTimes) {
+  // Scored or missed is derived, not asked for. A lunge that scored is one whose
+  // peak sits shortly before an awarded touch. 1.0 s is generous on purpose: the
+  // question here is which lunges to compare against, not precise attribution.
+  const SCORED_WINDOW_S = 1.0;
+  const scored = l => touchTimes.some(
+    tt => tt >= l.time_s - 0.2 && tt <= l.time_s + SCORED_WINDOW_S);
+
+  // With no confirmed touches there is nothing to derive from, and every lunge
+  // would be reported as "missed". That is not the same as unknown, and showing
+  // it would be a quiet falsehood of exactly the kind this project keeps finding
+  // in its own metrics, so say so instead.
+  const canDerive = touchTimes.length > 0;
+  const label = l => !canDerive ? 'scored?' : (scored(l) ? 'scored' : 'missed');
+
+  const n = lunges.length;
+  const nScored = lunges.filter(scored).length;
+  $('#lungeCount').innerHTML = !n ? 'none yet'
+    : canDerive
+      ? `<b>${n}</b> labelled - ${nScored} scored, ${n - nScored} missed`
+      : `<b>${n}</b> labelled - scored or missed unknown, because this bout has
+         no confirmed touches to compare against`;
+  $('#lunges').innerHTML = lunges.map(l => `
+    <div class="stat"><span>${l.time_s.toFixed(2)}s - F${l.slot + 1}
+      ${label(l)}</span>
+      <button data-act="dellunge" data-id="${l.id}">remove</button></div>`).join('');
+}
+
+function renderSegments(segs) {
+  $('#segments').innerHTML = segs.length
+    ? segs.map(s => `<div class="stat"><span>${s.start_s.toFixed(1)}-${s.end_s.toFixed(1)}s excluded</span>
+        <button data-act="delseg" data-id="${s.id}">remove</button></div>`).join('')
+    : '';
+}
+
+// Signed metres, so the sign has to be shown: +1.2 m toward the opponent and
+// -1.2 m away are opposite tactical readings and "1.2 m" is neither.
+const signedM = v => (v > 0 ? '+' : '') + v.toFixed(1) + ' m';
+
+// Net displacement below this magnitude means the fencer finished where they
+// started, and the sign is not meaningful there. Fencer 2 on the club clip
+// measures +0.43 m from raw positions and -0.94 m from smoothed endpoints: the
+// two readings agree on the substance and disagree on the sign, so printing one
+// of them with a sign would invent a direction the data does not support.
+const NET_SIGN_FLOOR_M = 1.0;
+
+// Both movement figures get the floor treatment, because both are sums of the
+// same per-frame signed motion and so share the instability at small magnitudes.
+// The wording is deliberately neutral about direction rather than about which
+// quantity it is: the row label already says whether this is a displacement or a
+// scoped sum, and what the floor removes is only the claim of a direction.
+const floored = v =>
+  Math.abs(v) < NET_SIGN_FLOOR_M ? 'no net change' : signedM(v);
+
+const closing = v => v != null ? v.toFixed(1) + '%' : '-';
+
+function renderMetrics(m) {
+  const w = m.whole_recording, i = m.in_play;
+
+  // Movement is shown as net displacement and closing share, not as cumulative
+  // push and pull totals. Path length sums the size of every frame's movement,
+  // so tracking noise accumulates into it and never cancels: re-measuring the
+  // same footage under median smoothing windows from 1 to 121 frames moved the
+  // totals from 161 m to 33 m with no asymptote, while net displacement held at
+  // +3.43 m exactly. The API still returns the totals under *_indicative names
+  // and this interface deliberately does not display them, because a number on
+  // screen next to a real measurement reads as one.
+  const fencer = (label, whole, scoped) => `
+    <div class="stat"><span>${label} net displacement (whole)</span>
+      <b>${floored(whole.net_displacement_m)}</b></div>
+    <div class="stat"><span>${label} forward movement (in play)</span>
+      <b>${floored(scoped.net_forward_movement_m)}</b></div>
+    <div class="stat"><span>${label} closing share (in play)</span>
+      <b>${closing(scoped.closing_share_pct)}</b></div>`;
+
+  $('#metrics').innerHTML = `
+    <div class="stat"><span>confirmed touches</span><b>${m.confirmed_touches.length}</b></div>
+    <div class="stat"><span>in play</span><b>${Math.round(100*i.in_play_fraction)}%</b></div>
+    <div class="stat"><span>mean distance (in play)</span>
+      <b>${i.mean_distance_m != null ? i.mean_distance_m.toFixed(2)+' m' : '-'}</b></div>
+    <div class="stat"><span>mean distance (whole)</span><b>${w.distance_m.mean.toFixed(2)} m</b></div>
+    ${fencer('F1', w.fencer_1, i.fencer_1)}
+    ${fencer('F2', w.fencer_2, i.fencer_2)}`;
+
+  $('#scopeNote').innerHTML =
+    `Scoping basis: ${m.scoping_basis}` +
+    `<br>Movement derived from: ${m.movement_basis.source}` +
+    `<br><br>Net displacement is where a fencer finished relative to where they
+     started, positive toward the opponent, and it is the reliable figure. Forward
+     movement in play sums the same motion over playing time only, so it is not a
+     displacement and can be larger: ground gained in a phrase is given back
+     walking to the guard line. Closing share is the proportion of moving frames
+     spent reducing the distance, accurate to a few points. Cumulative push and
+     pull totals are not shown because they measure the smoothing, not the fencer.`
+    + (w.data_quality_warnings
+        ? `<br><br><b>Warning.</b> ${w.data_quality_warnings.join(' ')}` : '');
+}
+
+let busy = false;
+
+async function decide(id, state, advance = false) {
+  if (busy) return;                     // ignore keystrokes arriving mid-request
+  busy = true;
+  try {
+    await api(`/api/bouts/${enc(boutId)}/touches/${id}/decision`,
+              json('POST', {state}));
+    await load(true);
+    if (advance) nextPending();
+  } finally { busy = false; }
+}
+
+function nextPending() {
+  // the next proposal still awaiting a decision, searching forward then wrapping
+  const from = selIdx + 1;
+  let i = rows.findIndex((r, j) => j >= from && r.kind === 'proposed'
+                                             && r.state === 'pending');
+  if (i < 0) i = rows.findIndex(r => r.kind === 'proposed' && r.state === 'pending');
+  if (i >= 0) { selIdx = i; renderTable(); seek(rows[i].at); }
+}
+
+document.addEventListener('click', async e => {
+  const tr = e.target.closest('tbody tr[data-i]');
+  if (tr && !e.target.closest('button')) {
+    selIdx = +tr.dataset.i; renderTable(); seek(rows[selIdx].at); return;
+  }
+  const b = e.target.closest('button[data-act]');
+  if (!b) return;
+  const id = b.dataset.id, base = `/api/bouts/${enc(boutId)}`;
+  try {
+    if (b.dataset.act === 'confirm') await decide(id, 'confirmed');
+    else if (b.dataset.act === 'reject') await decide(id, 'rejected');
+    else if (b.dataset.act === 'del') { await api(`${base}/touches/${id}`, {method:'DELETE'}); await load(true); }
+    else if (b.dataset.act === 'delseg') { await api(`${base}/segments/${id}`, {method:'DELETE'}); await load(); }
+    else if (b.dataset.act === 'dellunge') { await api(`${base}/lunges/${id}`, {method:'DELETE'}); await load(); }
+  } catch (err) { alert(err.message); }
+});
+
+// Keyboard review. The effort claim depends on a decision costing one keystroke,
+// so the review loop is jump-watch-judge without touching the mouse.
+document.addEventListener('keydown', async e => {
+  // Guard the type as well as the selector: the event target is not always an
+  // Element (it can be the document itself), and calling matches() on one that
+  // is not would throw and silently kill every shortcut.
+  const t = e.target;
+  if (t && typeof t.matches === 'function' && t.matches('input,select,textarea')) return;
+  const cur = rows[selIdx];
+  const k = e.key.toLowerCase();
+  if (k === 'l' && selIdx < rows.length - 1) { selIdx++; renderTable(); seek(rows[selIdx].at); }
+  else if (k === 'j' && selIdx > 0) { selIdx--; renderTable(); seek(rows[selIdx].at); }
+  else if (k === 'k' && vid) { vid.paused ? vid.play() : vid.pause(); }
+  else if (k === 'c' && cur && cur.kind === 'proposed') { await decide(cur.id, 'confirmed', true); }
+  else if (k === 'x' && cur && cur.kind === 'proposed') { await decide(cur.id, 'rejected', true); }
+  else if (k === 'a' && vid) {
+    await api(`/api/bouts/${enc(boutId)}/touches`,
+              json('POST', {time_s: +vid.currentTime.toFixed(1), scorer:'unknown'}));
+    await load();
+  }
+  // Frame stepping. Finding the peak of a lunge needs single-frame control: at
+  // 30 fps a lunge lasts about ten frames, so scrubbing by second is useless for
+  // this and the label would land on whatever frame the mouse happened to hit.
+  else if ((k === ',' || k === '.') && vid) {
+    vid.pause();
+    vid.currentTime = Math.max(0, vid.currentTime + (k === '.' ? FRAME_S : -FRAME_S));
+  }
+  else if ((k === '1' || k === '2') && vid) {
+    await api(`/api/bouts/${enc(boutId)}/lunges`,
+              json('POST', {time_s: +vid.currentTime.toFixed(3),
+                            slot: k === '1' ? 0 : 1}));
+    await load();
+  } else return;
+  e.preventDefault();
+});
+
+// Closes the loop from review back into the pipeline. Without this the summary a
+// reader sees is still built from unreviewed detector output, whatever the user
+// corrected in here.
+$('#exportBtn').addEventListener('click', async () => {
+  const out = $('#exportOut');
+  out.textContent = 'exporting...';
+  try {
+    const r = await api(`/api/bouts/${enc(boutId)}/export-touches`, {method:'POST'});
+    out.innerHTML =
+      `<div class="note">Wrote <b>${r.touches}</b> touches to
+        <code>${r.path}</code>` +
+      (r.review_complete ? '' :
+        '<br><b>Review is not finished</b>, so pending proposals are missing and ' +
+        'the count is a lower bound.') +
+      `<br><br>Regenerate the summary from it:<br><code>${r.next}</code></div>`;
+  } catch (e) {
+    out.innerHTML = `<div class="note">${e.message}</div>`;
+  }
+});
+
+$('#bout').addEventListener('change', async e => { boutId = e.target.value; await load(); });
+
+$('#addForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  await api(`/api/bouts/${enc(boutId)}/touches`,
+            json('POST', {time_s: parseFloat($('#addTime').value),
+                          scorer: $('#addScorer').value}));
+  $('#addTime').value = ''; await load();
+});
+
+$('#segForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api(`/api/bouts/${enc(boutId)}/segments`,
+              json('POST', {start_s: parseFloat($('#segStart').value),
+                            end_s: parseFloat($('#segEnd').value)}));
+    $('#segStart').value = $('#segEnd').value = ''; await load();
+  } catch (err) { alert(err.message); }
+});
+
+loadBouts().catch(e => alert('Failed to load bouts: ' + e.message));
+</script>

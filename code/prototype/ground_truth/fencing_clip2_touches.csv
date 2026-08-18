@@ -1,0 +1,11 @@
+# Hand-labelled ground truth for fencing_clip2.mp4 (World Cup broadcast, 180 s).
+# Labelled by the author, a competitive epee fencer, from audio and video together.
+# Held back as a generalisation test: the detector's operating point was tuned on
+# clip 3 alone, and nothing was retuned before evaluating against this file.
+# Only four awarded touches in three minutes, far sparser than clip 3's fourteen,
+# which is consistent with cautious elite epee.
+time_s,scorer,annulled,notes
+21,left,0,""
+69,right,0,""
+90,left,0,""
+128,right,0,""

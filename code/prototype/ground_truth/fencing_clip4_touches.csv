@@ -1,0 +1,15 @@
+# Hand-labelled ground truth for fencing_clip4.mp4 (junior team competition, 190 s).
+# Labelled by the author, a competitive epee fencer, from audio and video together.
+# Fourth clip labelled and the third held back from tuning. This is the hardest
+# footage in the set: 360p (the only resolution obtainable for this source), a
+# referee in the foreground, and distant spectators.
+# The 128 s touch was labelled as "2:08 or 2:09, not sure", so its timestamp
+# carries about a second of uncertainty. The +/-2 s matching tolerance covers it,
+# but it is recorded rather than silently rounded.
+time_s,scorer,annulled,notes
+21,left,0,""
+81,double,0,""
+113,double,0,""
+128,left,0,"labeller uncertain between 2:08 and 2:09"
+158,right,0,""
+180,double,0,""

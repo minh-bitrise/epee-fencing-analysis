@@ -7,12 +7,16 @@ Run with:
     python3 -m pytest test_detection.py -v
 """
 
+import json
 import math
+import os
+import tempfile
 from collections import deque
 
 import numpy as np
 import pytest
 
+import run_detection
 from run_detection import (
     # geometry helpers
     get_box_centre,
@@ -20,6 +24,7 @@ from run_detection import (
     box_height_pixels,
     pixel_distance,
     normalise_distance,
+    distance_zone,
     distance_zone_colour,
     # pose helpers
     get_front_foot,
@@ -30,13 +35,23 @@ from run_detection import (
     LM_RIGHT_HIP,
     # trackers and smoothing
     FencerTracker,
+    PisteRegion,
     PushPullTracker,
     smooth_distance,
     # constants
     COLOUR_CLOSE,
-    COLOUR_MEDIUM,
-    COLOUR_FAR,
+    COLOUR_LUNGE,
+    COLOUR_ADVANCE_LUNGE,
+    COLOUR_OUT,
+    DIST_CLOSE_M,
+    DIST_LUNGE_M,
+    DIST_ADVANCE_LUNGE_M,
     MAX_FRAME_MOVEMENT_M,
+    LM_LEFT_ANKLE,
+    LM_RIGHT_ANKLE,
+    LM_LEFT_HIP,
+    LM_RIGHT_HIP,
+    get_stance_features,
     PUSH_PULL_NOISE_FLOOR_M,
 )
 
@@ -112,23 +127,58 @@ class TestNormaliseDistance:
         assert math.isclose(normalise_distance(100, 100, real_height_m=2.0), 2.0)
 
 
+class TestDistanceZone:
+    """
+    Bands are front foot to front foot and follow the fencing taxonomy:
+    close/infighting, lunge distance (where a touch can actually land),
+    advance-lunge, and out of distance.
+    """
+
+    def test_none_distance(self):
+        assert distance_zone(None) is None
+
+    def test_close_band(self):
+        assert distance_zone(0.5) == "close"
+        assert distance_zone(DIST_CLOSE_M) == "close"          # boundary inclusive
+
+    def test_lunge_band(self):
+        assert distance_zone(DIST_CLOSE_M + 0.01) == "lunge"
+        assert distance_zone(2.2) == "lunge"
+        assert distance_zone(DIST_LUNGE_M) == "lunge"          # boundary inclusive
+
+    def test_advance_lunge_band(self):
+        assert distance_zone(DIST_LUNGE_M + 0.01) == "advance_lunge"
+        assert distance_zone(DIST_ADVANCE_LUNGE_M) == "advance_lunge"
+
+    def test_out_of_distance_band(self):
+        assert distance_zone(DIST_ADVANCE_LUNGE_M + 0.01) == "out"
+        assert distance_zone(10.0) == "out"
+
+    def test_a_typical_lunge_touch_is_in_the_lunge_band(self):
+        """
+        Regression guard for the bug this taxonomy replaced. A touch scored
+        with a lunge lands at roughly 2.0-2.6 m of front-foot separation; the
+        previous thresholds (1.0 / 1.8 m) binned all of those as "far", which
+        made the generated summaries report close-range fencing as absent.
+        """
+        for d in (2.0, 2.2, 2.4, 2.6):
+            assert distance_zone(d) == "lunge", f"{d} m should be a scoring distance"
+
+
 class TestDistanceZoneColour:
     def test_none_returns_neutral(self):
-        # exact value not critical, but it should be a 3-tuple (BGR)
         c = distance_zone_colour(None)
         assert isinstance(c, tuple) and len(c) == 3
 
-    def test_close_zone(self):
+    def test_each_band_has_its_colour(self):
         assert distance_zone_colour(0.5) == COLOUR_CLOSE
-        assert distance_zone_colour(1.0) == COLOUR_CLOSE  # boundary inclusive
+        assert distance_zone_colour(2.2) == COLOUR_LUNGE
+        assert distance_zone_colour(3.0) == COLOUR_ADVANCE_LUNGE
+        assert distance_zone_colour(5.0) == COLOUR_OUT
 
-    def test_medium_zone(self):
-        assert distance_zone_colour(1.5) == COLOUR_MEDIUM
-        assert distance_zone_colour(1.8) == COLOUR_MEDIUM  # boundary inclusive
-
-    def test_far_zone(self):
-        assert distance_zone_colour(2.5) == COLOUR_FAR
-        assert distance_zone_colour(10.0) == COLOUR_FAR
+    def test_colours_are_distinct(self):
+        cols = {COLOUR_CLOSE, COLOUR_LUNGE, COLOUR_ADVANCE_LUNGE, COLOUR_OUT}
+        assert len(cols) == 4
 
 
 # -------------------- pose helpers --------------------
@@ -387,13 +437,24 @@ class TestPushPullTracker:
         assert math.isclose(p.advance_m[1], 0.1, abs_tol=1e-9)
         assert p.retreat_m[1] == 0.0
 
-    def test_camera_pan_jump_is_ignored(self):
+    def test_camera_pan_jump_is_bounded_not_dropped(self):
+        """
+        A jump beyond MAX_FRAME_MOVEMENT_M is capped at that limit rather than
+        discarded.
+
+        This test previously asserted the jump was dropped entirely, and that
+        behaviour turned out to be a source of bias rather than robustness.
+        Measured on the club clip, the threshold was exceeded on about one per
+        cent of frames, and those frames carried roughly ten metres of net
+        retreat, so discarding them injected ten metres of false advance.
+        Capping bounds how much a single bad frame can contribute while keeping
+        the direction of the movement underneath it.
+        """
         p = PushPullTracker(smooth_window=1)
         p.update(0, 100, 500, 100)
-        # a jump > MAX_FRAME_MOVEMENT_M -> dropped entirely
         jump_px = (MAX_FRAME_MOVEMENT_M + 0.1) * 100
         p.update(0, 100 + jump_px, 500, 100)
-        assert p.advance_m[0] == 0.0
+        assert math.isclose(p.advance_m[0], MAX_FRAME_MOVEMENT_M, abs_tol=1e-9)
         assert p.retreat_m[0] == 0.0
 
     def test_noise_floor_ignores_tiny_moves(self):
@@ -468,3 +529,954 @@ class TestSmoothDistance:
         result = smooth_distance(buf, 99.0, window=5)
         # median is much closer to 2 than the mean would be (~21.8)
         assert 1.5 < result < 2.5
+
+
+# -------------------- PisteRegion --------------------
+
+class TestPisteRegionContains:
+    """Point-in-polygon acceptance for the piste filter."""
+
+    def _rect(self):
+        # 100..500 x 200..600
+        return PisteRegion([[100, 200], [500, 200], [500, 600], [100, 600]])
+
+    def test_inside_point_accepted(self):
+        assert self._rect().contains((300, 400)) is True
+
+    def test_outside_point_rejected(self):
+        # far to the right of the polygon
+        assert self._rect().contains((900, 400)) is False
+
+    def test_above_polygon_rejected(self):
+        # above the top edge
+        assert self._rect().contains((300, 100)) is False
+
+    def test_on_edge_is_inside(self):
+        # cv2.pointPolygonTest returns 0 for on-edge; contains() treats that as inside
+        assert self._rect().contains((100, 400)) is True
+
+    def test_at_vertex_is_inside(self):
+        assert self._rect().contains((500, 600)) is True
+
+    def test_polygon_with_fewer_than_three_vertices_raises(self):
+        with pytest.raises(ValueError):
+            PisteRegion([[0, 0], [10, 10]])
+
+    def test_none_polygon_raises(self):
+        with pytest.raises(ValueError):
+            PisteRegion(None)
+
+
+class TestPisteRegionFromJsonFile:
+    def test_none_path_returns_none(self):
+        # calling from_json_file(None) is the "no piste config" path,
+        # not an error
+        assert PisteRegion.from_json_file(None) is None
+
+    def test_loads_polygon_from_valid_file(self):
+        polygon = [[10, 10], [200, 10], [200, 200], [10, 200]]
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False,
+        ) as f:
+            json.dump({"polygon": polygon}, f)
+            path = f.name
+        try:
+            region = PisteRegion.from_json_file(path)
+            assert region.contains((100, 100)) is True
+            assert region.contains((500, 500)) is False
+        finally:
+            os.unlink(path)
+
+
+class TestPisteRegionDraw:
+    """The diagnostic overlay must mark the frame without altering its shape."""
+
+    def test_draw_modifies_frame_in_place(self):
+        region = PisteRegion([[10, 10], [200, 10], [200, 200], [10, 200]])
+        frame = np.zeros((300, 300, 3), dtype=np.uint8)
+        out = region.draw(frame)
+        assert out.shape == (300, 300, 3)
+        assert out.any(), "draw() should have written some non-zero pixels"
+
+    def test_draw_leaves_polygon_interior_mostly_untouched(self):
+        # the outline is drawn, not a fill, so the centre should stay black
+        region = PisteRegion([[10, 10], [200, 10], [200, 200], [10, 200]])
+        frame = np.zeros((300, 300, 3), dtype=np.uint8)
+        region.draw(frame)
+        assert frame[105, 105].sum() == 0
+
+
+class TestPisteRegionFilterDetections:
+    """
+    filter_detections() must drop detections whose feet fall outside the
+    piste, and it must preserve the parallel-array shape (ids, xyxys,
+    confs) so downstream code does not have to change.
+    """
+
+    def _rect(self):
+        return PisteRegion([[100, 200], [500, 200], [500, 600], [100, 600]])
+
+    def test_empty_input_returns_empty(self):
+        region = self._rect()
+        ids, xyxys, confs = region.filter_detections(
+            np.array([], dtype=int), np.empty((0, 4)), np.array([]),
+        )
+        assert len(ids) == 0
+        assert xyxys.shape == (0, 4)
+        assert len(confs) == 0
+
+    def test_keeps_inside_detection(self):
+        region = self._rect()
+        # bbox with feet at (200, 500) - inside the rectangle
+        boxes = np.array([[150, 300, 250, 500]])
+        ids, xyxys, confs = region.filter_detections(
+            np.array([7]), boxes, np.array([0.9]),
+        )
+        assert len(ids) == 1
+        assert ids[0] == 7
+
+    def test_drops_outside_detection(self):
+        region = self._rect()
+        # bbox with feet at (800, 500) - outside the rectangle
+        boxes = np.array([[750, 300, 850, 500]])
+        ids, xyxys, confs = region.filter_detections(
+            np.array([7]), boxes, np.array([0.9]),
+        )
+        assert len(ids) == 0
+        assert xyxys.shape == (0, 4)
+        assert len(confs) == 0
+
+    def test_mixed_detections_keeps_only_inside(self):
+        region = self._rect()
+        # first detection is inside, second is way outside (a referee)
+        boxes = np.array([
+            [150, 300, 250, 500],   # feet at (200, 500), inside
+            [800, 300, 900, 500],   # feet at (850, 500), outside
+        ])
+        ids, xyxys, confs = region.filter_detections(
+            np.array([5, 9]), boxes, np.array([0.9, 0.8]),
+        )
+        assert list(ids) == [5]
+        assert confs[0] == 0.9
+
+
+# -------------------- Motion model (predicted_pos) --------------------
+
+class TestFencerTrackerPredictedPos:
+    """
+    The tracker keeps a two-point position history per slot so that the
+    matcher can gate against where each slot is HEADED, not just where
+    it last was - the fix for the "bystander steps into the old position
+    while the fencer keeps moving" case.
+    """
+
+    def test_predicted_pos_none_when_slot_uninitialised(self):
+        t = FencerTracker()
+        assert t.predicted_pos(0) is None
+        assert t.predicted_pos(1) is None
+
+    def test_predicted_pos_equals_last_after_first_commit(self):
+        # only one commit -> no velocity information yet; predicted == last
+        t = FencerTracker()
+        t.select(
+            np.array([5, 7]),
+            np.array([[50, 100, 150, 400], [400, 100, 500, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        assert t.predicted_pos(0) == t.last_pos[0]
+        assert t.predicted_pos(1) == t.last_pos[1]
+
+    def test_predicted_pos_extrapolates_velocity(self):
+        # two commits with the left fencer drifting +20px per frame in x
+        t = FencerTracker()
+        t.select(
+            np.array([5, 7]),
+            np.array([[50, 100, 150, 400], [400, 100, 500, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        t.select(
+            np.array([5, 7]),
+            np.array([[70, 100, 170, 400], [420, 100, 520, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        # slot 0: last centre = (120, 250), prev centre = (100, 250);
+        # predicted = (120 + 20, 250) = (140, 250)
+        pred = t.predicted_pos(0)
+        assert math.isclose(pred[0], 140.0)
+        assert math.isclose(pred[1], 250.0)
+
+    def test_bystander_stepping_into_old_position_is_rejected(self):
+        """
+        The whole point of the motion model: a bystander walks INTO where
+        the fencer used to be, while the fencer keeps moving forward.
+        Under last-known-position gating the bystander would look like a
+        perfect match; under predicted-position gating it should not.
+        """
+        t = FencerTracker()
+        # frame 1: fencers at x=100 and x=1000
+        t.select(
+            np.array([5, 7]),
+            np.array([[ 50, 100, 150, 400],     # slot 0 centre = (100, 250)
+                      [950, 100, 1050, 400]]),  # slot 1 centre = (1000, 250)
+            np.array([0.9, 0.8]),
+        )
+        # frame 2: slot 0 fencer has ADVANCED to x=400; slot 1 unchanged
+        t.select(
+            np.array([5, 7]),
+            np.array([[350, 100, 450, 400],     # slot 0 centre = (400, 250)
+                      [950, 100, 1050, 400]]),  # slot 1 centre = (1000, 250)
+            np.array([0.9, 0.8]),
+        )
+        # frame 3: two detections. The FENCER is at x=700 (kept moving),
+        # a BYSTANDER (identical size) is at x=100 - exactly where slot 0
+        # started. Old code compared to last_pos=(400,250) and would have
+        # picked the bystander (dist 300) over the real fencer (dist 300),
+        # tied by original assignment; and the bystander was well inside
+        # 3.5 * box height. The motion-model gate predicts slot 0 should
+        # now be near x=700 and rejects the bystander at x=100.
+        slots = t.select(
+            np.array([5, 9]),
+            np.array([[650, 100,  750, 400],   # real fencer 1 at (700, 250)
+                      [ 50, 100,  150, 400]]),  # bystander at (100, 250)
+            np.array([0.9, 0.85]),
+        )
+        # slot 0 must match the real fencer, not the bystander
+        assert slots[0] is not None
+        assert slots[0][1] == 5   # the real fencer's id
+        assert 650 <= slots[0][0][0] <= 750
+
+
+class TestMotionModelGapHandling:
+    """
+    Regression tests for a bug found on real footage: velocity was being
+    differenced between two commits that were many frames apart, which
+    measures total displacement over the gap rather than per-frame
+    velocity. Extrapolating from it threw the predicted position far
+    outside the frame, after which every real detection failed the gate
+    and the slot could never commit again - and because nothing was
+    committed, the bad history was never replaced. Coverage on the second
+    test clip collapsed from 87% to 13% as a result.
+    """
+
+    def _init_both_slots(self, t):
+        t.select(
+            np.array([5, 7]),
+            np.array([[ 50, 100, 150, 400],
+                      [900, 100, 1000, 400]]),
+            np.array([0.9, 0.8]),
+        )
+
+    def test_velocity_not_extrapolated_across_a_long_gap(self):
+        t = FencerTracker()
+        self._init_both_slots(t)
+        # slot 1 goes unmatched for many frames: only a slot-0 detection
+        # arrives, far from slot 1, so slot 1 is never committed.
+        for _ in range(10):
+            t.select(
+                np.array([5]),
+                np.array([[50, 100, 150, 400]]),
+                np.array([0.9]),
+            )
+        # slot 1 now commits again, but far from where it last was
+        t.select(
+            np.array([5, 7]),
+            np.array([[ 50, 100, 150, 400],
+                      [300, 100, 400, 400]]),   # centre now (350, 250)
+            np.array([0.9, 0.8]),
+        )
+        # gap between slot 1's two commits is > VELOCITY_MAX_GAP_FRAMES,
+        # so the prediction must NOT extrapolate; it must equal last_pos.
+        assert t.predicted_pos(1) == t.last_pos[1]
+
+    def test_prediction_stays_on_screen_after_a_gap(self):
+        """The concrete symptom: predicted position must not go negative."""
+        t = FencerTracker()
+        self._init_both_slots(t)
+        for _ in range(10):
+            t.select(
+                np.array([5]),
+                np.array([[1100, 100, 1200, 400]]),
+                np.array([0.9]),
+            )
+        t.select(
+            np.array([5, 7]),
+            np.array([[1100, 100, 1200, 400],
+                      [ 400, 100,  500, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        for slot in (0, 1):
+            pred = t.predicted_pos(slot)
+            if pred is not None:
+                assert pred[0] >= 0, f"slot {slot} predicted x went negative"
+                assert pred[1] >= 0, f"slot {slot} predicted y went negative"
+
+    def test_slot_recovers_after_long_dropout(self):
+        """
+        A slot that has gone unmatched for longer than STALE_RESET_FRAMES
+        must discard its history so it can re-acquire, rather than
+        rejecting every candidate forever.
+        """
+        t = FencerTracker()
+        self._init_both_slots(t)
+        # slot 1 receives no detections for well over the stale threshold
+        for _ in range(FencerTracker.STALE_RESET_FRAMES + 5):
+            t.select(
+                np.array([5]),
+                np.array([[50, 100, 150, 400]]),
+                np.array([0.9]),
+            )
+        assert t.last_pos[1] is None, "stale slot history should be cleared"
+
+        # a fencer reappears somewhere new; the freed slot must accept it
+        slots = t.select(
+            np.array([5, 7]),
+            np.array([[ 50, 100, 150, 400],
+                      [600, 100, 700, 400]]),
+            np.array([0.9, 0.8]),
+        )
+        assert slots[1] is not None, "slot should have re-acquired after dropout"
+
+    def test_slot_history_survives_a_short_dropout(self):
+        """
+        The stale reset must not fire on brief dropouts - those are the
+        cases spatial continuity is supposed to ride out.
+        """
+        t = FencerTracker()
+        self._init_both_slots(t)
+        for _ in range(3):
+            t.select(
+                np.array([5]),
+                np.array([[50, 100, 150, 400]]),
+                np.array([0.9]),
+            )
+        assert t.last_pos[1] is not None, "short dropout should keep history"
+
+
+# -------------------- CameraMotionEstimator --------------------
+
+class TestCameraMotionEstimator:
+    """
+    Push and pull are accumulated from image-space displacement, which conflates
+    the fencer moving with the camera moving. The existing safeguards cannot
+    catch a slow pan: the per-frame clamp only rejects biomechanically
+    impossible jumps and the noise floor only rejects sub-jitter movement. On
+    hand-held footage the unstabilised metric reported both fencers
+    net-advancing a combined 32 m on a 14 m piste.
+    """
+
+    def _texture(self, h=400, w=600, seed=0):
+        import cv2
+        rng = np.random.default_rng(seed)
+        img = (rng.random((h, w, 3)) * 255).astype(np.uint8)
+        return cv2.GaussianBlur(img, (5, 5), 0)   # give LK a trackable gradient
+
+    def test_first_frame_reports_no_motion(self):
+        from run_detection import CameraMotionEstimator
+        est = CameraMotionEstimator()
+        assert est.update(self._texture()) == 0.0
+
+    def test_static_camera_reports_near_zero(self):
+        from run_detection import CameraMotionEstimator
+        est = CameraMotionEstimator()
+        img = self._texture()
+        est.update(img)
+        for _ in range(4):
+            assert abs(est.update(img)) < 0.5
+
+    def test_recovers_a_known_pan(self):
+        from run_detection import CameraMotionEstimator
+        est = CameraMotionEstimator()
+        base = self._texture()
+        est.update(base)
+        for i in range(1, 5):
+            dx = est.update(np.roll(base, i * 5, axis=1))
+            assert abs(dx - 5.0) < 1.0, f"expected ~5 px, got {dx}"
+
+    def test_cumulative_offset_accumulates(self):
+        from run_detection import CameraMotionEstimator
+        est = CameraMotionEstimator()
+        base = self._texture()
+        est.update(base)
+        for i in range(1, 6):
+            est.update(np.roll(base, i * 4, axis=1))
+        assert abs(est.cumulative_dx - 20.0) < 2.0
+
+    def test_stabilise_removes_the_offset(self):
+        from run_detection import CameraMotionEstimator
+        est = CameraMotionEstimator()
+        est.cumulative_dx = 30.0
+        assert est.stabilise(100.0) == 70.0
+
+    def test_stabilise_passes_none_through(self):
+        from run_detection import CameraMotionEstimator
+        assert CameraMotionEstimator().stabilise(None) is None
+
+    def test_implausible_shift_is_rejected(self):
+        """A cut or flash produces a huge apparent shift; better to report no
+        motion than to inject a spurious one into the accumulator."""
+        from run_detection import CameraMotionEstimator
+        est = CameraMotionEstimator()
+        est.update(self._texture(seed=1))
+        # an unrelated frame gives incoherent flow, well beyond a real pan
+        dx = est.update(self._texture(seed=99))
+        limit = est.MAX_PAN_FRACTION * 600
+        assert abs(dx) <= limit
+
+    def test_featureless_frame_fails_safely(self):
+        from run_detection import CameraMotionEstimator
+        est = CameraMotionEstimator()
+        blank = np.zeros((400, 600, 3), dtype=np.uint8)
+        est.update(blank)
+        assert est.update(blank) == 0.0
+        assert est.frames_failed > 0
+
+    def test_fencer_boxes_are_masked_out(self):
+        """
+        The fencers move too, so features on them would bias the estimate. They
+        are excluded directly rather than relying on the median alone.
+        """
+        from run_detection import CameraMotionEstimator
+        shape = (400, 600, 3)
+        mask = CameraMotionEstimator._mask_excluding(shape, [[100, 100, 200, 300]])
+        assert mask[200, 150] == 0        # inside the box
+        assert mask[50, 500] == 255       # well outside it
+
+    def test_masking_tolerates_missing_boxes(self):
+        from run_detection import CameraMotionEstimator
+        mask = CameraMotionEstimator._mask_excluding((400, 600, 3), [None])
+        assert (mask == 255).all()
+
+
+# -------------------- push/pull banking (directional bias) --------------------
+
+class TestPushPullBanking:
+    """
+    The noise threshold exists to stop bounding-box jitter accumulating; an early
+    version summed raw displacement and reported 216 m of push per fencer in a
+    three-minute bout. Discarding sub-threshold movement fixed that number and
+    introduced a directional bias, because advances and retreats in fencing do
+    not share a speed: an attack is explosive and clears the threshold on every
+    frame, while the recovery is slow and clears it on none.
+
+    Banking sub-threshold movement instead of discarding it keeps the jitter
+    rejection and removes the bias. These tests pin both halves of that, because
+    a change to either constant could silently reintroduce the bug.
+    """
+
+    SCALE = 143.0
+
+    def _cycle(self, adv_px, adv_frames, ret_frames, cycles=12):
+        """
+        Drive a fencer through advance/retreat cycles that return it to the exact
+        starting position, so the correct net displacement is zero by construction.
+        """
+        p = PushPullTracker(n_fencers=2)
+        x, opponent = 400.0, 900.0
+        ret_px = (adv_px * adv_frames) / ret_frames
+        for _ in range(cycles):
+            for _ in range(adv_frames):
+                x += adv_px
+                p.update(0, x, opponent, self.SCALE)
+            for _ in range(ret_frames):
+                x -= ret_px
+                p.update(0, x, opponent, self.SCALE)
+        return p
+
+    def test_symmetric_motion_nets_to_zero(self):
+        p = self._cycle(adv_px=8.0, adv_frames=10, ret_frames=10)
+        assert abs(p.advance_m[0] - p.retreat_m[0]) < 0.5
+
+    def test_explosive_attack_slow_recovery_nets_to_zero(self):
+        """
+        The regression this fix addresses. With sub-threshold movement discarded
+        this reported +5.25 m of net advance and pull of exactly 0.00 m, having
+        thrown away every retreat frame.
+        """
+        p = self._cycle(adv_px=8.0, adv_frames=10, ret_frames=40)
+        net = p.advance_m[0] - p.retreat_m[0]
+        assert p.retreat_m[0] > 0, "slow retreats must not be discarded entirely"
+        assert abs(net) < 0.5, f"expected net near zero, got {net:+.2f}"
+
+    def test_very_slow_recovery_nets_to_zero(self):
+        p = self._cycle(adv_px=8.0, adv_frames=10, ret_frames=80)
+        assert abs(p.advance_m[0] - p.retreat_m[0]) < 0.5
+
+    def test_jitter_still_does_not_accumulate(self):
+        """
+        The other half. A random walk with no true displacement must not produce
+        large totals, or banking would have simply undone the original fix.
+        """
+        rng = np.random.default_rng(0)
+        p = PushPullTracker(n_fencers=2)
+        x = 400.0
+        for _ in range(2000):
+            x += rng.normal(0, 1.5)
+            p.update(0, x, 900.0, self.SCALE)
+        assert p.advance_m[0] < 10.0 and p.retreat_m[0] < 10.0
+
+    def test_a_single_tiny_move_commits_nothing(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 100.0, 500.0, 100.0)
+        tiny = (PUSH_PULL_NOISE_FLOOR_M / 3) * 100.0
+        p.update(0, 100.0 + tiny, 500.0, 100.0)
+        assert p.advance_m[0] == 0.0
+        assert p.pending_m[0] > 0, "it should be banked, not lost"
+
+    def test_repeated_tiny_moves_eventually_commit(self):
+        """Slow movement is delayed, never dropped."""
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 100.0, 500.0, 100.0)
+        step = (PUSH_PULL_NOISE_FLOOR_M / 3) * 100.0
+        x = 100.0
+        for _ in range(6):
+            x += step
+            p.update(0, x, 500.0, 100.0)
+        assert p.advance_m[0] > 0, "banked movement should have committed by now"
+
+    def test_implausible_jump_is_capped_not_discarded(self):
+        """
+        An implausible single-frame jump is capped, not deleted. Deleting it
+        biased the result: on the club clip the threshold was exceeded on about
+        one per cent of frames, but those frames carried roughly ten metres of
+        net retreat, so discarding them injected ten metres of false advance.
+        Capping bounds a glitch's influence while keeping its direction.
+        """
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 100.0, 500.0, 100.0)
+        huge = (MAX_FRAME_MOVEMENT_M + 0.5) * 100.0
+        p.update(0, 100.0 + huge, 500.0, 100.0)
+        assert math.isclose(p.advance_m[0], MAX_FRAME_MOVEMENT_M, abs_tol=1e-9)
+        assert p.retreat_m[0] == 0.0
+
+    def test_a_capped_jump_keeps_its_direction(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 500.0, 900.0, 100.0)
+        huge = (MAX_FRAME_MOVEMENT_M + 0.5) * 100.0
+        p.update(0, 500.0 - huge, 900.0, 100.0)   # a big jump AWAY from the opponent
+        assert math.isclose(p.retreat_m[0], MAX_FRAME_MOVEMENT_M, abs_tol=1e-9)
+        assert p.advance_m[0] == 0.0
+
+
+# -------------------- push/pull direction stability --------------------
+
+class TestPushPullDirectionIsFixed:
+    """
+    "Toward the opponent" is established once per fencer and then held for the
+    bout. The original implementation re-derived it every frame by comparing the
+    opponent's current position against this fencer's previous one. On the club
+    clip that returned the wrong side on 3 frames out of 5,109 and cost 10
+    metres, because the comparison only fails when a position jumps, and a jump
+    is exactly when the frame's displacement is large. A large movement given the
+    wrong sign contributes twice its magnitude as error.
+    """
+
+    SCALE = 150.0
+
+    def test_direction_is_learned_on_first_update(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 100.0, 500.0, self.SCALE)     # opponent to the right
+        p.update(1, 500.0, 100.0, self.SCALE)     # opponent to the left
+        assert p.toward_opponent[0] == 1.0
+        assert p.toward_opponent[1] == -1.0
+
+    def test_direction_does_not_change_afterwards(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 100.0, 500.0, self.SCALE)
+        # a glitch frame reporting the opponent on the wrong side
+        p.update(0, 110.0, 50.0, self.SCALE)
+        assert p.toward_opponent[0] == 1.0
+
+    def test_a_single_glitch_frame_cannot_invert_a_large_movement(self):
+        """
+        The regression this fixes. A large displacement arriving on a frame where
+        the opponent appears on the wrong side must still be counted in the
+        correct direction.
+        """
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 100.0, 500.0, self.SCALE)     # establishes: right is forward
+        # move toward the opponent while the opponent's reported x is corrupted
+        p.update(0, 112.0, 20.0, self.SCALE)
+        assert p.advance_m[0] > 0, "movement toward the opponent must count as advance"
+        assert p.retreat_m[0] == 0.0
+
+    def test_accumulated_net_matches_endpoint_displacement(self):
+        """
+        The arithmetic identity any correct accumulator must satisfy: summing
+        signed per-frame movement equals the difference between first and last
+        position. This is what the per-frame sign test broke.
+        """
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        # steps chosen to stay inside MAX_FRAME_MOVEMENT_M so this measures the
+        # sign handling rather than the cap, which has its own tests below
+        xs = [100.0, 118.0, 111.0, 129.0, 122.0, 140.0]
+        for x in xs:
+            p.update(0, x, 900.0, self.SCALE)
+        net = p.advance_m[0] - p.retreat_m[0]
+        expected = (xs[-1] - xs[0]) / self.SCALE
+        assert math.isclose(net, expected, abs_tol=0.02), f"{net} vs {expected}"
+
+    def test_the_cap_breaks_the_identity_by_exactly_what_it_discards(self):
+        """
+        The counterpart to the test above, and the one that matters on real data.
+
+        That test picks steps inside the cap so it measures sign handling. This one
+        crosses the cap deliberately, because the cap is what breaks the identity
+        on real footage: replaying clip 3's recorded positions through this logic,
+        the cap fires on 63 and 65 frames of 5,246 and destroys -9.26 m and
+        -23.94 m of signed movement, which is the whole of the divergence between
+        the cumulative totals and the endpoint measurement.
+
+        Pinning it here converts that from a surprise into a known property. The
+        assertion is not that the identity holds, because it does not; it is that
+        the shortfall equals the discarded amount and nothing else leaks.
+        """
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        # A ONE-SIDED jump, i.e. the position steps and stays rather than snapping
+        # back. That asymmetry is the point. A symmetric out-and-back glitch
+        # crosses the cap twice in opposite directions and mostly cancels, so it
+        # does little harm. What damages the total is a step that is never
+        # returned, which is what re-acquiring a fencer at a new position after a
+        # tracking gap produces, and it explains why clip 3's 65 capped frames
+        # carried -23.94 m almost entirely in one direction instead of averaging
+        # out.
+        over = (MAX_FRAME_MOVEMENT_M + 0.40) * self.SCALE
+        xs = [100.0, 110.0, 120.0, 120.0 - over]
+        for x in xs:
+            p.update(0, x, 900.0, self.SCALE)
+
+        net = p.advance_m[0] - p.retreat_m[0]
+        endpoint = (xs[-1] - xs[0]) / self.SCALE
+        # the retreat of (cap + 0.40) was kept only as far as the cap, so the
+        # accumulated net overstates advance by exactly the discarded remainder
+        assert math.isclose(net - endpoint, 0.40, abs_tol=1e-6), f"{net} vs {endpoint}"
+
+    def test_no_cap_crossing_means_the_identity_survives(self):
+        """
+        The same series without the glitch closes exactly, which isolates the cap
+        as the cause rather than the smoothing or the banking buffer.
+        """
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        xs = [100.0, 110.0, 120.0, 114.0, 130.0, 140.0]
+        for x in xs:
+            p.update(0, x, 900.0, self.SCALE)
+        net = p.advance_m[0] - p.retreat_m[0]
+        assert math.isclose(net, (xs[-1] - xs[0]) / self.SCALE, abs_tol=1e-6)
+
+    def test_identity_holds_with_a_corrupted_opponent_position(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        xs = [100.0, 118.0, 111.0, 129.0, 122.0, 140.0]
+        for i, x in enumerate(xs):
+            # every third frame reports the opponent on the wrong side
+            opp = 20.0 if i % 3 == 0 and i > 0 else 900.0
+            p.update(0, x, opp, self.SCALE)
+        net = p.advance_m[0] - p.retreat_m[0]
+        expected = (xs[-1] - xs[0]) / self.SCALE
+        assert math.isclose(net, expected, abs_tol=0.02)
+
+    def test_no_opponent_position_means_no_accumulation(self):
+        """Without an opponent the sign is undetermined, so nothing is counted."""
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        p.update(0, 100.0, None, self.SCALE)
+        p.update(0, 140.0, None, self.SCALE)
+        assert p.advance_m[0] == 0.0 and p.retreat_m[0] == 0.0
+
+
+# -------------------- plot rendering --------------------
+
+class TestSavePlot:
+    """
+    save_plot runs only at the very end of a pipeline run, after the CSV is
+    written, so a NameError in it is silent: the data survives and the run
+    appears to finish. Renaming the distance-band constants did exactly that and
+    it went unnoticed for hours, because the only visible symptom was a missing
+    plot and a missing printed summary. These tests exercise it directly.
+    """
+
+    def test_renders_a_plot_file(self, tmp_path):
+        from run_detection import save_plot
+        out = tmp_path / "p.png"
+        save_plot([0.0, 0.5, 1.0, 1.5], [2.0, 2.4, 1.8, 3.1],
+                  ["pose", "bbox", "pose", "bbox"], str(out))
+        assert out.exists() and out.stat().st_size > 0
+
+    def test_handles_pose_only_samples(self, tmp_path):
+        from run_detection import save_plot
+        out = tmp_path / "p.png"
+        save_plot([0.0, 0.5], [2.0, 2.4], ["pose", "pose"], str(out))
+        assert out.exists()
+
+    def test_handles_bbox_only_samples(self, tmp_path):
+        from run_detection import save_plot
+        out = tmp_path / "p.png"
+        save_plot([0.0, 0.5], [2.0, 2.4], ["bbox", "bbox"], str(out))
+        assert out.exists()
+
+    def test_every_band_constant_it_draws_still_exists(self):
+        """Guards against a constant rename silently breaking the plot again."""
+        import run_detection as rd
+        for name in ("DIST_CLOSE_M", "DIST_LUNGE_M", "DIST_ADVANCE_LUNGE_M"):
+            assert hasattr(rd, name), f"save_plot draws {name}, which is missing"
+
+
+# -------------------- closing share --------------------
+
+class TestClosingShare:
+    """
+    The well-defined replacement for "how far did each fencer advance in total".
+
+    That question has no answer as a distance in this data. Path length sums the
+    magnitude of every frame's change, so measurement noise adds to it and never
+    cancels: re-measuring clip 3 under median windows from 1 to 121 frames moved
+    one fencer's path length from 161 m to 33 m with no asymptote, while net
+    displacement stayed at exactly +3.43 m throughout. A quantity that changes
+    fivefold with an arbitrary smoothing parameter measures the filter, not the
+    fencer.
+
+    Counting the sign of each movement instead of its magnitude avoids that,
+    because noise contributes symmetrically to both directions. Under the same
+    sweep the closing share moved only from 52.4 to 60.9 per cent.
+    """
+
+    SCALE = 150.0
+
+    def test_none_before_any_movement(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        assert p.closing_share(0) is None
+
+    def test_all_closing_gives_one(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        x = 100.0
+        p.update(0, x, 900.0, self.SCALE)
+        for _ in range(10):
+            x += 8.0                      # steadily toward the opponent
+            p.update(0, x, 900.0, self.SCALE)
+        assert p.closing_share(0) == 1.0
+
+    def test_all_opening_gives_zero(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        x = 500.0
+        p.update(0, x, 900.0, self.SCALE)
+        for _ in range(10):
+            x -= 8.0                      # steadily away
+            p.update(0, x, 900.0, self.SCALE)
+        assert p.closing_share(0) == 0.0
+
+    def test_alternating_gives_about_half(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        x = 500.0
+        p.update(0, x, 900.0, self.SCALE)
+        for i in range(20):
+            x += 8.0 if i % 2 == 0 else -8.0
+            p.update(0, x, 900.0, self.SCALE)
+        assert 0.4 <= p.closing_share(0) <= 0.6
+
+    def test_is_bounded(self):
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        x = 100.0
+        p.update(0, x, 900.0, self.SCALE)
+        rng = np.random.default_rng(0)
+        for _ in range(200):
+            x += rng.normal(0, 10)
+            p.update(0, x, 900.0, self.SCALE)
+        s = p.closing_share(0)
+        assert 0.0 <= s <= 1.0
+
+    def test_magnitude_does_not_affect_it_above_the_noise_floor(self):
+        """
+        The property that makes it usable: scaling every movement leaves the
+        share unchanged, whereas it would scale a path length proportionally.
+
+        This holds only for movements that clear PUSH_PULL_NOISE_FLOOR_M. Below
+        it the banking buffer decides when a movement commits, so magnitude does
+        influence the count. The metric is therefore magnitude-invariant in the
+        regime that matters and not universally, which is worth knowing before
+        quoting it on footage where the fencers barely move.
+        """
+        floor_px = PUSH_PULL_NOISE_FLOOR_M * self.SCALE
+        shares = []
+        for step in (floor_px * 2, floor_px * 4, floor_px * 8):
+            p = PushPullTracker(n_fencers=2, smooth_window=1)
+            x = 100.0
+            p.update(0, x, 900.0, self.SCALE)
+            for i in range(30):
+                x += step if i % 3 else -step
+                p.update(0, x, 900.0, self.SCALE)
+            shares.append(p.closing_share(0))
+        assert max(shares) - min(shares) < 1e-9, shares
+
+    def test_below_the_noise_floor_magnitude_does_matter(self):
+        """Pins the limitation above, so it cannot be forgotten."""
+        floor_px = PUSH_PULL_NOISE_FLOOR_M * self.SCALE
+        shares = []
+        for step in (floor_px * 0.3, floor_px * 4):
+            p = PushPullTracker(n_fencers=2, smooth_window=1)
+            x = 100.0
+            p.update(0, x, 900.0, self.SCALE)
+            for i in range(30):
+                x += step if i % 3 else -step
+                p.update(0, x, 900.0, self.SCALE)
+            shares.append(p.closing_share(0))
+        assert shares[0] != shares[1]
+
+
+class TestStanceFeatures:
+    """
+    Stance geometry exists to answer one question: does pose carry a lunge signal
+    worth keeping? B1c showed pose success can fall from 27 per cent of frames to
+    5.7 per cent with no effect on touch-detection F1, so MediaPipe is currently
+    not load-bearing. These tests pin the feature definitions; whether the signal
+    is real is a measurement against ground truth, not a unit test.
+    """
+
+    SCALE = 100.0        # px per metre, so 100 px = 1 m
+
+    def _lms(self, **overrides):
+        """
+        Landmarks for a fencer on guard: feet 60 cm apart, hips 1 m above them.
+
+        Landmark keys are integers, so overrides are applied by dict merge at the
+        call site rather than through keyword arguments.
+        """
+        return {
+            LM_LEFT_ANKLE:  (100.0, 300.0),
+            LM_RIGHT_ANKLE: (160.0, 300.0),
+            LM_LEFT_HIP:    (125.0, 200.0),
+            LM_RIGHT_HIP:   (135.0, 200.0),
+        }
+
+    def test_guard_stance_is_about_shoulder_width(self):
+        f = get_stance_features(self._lms(), self.SCALE)
+        assert math.isclose(f["stance_m"], 0.60, abs_tol=1e-9)
+        assert math.isclose(f["hip_height_m"], 1.00, abs_tol=1e-9)
+
+    def test_a_lunge_widens_the_stance_and_drops_the_hips(self):
+        """
+        The two features must move in OPPOSITE directions. That is what separates a
+        lunge from the same fencer detected at a different scale, which would move
+        both the same way and is the confound worth guarding against.
+        """
+        guard = get_stance_features(self._lms(), self.SCALE)
+        # front foot thrown forward, hips dropped
+        lunge = get_stance_features({
+            LM_LEFT_ANKLE:  (100.0, 300.0),
+            LM_RIGHT_ANKLE: (230.0, 300.0),
+            LM_LEFT_HIP:    (160.0, 240.0),
+            LM_RIGHT_HIP:   (170.0, 240.0),
+        }, self.SCALE)
+        assert lunge["stance_m"] > guard["stance_m"]
+        assert lunge["hip_height_m"] < guard["hip_height_m"]
+
+    def test_stance_is_horizontal_only(self):
+        """
+        A lunge extends along the piste, and the piste runs across the frame, so
+        vertical ankle separation is camera geometry rather than stance. Raising one
+        ankle must not change the measurement.
+        """
+        flat   = get_stance_features(self._lms(), self.SCALE)
+        raised = get_stance_features({**self._lms(), LM_LEFT_ANKLE: (100.0, 240.0)},
+                                     self.SCALE)
+        assert math.isclose(flat["stance_m"], raised["stance_m"], abs_tol=1e-9)
+
+    def test_one_missing_ankle_yields_no_stance_but_keeps_hip_height(self):
+        """
+        A partial skeleton is the normal case, not a failure. Reporting the feature
+        that survives is what stops pose availability collapsing to all-or-nothing.
+        """
+        lms = {k: v for k, v in self._lms().items() if k != LM_RIGHT_ANKLE}
+        f = get_stance_features(lms, self.SCALE)
+        assert f["stance_m"] is None
+        assert f["hip_height_m"] is not None
+
+    def test_no_landmarks_or_no_scale_yields_none(self):
+        assert get_stance_features(None, self.SCALE) is None
+        assert get_stance_features({}, self.SCALE) is None
+        assert get_stance_features(self._lms(), 0) is None
+
+    def test_ankles_only_yields_stance_but_no_hip_height(self):
+        lms = {LM_LEFT_ANKLE: (100.0, 300.0), LM_RIGHT_ANKLE: (160.0, 300.0)}
+        f = get_stance_features(lms, self.SCALE)
+        assert math.isclose(f["stance_m"], 0.60, abs_tol=1e-9)
+        assert f["hip_height_m"] is None
+
+
+class TestOverlayShowsOnlyDefensibleMetrics:
+    """
+    The annotated video is the project's most quotable artefact, so what it captions
+    a fencer with matters. It burnt in cumulative push and pull until B1g measured
+    their error at 24 m on a 14 m piste; it was the last surface still presenting
+    them as measurements. draw_overlay had no test coverage at all, which is how
+    that survived three rounds of metric revision.
+    """
+
+    SCALE = 100.0
+
+    def _frame(self):
+        return np.zeros((720, 1280, 3), dtype=np.uint8)
+
+    def _tracker(self, moved_px=400.0):
+        """A tracker that has seen one fencer advance a long way."""
+        p = PushPullTracker(n_fencers=2, smooth_window=1)
+        for x in np.linspace(100.0, 100.0 + moved_px, 40):
+            p.update(0, float(x), 900.0, self.SCALE)
+            p.update(1, 900.0, float(x), self.SCALE)
+        return p
+
+    def _drawn_text(self, monkeypatch, net_scale, tracker=None):
+        """Capture every string draw_overlay renders."""
+        captured = []
+        real = run_detection.cv2.putText
+
+        def spy(img, text, org, *a, **kw):
+            captured.append(text)
+            return real(img, text, org, *a, **kw)
+
+        monkeypatch.setattr(run_detection.cv2, "putText", spy)
+        run_detection.draw_overlay(
+            self._frame(), [None, None], [None, None],
+            2.4, 2.4, "pose", tracker or self._tracker(), 30, 30.0,
+            net_scale=net_scale)
+        return captured
+
+    def test_push_and_pull_are_not_drawn(self, monkeypatch):
+        text = " ".join(self._drawn_text(monkeypatch, self.SCALE)).lower()
+        assert "push" not in text
+        assert "pull" not in text
+
+    def test_net_displacement_and_closing_share_are_drawn(self, monkeypatch):
+        text = " ".join(self._drawn_text(monkeypatch, self.SCALE)).lower()
+        assert "net" in text
+        assert "closing" in text
+
+    def test_without_a_scale_the_displacement_is_marked_unavailable(self, monkeypatch):
+        """
+        No scale means no metres. Drawing a number anyway would be inventing one,
+        and the closing share needs no scale so it should still appear.
+        """
+        text = " ".join(self._drawn_text(monkeypatch, None))
+        assert "net      --" in text
+        assert "closing" in text
+
+    def test_a_small_net_is_drawn_without_a_sign(self, monkeypatch):
+        """
+        Under a metre the sign is not meaningful, since the same fencer reads
+        +0.43 m from raw positions and -0.94 m from smoothed endpoints.
+        """
+        barely = self._tracker(moved_px=20.0)     # 0.2 m at this scale
+        text = " ".join(self._drawn_text(monkeypatch, self.SCALE, barely))
+        assert "~0 m" in text
+        assert "+0.20" not in text
+
+    def test_a_real_net_is_drawn_with_its_sign_and_magnitude(self, monkeypatch):
+        """
+        Above the floor the direction is the whole point, so it must be shown.
+
+        Only Fencer 1 moves in this fixture, 400 px at 100 px/m, so its line
+        carries +4.00 m while the stationary opponent falls under the floor and
+        renders without a sign. Both halves are asserted, because a change that
+        made every fencer read the same way would be wrong either direction.
+        """
+        drawn = self._drawn_text(monkeypatch, self.SCALE)
+        net_lines = [t for t in drawn if t.startswith("net")]
+        assert len(net_lines) == 2                      # one per fencer
+        assert "+4.00 m" in net_lines[0]                # the fencer that advanced
+        assert "~0 m" in net_lines[1]                   # the one that stood still

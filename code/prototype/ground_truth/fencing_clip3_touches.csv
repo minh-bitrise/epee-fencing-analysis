@@ -1,0 +1,22 @@
+# Hand-labelled ground truth for fencing_clip3.mp4 (club training footage, 180 s).
+# Labelled by the author, a competitive epee fencer, from audio and video together.
+# time_s   = awarded touch, to the nearest second
+# scorer   = left | right | double  (double = both fencers score, legal in epee)
+# annulled = 1 if a hit was registered but no point awarded (none observed here)
+# notes    = labeller's observations, retained because they identify the
+#            acoustic conditions the detector has to cope with
+time_s,scorer,annulled,notes
+19,right,0,"heavy blade and guard clank; buzzer blended into the contact noise"
+35,left,0,"clearer buzzer"
+43,right,0,""
+48,left,0,"some clanky contact noise"
+63,left,0,""
+83,right,0,""
+89,right,0,""
+106,left,0,""
+112,left,0,""
+132,double,0,""
+140,double,0,""
+155,double,0,""
+172,double,0,""
+179,right,0,""

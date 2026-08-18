@@ -1,0 +1,106 @@
+{
+  "cache_key": "15f5b8e56f6cd5b868a171af537181b57e7f15cdba49883ff1cbd6194d6d3ad8",
+  "model": "claude-opus-4-8",
+  "stats": {
+    "duration_s": 180.0,
+    "frames_total": 5246,
+    "coverage_pct": 97.4,
+    "pose_method_pct": 26.8,
+    "distance_m": {
+      "mean": 2.53,
+      "min": 0.04,
+      "max": 5.02,
+      "std": 0.81
+    },
+    "time_in_zone_pct": {
+      "close_infighting_under_1.5m": 9.4,
+      "lunge_distance_1.5_to_2.6m": 45.2,
+      "advance_lunge_2.6_to_3.5m": 34.7,
+      "out_of_distance_over_3.5m": 10.8
+    },
+    "movement_basis": {
+      "source": "differenced cumulative totals (older CSV, no position columns; inherits the noise floor, movement cap and banking buffer)",
+      "closing_share_is_window_dependent": true,
+      "closing_share_note": "Measured on unsmoothed positions. A 1-to-121 frame median smoothing sweep moved this figure from 52.4 to 60.9 per cent on one clip, so read it as approximate to a few points rather than exact."
+    },
+    "fencer_1": {
+      "net_displacement_m": 10.18,
+      "closing_share_pct": 56.6
+    },
+    "fencer_2": {
+      "net_displacement_m": 21.88,
+      "closing_share_pct": 59.5
+    },
+    "data_quality_warnings": [
+      "net_displacement_m is implausible on this recording (largest magnitude 21.9 m). Play resets to the guard lines after every touch, so each fencer should finish within about a metre of where they started; a value this large means the underlying position measurement drifted. Do not interpret net_displacement_m as aggression or territorial gain on this bout. Camera panning has been tested and ruled out as the cause, because panning moves the two fencers' net figures in opposite directions, and the real cause has not yet been identified. closing_share_pct counts directions rather than magnitudes, so it is unaffected; use it instead."
+    ],
+    "touches": {
+      "count": 14,
+      "times_s": [
+        19.0,
+        35.0,
+        43.0,
+        48.0,
+        63.0,
+        83.0,
+        89.0,
+        106.0,
+        112.0,
+        132.0,
+        140.0,
+        155.0,
+        172.0,
+        179.0
+      ],
+      "provenance": "human_confirmed",
+      "reset_excluded_s": 6.0
+    },
+    "in_play_only": {
+      "share_of_recording_pct": 56.7,
+      "mean_distance_m": 2.42,
+      "fencer_1": {
+        "net_forward_movement_m": 7.43,
+        "closing_share_pct": 56.3
+      },
+      "fencer_2": {
+        "net_forward_movement_m": 10.84,
+        "closing_share_pct": 56.6
+      }
+    },
+    "tempo": {
+      "touches": 14,
+      "duration_s": 180.0,
+      "touches_per_minute": 4.67,
+      "time_between_touches_s": {
+        "mean": 12.31,
+        "median": 15.0,
+        "min": 5.0,
+        "max": 20.0,
+        "std": 5.47
+      },
+      "exchange_duration_s": {
+        "mean": 9.27,
+        "median": 10.0,
+        "min": 1.0,
+        "max": 19.0,
+        "std": 5.4
+      },
+      "reset_assumed_s": 6.0,
+      "tempo_trend": {
+        "first_half_mean_gap_s": 11.67,
+        "second_half_mean_gap_s": 12.86,
+        "change_s": 1.19,
+        "direction": "slowing"
+      },
+      "scorer_counts": {
+        "right": 5,
+        "left": 5,
+        "double": 4
+      },
+      "longest_streak": {
+        "scorer": "double",
+        "touches": 4
+      }
+    }
+  }
+}

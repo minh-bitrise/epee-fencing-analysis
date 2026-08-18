@@ -1,0 +1,16 @@
+time_s,confidence,min_distance_m,separation_m,audio_support,signals
+19.66,1.0,0.7,3.27,0,approach+separated
+36.2,0.519,1.47,1.56,0,approach+separated
+43.93,0.291,2.23,0.87,0,approach+separated
+47.98,0.408,1.92,1.22,0,approach+separated
+64.0,0.674,1.35,2.02,0,approach+separated
+83.97,0.656,0.4,1.97,0,approach+separated
+89.77,0.987,1.49,2.96,0,approach+separated
+99.35,0.378,2.47,1.13,0,approach+separated
+102.44,0.346,2.89,1.04,0,approach+separated
+107.14,0.329,2.24,0.99,0,approach+separated
+112.97,0.718,1.31,2.15,0,approach+separated
+133.05,0.543,1.49,1.63,0,approach+separated
+140.6,1.0,0.4,3.58,0,approach+separated
+155.32,0.776,1.27,2.33,0,approach+separated
+172.17,1.0,1.09,3.33,0,approach+separated
