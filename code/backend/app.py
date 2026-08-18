@@ -43,9 +43,18 @@ from store import (  # noqa: E402
     discover_bouts, load_proposed_touches,
 )
 
+# results_fixed is listed first because it is the only output produced since the
+# raw position columns were added, and those columns are what the reliable
+# movement metrics are derived from. Without it the interface can only reach CSVs
+# that force the fallback derivation, which inherits the noise floor, the
+# movement cap and the banking buffer, and which disagreed with the position
+# route by 3.5 m of net displacement on the club clip. The older directories stay
+# discoverable so the before/after comparisons in the evaluation remain openable,
+# and the interface reports which route each bout used rather than hiding it.
 RESULTS_DIRS = [os.path.join(PROTOTYPE_DIR, d) for d in
-                ("results_after", "results_stabilised", "results_fixedscale",
-                 "results_ablation", "results")]
+                ("results_pose", "results_fixed", "results_after",
+                 "results_stabilised", "results_fixedscale", "results_ablation",
+                 "results")]
 ANNOTATION_ROOT = os.path.join(PROTOTYPE_DIR, "annotations")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
@@ -139,6 +148,7 @@ def get_touches(bout_id: str):
         "added": data["added_touches"],
         "unreliable_segments": data["unreliable_segments"],
         "reanchors": data["reanchors"],
+        "lunges": sorted(data["lunges"], key=lambda l: l["time_s"]),
         "progress": store.review_progress(bout_id, proposed),
     }
 
@@ -153,7 +163,8 @@ def get_metrics(bout_id: str):
     per cent of the recording and inflate movement totals by a third, so showing
     only the scoped number would hide how much the scoping mattered.
     """
-    from in_play import out_of_play_windows, in_play_mask, scope_cumulative, scope_distance
+    from in_play import (out_of_play_windows, in_play_mask, scope_distance,
+                         closing_share, net_forward_movement)
     import numpy as np
     from generate_summary import compute_stats, load_rows
 
@@ -176,19 +187,35 @@ def get_metrics(bout_id: str):
     windows += [(s["start_s"], s["end_s"]) for s in data["unreliable_segments"]]
     mask = in_play_mask(t, windows)
 
+    def movement(prefix):
+        """
+        In-play movement figures for one fencer.
+
+        Net forward movement and closing share are the reliable pair, and they are
+        the only movement figures returned. The cumulative push and pull totals are
+        deliberately absent: B1g traced their error to the per-frame movement cap
+        and measured it at 24 m on a 14 m piste, so they are wrong rather than
+        approximate, and an API that returns them invites a client to display them.
+        They remain in the pipeline's CSV, which is the evidence artefact.
+
+        The scoped figure is called movement rather than displacement on purpose.
+        Excluding the resets breaks the position series, so it does not telescope
+        to a first-to-last difference and can exceed the whole-recording
+        displacement, which is where the ground gained in a phrase is given back.
+        """
+        cs = closing_share(rows, prefix, mask)
+        return {
+            "net_forward_movement_m": round(net_forward_movement(rows, prefix, mask), 2),
+            "closing_share_pct": round(100.0 * cs, 1) if cs is not None else None,
+        }
+
     dist = scope_distance(d, mask)
     scoped = {
         "in_play_fraction": round(float(mask.mean()), 3) if len(t) else 0.0,
         "mean_distance_m": round(float(dist.mean()), 2) if len(dist) else None,
         "distance_samples": int(len(dist)),
-        "fencer_1": {
-            "push_m": round(scope_cumulative([float(r["f1_advance_m"]) for r in rows], t, mask), 2),
-            "pull_m": round(scope_cumulative([float(r["f1_retreat_m"]) for r in rows], t, mask), 2),
-        },
-        "fencer_2": {
-            "push_m": round(scope_cumulative([float(r["f2_advance_m"]) for r in rows], t, mask), 2),
-            "pull_m": round(scope_cumulative([float(r["f2_retreat_m"]) for r in rows], t, mask), 2),
-        },
+        "fencer_1": movement("f1"),
+        "fencer_2": movement("f2"),
     }
     return {
         "bout_id": bout_id,
@@ -198,7 +225,42 @@ def get_metrics(bout_id: str):
         "scoping_basis": ("confirmed touches" if confirmed else
                           "none: no touches confirmed yet, so in-play equals the "
                           "whole recording"),
+        # whole["movement_basis"] says which derivation route was used. It is
+        # lifted to the top level as well because it qualifies the in-play
+        # figures identically, and a caller reading only the scoped block would
+        # otherwise not see it.
+        "movement_basis": whole["movement_basis"],
     }
+
+
+class LungeIn(BaseModel):
+    time_s: float = Field(..., ge=0)
+    slot: int = Field(..., ge=0, le=1)
+    note: str = ""
+
+
+@app.post("/api/bouts/{bout_id}/lunges")
+def add_lunge(bout_id: str, body: LungeIn):
+    """
+    Label the peak of one lunge, for evaluating the pose model.
+
+    This is not a fifth annotation action. The four designed actions let a user
+    repair the system's output; this lets a user grade it. TODO B1h found that
+    pose stance features do not mark awarded touches, but touch times are a weak
+    proxy for lunges in both directions, since most lunges miss and some touches
+    are not lunges. These labels test the hypothesis directly.
+    """
+    _get_bout(bout_id)
+    store.add_lunge(bout_id, body.time_s, body.slot, body.note)
+    return {"ok": True}
+
+
+@app.delete("/api/bouts/{bout_id}/lunges/{lunge_id}")
+def remove_lunge(bout_id: str, lunge_id: str):
+    _get_bout(bout_id)
+    if not store.remove_lunge(bout_id, lunge_id):
+        raise HTTPException(404, f"no such lunge: {lunge_id}")
+    return {"ok": True}
 
 
 WEB_VIDEO_DIR = os.path.join(PROTOTYPE_DIR, "web_video")

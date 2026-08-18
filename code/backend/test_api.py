@@ -264,3 +264,174 @@ class TestPersistence:
         (root / "b.json").write_text(json.dumps({"bout_id": "b"}))
         d = AnnotationStore(str(root)).load("b")
         assert d["touch_states"] == {} and d["reanchors"] == []
+
+
+# -------------------- metrics endpoint --------------------
+
+@pytest.fixture
+def metrics_bout(results_dir, tmp_path, monkeypatch):
+    """
+    Point the app at the synthetic results directory and return its bout id.
+
+    The endpoint is exercised by calling the handler directly rather than over
+    HTTP, because what is under test is the metric selection, not FastAPI.
+    """
+    import app as app_module
+    monkeypatch.setattr(app_module, "RESULTS_DIRS", [str(results_dir)])
+    monkeypatch.setattr(app_module, "store",
+                        AnnotationStore(str(tmp_path / "ann_metrics")))
+    return app_module, list(app_module._bouts())[0]
+
+
+class TestMetricsEndpoint:
+    """
+    The interface must present the movement figures that survived measurement,
+    not the cumulative push and pull totals. Path length changes fivefold with
+    the smoothing window while net displacement does not move at all, so a total
+    displayed next to a real measurement misrepresents itself as one.
+    """
+
+    def test_reliable_movement_figures_are_returned(self, metrics_bout):
+        app_module, bout_id = metrics_bout
+        m = app_module.get_metrics(bout_id)
+        for fencer in ("fencer_1", "fencer_2"):
+            block = m["in_play"][fencer]
+            assert "net_forward_movement_m" in block
+            assert "closing_share_pct" in block
+
+    def test_cumulative_totals_are_not_returned_at_all(self, metrics_bout):
+        """
+        The totals are wrong rather than approximate: B1g measured the error at 24 m
+        on a 14 m piste and traced it to the movement cap. An API that returns them,
+        under any name, invites a client to display them next to a real
+        measurement, where they read as one. They stay in the CSV instead.
+        """
+        app_module, bout_id = metrics_bout
+        block = app_module.get_metrics(bout_id)["in_play"]["fencer_1"]
+        for k in ("push_m", "pull_m", "push_m_indicative", "pull_m_indicative"):
+            assert k not in block
+
+    def test_whole_recording_net_displacement_is_available(self, metrics_bout):
+        """
+        The interface shows both, and only the whole-recording figure is a true
+        displacement, so the endpoint has to carry it.
+        """
+        app_module, bout_id = metrics_bout
+        w = app_module.get_metrics(bout_id)["whole_recording"]
+        assert "net_displacement_m" in w["fencer_1"]
+
+    def test_synthetic_bout_advances_both_fencers(self, metrics_bout):
+        """
+        The fixture's CSV has both fencers advancing monotonically and never
+        retreating, so both net figures must be positive. This checks the sign
+        convention survives the endpoint, which is where an earlier defect lived.
+        """
+        app_module, bout_id = metrics_bout
+        m = app_module.get_metrics(bout_id)
+        assert m["whole_recording"]["fencer_1"]["net_displacement_m"] > 0
+        assert m["in_play"]["fencer_1"]["net_forward_movement_m"] > 0
+
+    def test_derivation_route_is_reported(self, metrics_bout):
+        """
+        The fixture CSV predates the position columns, so the response must say
+        the fallback route was used. Reporting it is what stops a silent
+        degradation: the fallback disagreed with the position route by 3.5 m of
+        net displacement on real footage.
+        """
+        app_module, bout_id = metrics_bout
+        basis = app_module.get_metrics(bout_id)["movement_basis"]
+        assert "cumulative" in basis["source"]
+
+    def test_results_fixed_is_discoverable(self):
+        """
+        The only output carrying position columns must be reachable by the
+        interface, or every bout it can open silently uses the fallback.
+        """
+        import app as app_module
+        assert any(d.endswith("results_fixed") for d in app_module.RESULTS_DIRS)
+
+
+# -------------------- lunge labelling --------------------
+
+class TestLungeLabels:
+    """
+    Lunge labels grade the pose model rather than correcting it, so they are not a
+    fifth annotation action. B1h found pose stance features do not mark awarded
+    touches, but touch times are a weak proxy for lunges in both directions, so
+    these labels are what tests the hypothesis directly.
+    """
+
+    def test_a_lunge_is_stored_with_its_fencer(self, store):
+        store.add_lunge("b", 12.5, 0)
+        lunges = store.load("b")["lunges"]
+        assert len(lunges) == 1
+        assert lunges[0]["time_s"] == 12.5 and lunges[0]["slot"] == 0
+
+    def test_sub_second_precision_survives(self):
+        """
+        A lunge lasts about ten frames at 30 fps, so the peak has to be recordable
+        to better than a second or the label cannot land on the right frame.
+        """
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            st = AnnotationStore(d)
+            st.add_lunge("b", 12.567, 1)
+            assert st.load("b")["lunges"][0]["time_s"] == 12.567
+
+    def test_ids_are_unique_across_several_labels(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            st = AnnotationStore(d)
+            for i in range(5):
+                st.add_lunge("b", float(i), i % 2)
+            ids = [l["id"] for l in st.load("b")["lunges"]]
+            assert len(set(ids)) == 5
+
+    def test_a_bad_slot_is_rejected(self, store):
+        with pytest.raises(ValueError):
+            store.add_lunge("b", 1.0, 2)
+
+    def test_a_negative_time_is_rejected(self, store):
+        with pytest.raises(ValueError):
+            store.add_lunge("b", -1.0, 0)
+
+    def test_removal(self, store):
+        store.add_lunge("b", 1.0, 0)
+        store.add_lunge("b", 2.0, 1)
+        assert store.remove_lunge("b", "l0") is True
+        remaining = store.load("b")["lunges"]
+        assert [l["id"] for l in remaining] == ["l1"]
+
+    def test_removing_an_unknown_lunge_reports_false(self, store):
+        assert store.remove_lunge("b", "nope") is False
+
+    def test_a_file_from_before_lunges_existed_still_loads(self, tmp_path):
+        """
+        Annotation files already exist on disk without this key, and a review
+        session must not fail on one.
+        """
+        root = tmp_path / "ann"
+        root.mkdir()
+        (root / "b.json").write_text(json.dumps(
+            {"bout_id": "b", "touch_states": {}, "added_touches": []}))
+        assert AnnotationStore(str(root)).load("b")["lunges"] == []
+
+    def test_the_api_returns_lunges_sorted_by_time(self, metrics_bout):
+        app_module, bout_id = metrics_bout
+        for t in (30.0, 10.0, 20.0):
+            app_module.store.add_lunge(bout_id, t, 0)
+        times = [l["time_s"] for l in app_module.get_touches(bout_id)["lunges"]]
+        assert times == [10.0, 20.0, 30.0]
+
+    def test_labelling_does_not_disturb_the_four_designed_actions(self, store):
+        """
+        Grading the model must not change the state the user's corrections live in,
+        or an evaluation session would quietly alter the thing being evaluated.
+        """
+        store.set_touch_state("b", "p0", CONFIRMED, scorer="left")
+        store.add_unreliable_segment("b", 1.0, 2.0)
+        before = store.load("b")
+        snapshot = (dict(before["touch_states"]), list(before["unreliable_segments"]))
+        store.add_lunge("b", 5.0, 1)
+        after = store.load("b")
+        assert (after["touch_states"], after["unreliable_segments"]) == snapshot

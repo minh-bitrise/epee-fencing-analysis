@@ -131,7 +131,7 @@ class AnnotationStore:
         p = self._path(bout_id)
         if not os.path.exists(p):
             return {"bout_id": bout_id, "touch_states": {}, "added_touches": [],
-                    "unreliable_segments": [], "reanchors": []}
+                    "unreliable_segments": [], "reanchors": [], "lunges": []}
         with open(p) as f:
             data = json.load(f)
         # tolerate files written by an earlier version
@@ -139,6 +139,7 @@ class AnnotationStore:
         data.setdefault("added_touches", [])
         data.setdefault("unreliable_segments", [])
         data.setdefault("reanchors", [])
+        data.setdefault("lunges", [])
         return data
 
     def save(self, bout_id, data):
@@ -243,6 +244,47 @@ class AnnotationStore:
             "applied": False, "created": time.time(),
         })
         return self.save(bout_id, data)
+
+    # --- lunge labelling (evaluation only, not one of the four actions) ---
+
+    def add_lunge(self, bout_id, time_s, slot, note=""):
+        """
+        Record the peak of one lunge: the moment of maximum extension.
+
+        WHY ONE TIMESTAMP AND NOT TWO. TODO B1h originally called for start and
+        peak, but the hypothesis under test only needs the peak: does a
+        pose-derived stance feature reach an extreme when a fencer is at full
+        extension? A start time would let the rise be measured too, and it doubles
+        the labelling cost per lunge, so it is left out until the simpler question
+        is answered.
+
+        WHY `scored` IS NOT STORED. It is derivable. A lunge that scored is one
+        whose peak sits shortly before an already-labelled touch, and the touch
+        labels exist. Asking for it again would add a decision per lunge and
+        introduce a second chance to disagree with the touch file.
+
+        These labels exist to evaluate the pose model, not to correct it, so this
+        is deliberately NOT presented as a fifth annotation action. The four
+        designed actions repair the system's output; this one grades it.
+        """
+        if slot not in (0, 1):
+            raise ValueError("slot must be 0 or 1")
+        if float(time_s) < 0:
+            raise ValueError("time_s must not be negative")
+        data = self.load(bout_id)
+        data["lunges"].append({
+            "id": f"l{len(data['lunges'])}",
+            "time_s": float(time_s), "slot": int(slot),
+            "note": note, "created": time.time(),
+        })
+        return self.save(bout_id, data)
+
+    def remove_lunge(self, bout_id, lunge_id):
+        data = self.load(bout_id)
+        before = len(data["lunges"])
+        data["lunges"] = [l for l in data["lunges"] if l["id"] != lunge_id]
+        self.save(bout_id, data)
+        return len(data["lunges"]) < before
 
     # --- derived view ---------------------------------------------------
 
