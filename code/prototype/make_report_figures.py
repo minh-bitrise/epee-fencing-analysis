@@ -24,6 +24,10 @@ import numpy as np
 FIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "final", "figures")
 BLUE, ORANGE, GREY, RED = "#2196F3", "#FF9800", "#607D8B", "#E53935"
 
+# Print resolution. The report text column is about 170 mm, so 240 dpi here lands
+# near 300 dpi on the page. The first pass used 120 to 140 and looked grainy.
+DPI = 240
+
 
 def load_positions(path, fencer):
     """Raw per-frame position series in metres, gaps carried forward."""
@@ -88,7 +92,7 @@ def fig_smoothing_sweep():
                  fontsize=8, color=GREY)
     fig.tight_layout()
     out = os.path.join(FIG, "fig_smoothing_sweep.png")
-    fig.savefig(out, dpi=130); plt.close(fig)
+    fig.savefig(out, dpi=DPI); plt.close(fig)
     print("wrote", os.path.basename(out))
 
 
@@ -96,27 +100,29 @@ def fig_framing_vs_coverage():
     """
     Fencer height in the network's input against coverage, for the four clips.
 
-    Plotted rather than tabulated because the point is that the four clips fall on a
-    trend, and that resolution is not what separates them: clip 4 is labelled with
-    its source resolution to make clear it is the smallest fencer, not the smallest
-    file, that matters.
+    Label offsets are per point rather than uniform. Clips 2 and 3 sit at 135 and 133 px,
+    so a single offset stacked their labels on top of each other and neither was legible;
+    they are pushed to opposite sides instead.
     """
-    clips = [("Clip 1\n720p", 162, 93.0), ("Clip 2\n720p", 135, 98.0),
-             ("Clip 3\n720p", 133, 97.4), ("Clip 4\n360p", 103, 73.7)]
+    # (label, fencer px, coverage, label offset in points)
+    clips = [("Clip 1\n720p", 162, 93.0, (0, -38)),
+             ("Clip 2\n720p", 135, 98.0, (34, -6)),
+             ("Clip 3\n720p", 133, 97.4, (-34, -6)),
+             ("Clip 4\n360p", 103, 73.7, (0, -38))]
     fig, ax = plt.subplots(figsize=(7, 4.5))
-    for name, px, cov in clips:
+    for name, px, cov, off in clips:
         colour = RED if px < 120 else BLUE
-        ax.scatter(px, cov, s=140, color=colour, zorder=3)
-        ax.annotate(name, (px, cov), textcoords="offset points", xytext=(0, -34),
-                    ha="center", fontsize=9)
+        ax.scatter(px, cov, s=150, color=colour, zorder=3, edgecolor="white", linewidth=1.2)
+        ax.annotate(name, (px, cov), textcoords="offset points", xytext=off,
+                    ha="center", va="center", fontsize=9)
     ax.set_xlabel("Fencer height in the network's input (pixels)")
     ax.set_ylabel("Tracking coverage (per cent of frames)")
-    ax.set_title("Coverage follows how much of the frame a fencer fills, not source resolution")
-    ax.set_xlim(90, 180); ax.set_ylim(65, 103)
+    ax.set_title("Coverage follows fencer size in the network's input,\nnot source resolution", fontsize=11)
+    ax.set_xlim(88, 182); ax.set_ylim(65, 104)
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     out = os.path.join(FIG, "fig_framing_vs_coverage.png")
-    fig.savefig(out, dpi=130); plt.close(fig)
+    fig.savefig(out, dpi=DPI); plt.close(fig)
     print("wrote", os.path.basename(out))
 
 
@@ -149,7 +155,7 @@ def fig_touch_signature():
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     out = os.path.join(FIG, "fig_touch_signature.png")
-    fig.savefig(out, dpi=130); plt.close(fig)
+    fig.savefig(out, dpi=DPI); plt.close(fig)
     print("wrote", os.path.basename(out))
 
 
@@ -180,7 +186,7 @@ def fig_framing_frames():
         ax.axis("off")
     fig.tight_layout()
     out = os.path.join(FIG, "fig_framing_comparison.png")
-    fig.savefig(out, dpi=120); plt.close(fig)
+    fig.savefig(out, dpi=DPI); plt.close(fig)
     print("wrote", os.path.basename(out))
 
 
@@ -265,7 +271,7 @@ def fig_architecture():
             fontsize=8.5, color="#C62828", rotation=270, va="center", ha="center")
     fig.tight_layout()
     out = os.path.join(FIG, "fig_architecture.png")
-    fig.savefig(out, dpi=140); plt.close(fig)
+    fig.savefig(out, dpi=DPI); plt.close(fig)
     print("wrote", os.path.basename(out))
 
 
