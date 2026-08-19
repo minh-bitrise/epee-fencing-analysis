@@ -1288,6 +1288,221 @@ The per-frame CSV produced by the prototype has columns: `frame`, `time_s`, `dis
 *(Placeholder - final URLs and per-clip details to be filled in here; the drop-in attribution
 paragraph for the preliminary report is in `TODO.md` Part A4.)*
 
+### E. Measurement investigations
+
+Moved here from the draft report's appendix, where it could not stay: the draft is bound by a
+strict 9,500 word limit across six chapters and the brief exempts tables and figures but not
+appendix narrative. This document has no such limit. The draft states each finding with its
+figure and carries the tables; the derivations and ruled-out alternatives are below.
+
+**E.1 Why the cumulative push and pull totals are not a measurement.** Re-measuring one clip's
+position series under median smoothing windows from 1 to 121 frames:
+
+| Window (frames) | F1 path length | F2 path length | F1 net | F2 net |
+|---|---|---|---|---|
+| 1 | 161.2 m | 193.1 m | +3.43 m | +0.43 m |
+| 5 | 142.1 m | 163.6 m | +3.43 m | +0.43 m |
+| 31 | 100.3 m | 112.7 m | +3.43 m | +0.43 m |
+| 121 | 32.7 m | 51.4 m | +3.43 m | +0.43 m |
+
+Path length falls by a factor of five with no asymptote while net displacement is unchanged to the
+centimetre. Path length sums the magnitude of every frame's change, so measurement noise adds to it
+and never cancels; a difference between two positions lets noise cancel. Tightening the tracker's
+identity gate would not help, and this was checked rather than assumed: the largest per-frame
+position change is 0.229 bounding-box heights, with p50 at 0.010 and p99 at 0.088, so there are no
+discrete jumps to remove and the tail is continuous bounding-box instability.
+
+**E.2 The per-frame movement clamp accounts for the divergence exactly.** Replaying the recorded
+position series through the accumulator's own logic:
+
+| Fencer | Endpoint difference | Accumulated advance minus retreat | Unclosed gap | Discarded by the clamp |
+|---|---|---|---|---|
+| 1 | +4.71 m | +13.96 m | +9.26 m | -9.26 m |
+| 2 | -0.94 m | +23.01 m | +23.95 m | -23.94 m |
+
+Residue left unbanked is 0.015 m, so nothing else contributes. The clamp fires on 63 and 65 frames
+of 5,246. The mechanism is tracking gaps rather than symmetric glitches: capped frames are nearly
+balanced in count, 30 retreat-side against 35 advance-side for Fencer 2, yet net to -23.94 m,
+because the 35 per cent of them within a smoothing window of a lost-tracking frame carry -25.14 m
+while the remainder roughly cancel. A symmetric out-and-back glitch crosses the clamp twice in
+opposite directions and cancels; a fencer re-acquired at a new position after a dropout is a
+one-sided step that does not. No clamp threshold repairs this, because the truncated steps reach
+5.4 m in a single frame.
+
+The unit test asserting the endpoint identity could not have caught this. Its own comment records
+that its steps were chosen to stay inside the clamp threshold, so it measures the sign handling and
+steps around the cause.
+
+**E.3 Camera motion was tested and refuted as the cause.** Pan bias displaces both fencers alike,
+while "toward the opponent" points in opposite directions for them, so pan makes their net figures
+move oppositely. Clip 3's were both positive. Compensation was implemented as Lucas-Kanade optical
+flow with the tracked boxes masked out, validated by recovering a synthetic pan exactly and by
+reducing a synthetic pan bias of +8.33 and -8.30 m to +0.03 and +0.03. On real footage it improved
+three clips and made clip 3 worse, 21.88 to 37.34 m, and it is off by default.
+
+| Clip | Pan (px) | Worst net before | After |
+|---|---|---|---|
+| 1 | 3,172 | 2.16 m | 0.93 m |
+| 2 | 20 | 1.64 m | 1.64 m |
+| 3 | 3,900 | 21.88 m | 37.34 m |
+| 4 | low | 3.25 m | 2.36 m |
+
+**E.4 Source resolution is invisible to the detector.** YOLO rescales its input so the longest side
+is 640 px, which undoes any rescale of the source before the network sees anything.
+
+| Clip | Source supplied | Network input | Fencer height in input | Two fencers detected |
+|---|---|---|---|---|
+| 4 | 320x180 | 640x360 | 103 px | 89.0% |
+| 4 | 640x360 | 640x360 | 104 px | 89.0% |
+| 4 | 1280x720 | 640x360 | 103 px | 90.0% |
+| 3 | 320x180 | 640x360 | 133 px | 99.0% |
+| 3 | 1280x720 | 640x360 | 134 px | 99.0% |
+
+The resolution ablation of section 5.5 was therefore varying a quantity the model never receives,
+which is why its F1 was flat. What differs between clips is the fraction of the frame a fencer
+occupies.
+
+**E.5 Removing the spectators from clip 4 makes it worse.** The boundary was derived from the
+detection histogram rather than placed by eye: the gallery cluster's bottom edge sits at p99 =
+128.8 px and the fencer cluster's top edge at p1 = 188.5 px, a 60 px gap, so a cut at y = 129
+removes 52 per cent of all detections without touching any observed fencer box. Two mechanisms were
+tried, masking the region black at unchanged frame size and cropping it away.
+
+| Condition | Coverage | Pose | Tracking gaps | Best F1 | Corrections |
+|---|---|---|---|---|---|
+| baseline 640x360 | 73.7% | 11.0% | 248 | 0.67 | 4 (67% of manual) |
+| masked 640x360 | 66.4% | 8.3% | 328 | 0.53 | 7 (117%) |
+| cropped 640x231 | 65.9% | 9.1% | 370 | 0.59 | 7 (117%) |
+
+Raw detection of two fencer-sized boxes falls from 85.3 to 80.0 and 79.3 per cent with median fencer
+height unchanged at 101.9 px, so the loss is in the detector and not in the tracker, and not because
+the fencers became smaller. Why a detector should benefit from context it is not being asked about is
+not established here. At 117 per cent of manual effort the tool would be slower than labelling by
+hand, so the intervention is rejected.
+
+**E.8 The abandoned audio path.** Retained behind a flag with the negative result recorded, as a
+documented dead end rather than deleted. Per-clip band calibration was necessary rather than tidy:
+the buzzer sits at 1200-1700 Hz on clip 3, 2700-3200 Hz on clip 2 and 1700-2200 Hz on clip 4, so any
+hardcoded frequency would have worked on at most one. A second defect was found in the calibration
+metric itself: candidate bands were scored by the kurtosis of their envelope standardised per band,
+and standardising divides out amplitude, so a band holding only faint spectral leakage outscored the
+band containing the tone. Weighting peakiness by absolute peak raised F1 from 0.73 to 0.79 by itself.
+Both fixes were real improvements to a component that was then removed, which is the more useful
+lesson: a component can be correct, well tuned, and still worth deleting.
+
+  | Configuration | Clip 3 (tuned on) | Clip 2 (held back) |
+  |---|---|---|
+  | audio plus geometry | F1 0.79, 6 corrections | F1 0.35, 15 corrections vs 4 manual |
+  | geometry alone | F1 0.86, 4 corrections | F1 0.86, 1 correction |
+
+**E.14 Work plan.** Referenced in section 3.6.
+
+| Task | Periods | Status |
+|---|---|---|
+| Requirements and background research | P1 to P2 | complete |
+| Project and environment setup | P1 | complete |
+| Model selection and comparative testing | P2 to P3 | complete |
+| AI processing pipeline (detection, pose, metrics) | P3 to P5 | complete |
+| Language-generation stage | P5 | complete |
+| Backend API and data storage | P4 to P6 | not started |
+| Frontend: upload and review views | P5 to P7 | not started |
+| Assisted annotation interface | P6 to P8 | not started |
+| Statistics, profiling and dashboard | P7 to P8 | partial (metrics only) |
+| Software and user testing | P7 to P9 | partial (unit tests only) |
+| Refinement and iteration | P8 to P9 | ongoing |
+| Evaluation and report write-up | P9 | in progress |
+| Buffer / contingency | P9 | unused |
+
+**E.13 Evaluation footage.** Referenced in section 5.1.
+
+| Clip | Setting | Camera | Resolution | Others in frame |
+|---|---|---|---|---|
+| 1 | domestic competition | low angle, close, some pan | 720p | officials, adjacent-piste fencer |
+| 2 | World Cup broadcast | elevated, fixed | 720p | referee, adjacent piste, spectators |
+| 3 | club training | hand-held, panning throughout | 720p | none |
+| 4 | junior team competition | elevated, wide, little pan | 360p | referee in foreground, spectators |
+
+**E.11 Movement across the four clips**, from one version of the pipeline, each clip with the piste
+configuration it requires. Reported in section 5.3.
+
+| Clip | Coverage | F1 net | F1 closing | F2 net | F2 closing |
+|---|---|---|---|---|---|
+| 1 | 92.9% | +1.29 m | 51.0% | +0.28 m | 48.3% |
+| 2 | 98.0% | +3.86 m | 50.5% | -0.16 m | 50.4% |
+| 3 | 97.4% | +3.43 m | 52.4% | +0.43 m | 52.0% |
+| 4 | 73.7% | +0.42 m | 47.0% | **+7.54 m** | 47.8% |
+
+**E.12 The two unsolved tracking failures.** *Wrong-target capture* is prevented by the piste polygon,
+which by construction cannot distinguish a referee standing on the piste from a fencer. On clip 4 the
+referee passes the polygon and survives to the slot competition, where he is rejected only by the size
+gate and confidence ordering, clearing by 7 pixels against clip 2's 150. The zero implausible-sample
+result on three clips therefore shows that the filter works where the piste boundary happens to
+separate fencers from bystanders, not that the problem is solved. *Close-range identity flicker*
+arises because YOLOv8 frequently returns a single merged box when fencers clinch, so one slot receives
+no update for the duration; on separation the assignment is decided by the motion model, which prefers
+the detection consistent with prior direction of travel and has no signal at all where both fencers
+reversed direction inside the clinch. Appearance-based re-identification addresses both and is the
+main proposal in Chapter 6.
+
+**E.9 Three tracking defects found only on footage.** Each passed the unit suite. The *noise floor*
+was intended to suppress bounding-box jitter and discarded any movement below a threshold; in fencing
+an attack is explosive and clears it every frame while the recovery and walk-back are slow and clear it
+on none, so discarding small movements discarded retreats and injected false advance. Measured on
+synthetic input with a fencer returning to its exact starting position, the discarding version
+reported +5.25 m of net advance with pull recorded as 0.00 m. It was replaced by banking sub-threshold
+movement until it accumulates past the threshold. The *velocity model* estimated velocity from the last
+two committed positions without checking how far apart in time they were; differencing two positions
+recorded many frames apart measures displacement over the gap rather than velocity, and extrapolating
+from it threw predictions outside the frame, taking clip 2's coverage from 87 to 13 per cent. It was
+fixed by refusing to extrapolate across gaps longer than three frames. The *piste polygon* was placed
+by eye from a single frame and admitted fencers on the adjacent piste, which raised coverage while
+making the implausible-sample count five times worse: a headline number improving as the underlying
+measurement degraded.
+
+**E.10 The halt feature.** The design predicted that fencers stop after a touch, so the first version
+of the feature tested whether combined movement fell to near zero afterwards. Against ground truth it
+separated true from false positives by a factor of 1.04. Two causes compounded. The movement totals it
+consumed are corrupted (D.1, D.2), so a defect in one metric disabled a feature two stages later. And
+the premise was wrong independently of that: a referee's halt does not make fencers still, it ends the
+phrase and sends them back to their guard lines, which is movement. The replacement measures
+post-event separation directly, at +0.47 m median after a real touch against -0.03 m for a false
+positive, and moved recall from 0.50 to 0.79.
+
+**E.7 Tracking performance before and after the piste filter and motion model.** Reported in
+section 5.3. The push and pull rows are retained to show what the fix appeared to do at the time,
+not as measurements; D.1 and D.2 establish that they are not measurements at all.
+
+| Measure | Clip 1 before | Clip 1 after | Clip 2 before | Clip 2 after |
+|---|---|---|---|---|
+| Coverage | 82.0% | **93.0%** | 86.8% | **98.0%** |
+| Mean distance (m) | 2.26 | 2.27 | 3.33 | 3.34 |
+| Max distance (m) | 6.60 | 6.44 | 8.45 | **6.82** |
+| Implausible samples (>7 m) | 0 | 0 | 53 | **0** |
+| Fencer 1 push / pull (m), withdrawn | 14.2 / 11.1 | 11.8 / 10.4 | 41.0 / 41.5 | 38.2 / 36.6 |
+| Fencer 2 push / pull (m), withdrawn | 15.8 / 17.1 | 21.8 / 19.6 | 36.8 / 37.1 | 47.6 / 48.9 |
+
+**E.6 Lunge detection from pose stance features.** Against 36 hand-labelled lunge peaks on clip 3,
+using the dimensionless ratio of ankle separation to hip height, for the fencer with 30 of the
+labels:
+
+| Window | Past the random-window p90 | Fires per minute | Lunges per minute | Recall | Precision | F1 |
+|---|---|---|---|---|---|---|
+| -0.10/+0.10s | 24 of 30 | 29.3 | 10.0 | 0.80 | 0.27 | 0.41 |
+| -0.20/+0.20s | 24 of 30 | 19.3 | 10.0 | 0.80 | 0.41 | 0.55 |
+| -0.40/+0.20s | 18 of 30 | 12.3 | 10.0 | 0.60 | 0.49 | 0.54 |
+
+The ratio is what carries the signal, not either feature alone: raw stance separation reaches 43 per
+cent and hip drop 57, and combining them reaches 80. The ratio is also what removes a per-fencer
+scale error of about 40 per cent, since a clip-wide scale cannot track how far each fencer is from
+the camera; the ratio reads 1.05 against 1.02 for the two fencers where the metre figures differ by
+40 per cent. Excluding the three labels the labeller flagged as doubtful raises the figure to 82 to
+86 per cent rather than lowering it.
+
+An earlier version of this test used awarded touches as a proxy for lunges and found nothing usable,
+43 per cent enrichment at nine times the event rate. Most lunges miss and some touches are not
+lunges, so the proxy was weak in both directions, and the null result was a property of the proxy
+rather than of pose.
+
 ### D. Development log highlights
 
 The full development trail is in the project's git history. Significant milestones include:
