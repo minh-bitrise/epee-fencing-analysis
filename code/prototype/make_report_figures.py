@@ -184,8 +184,94 @@ def fig_framing_frames():
     print("wrote", os.path.basename(out))
 
 
+def fig_architecture():
+    """
+    The system architecture, drawn rather than typed.
+
+    It was ASCII art inside a code block, which reads as source rather than as a
+    diagram, split across page breaks in Word, and is weak against the marking
+    criterion on whether diagrams are appropriate and clear. The content is
+    unchanged from the design; only the presentation differs.
+
+    Heights are computed from the row counts and the axis is sized to the total, since
+    a hand-picked ylim silently pushed the last layer's text outside its box.
+    """
+    from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+
+    FILL = {"client": "#E3F2FD", "api": "#FFF3E0", "pipe": "#F1F8E9", "data": "#F3E5F5"}
+    EDGE = {"client": "#1565C0", "api": "#E65100", "pipe": "#33691E", "data": "#6A1B9A"}
+    ROW, HEAD, PAD, GAP = 3.4, 7.5, 2.6, 5.4
+
+    layers = [
+        ("client", "CLIENT LAYER   React single-page application",
+         ["Video upload",
+          "Frame-accurate player and timeline scrubber",
+          "Assisted-annotation panel: confirm, correct, add events",
+          "Results dashboard: statistics, distance and tempo charts, summary"]),
+        ("api", "APPLICATION AND API LAYER   FastAPI",
+         ["Upload and file handling",
+          "Asynchronous job dispatch and status polling",
+          "Annotation create, read and update",
+          "Analytics and results"]),
+        ("pipe", "PROCESSING AND AI PIPELINE   background workers",
+         ["0  Ingestion and preprocessing: decode, sample, normalise",
+          "1  Detection and tracking: YOLOv8 + ByteTrack, giving boxes and stable IDs",
+          "2  Pose estimation: MediaPipe Pose, giving body keypoints",
+          "3  Feature extraction: distance, velocity, footwork, arm extension",
+          "4  Event-segment proposal: probable touches and exchanges",
+          "5  Analytics and profiling: statistics, tempo, tactical classification",
+          "6  Language generation by LLM: written tactical summary"]),
+        ("data", "DATA LAYER",
+         ["Object storage: raw uploaded video",
+          "Database: metadata, positions, keypoints, events, statistics, summaries"]),
+    ]
+    arrows = ["HTTPS, REST / JSON", "dispatch processing job",
+              "persist features, events, statistics, summary   /   read for review"]
+
+    heights = [HEAD + ROW * len(rows) + PAD for _, _, rows in layers]
+    total = sum(heights) + GAP * (len(layers) - 1)
+
+    fig, ax = plt.subplots(figsize=(9.5, 0.096 * total + 1.2))
+    ax.set_xlim(0, 11.4); ax.set_ylim(-1.5, total + 1.5); ax.axis("off")
+
+    y = total
+    spans = []
+    for i, ((key, title, rows), h) in enumerate(zip(layers, heights)):
+        ax.add_patch(FancyBboxPatch((0.3, y - h), 9.4, h, boxstyle="round,pad=0.2",
+                                    facecolor=FILL[key], edgecolor=EDGE[key],
+                                    linewidth=1.6))
+        ax.text(0.75, y - 4.0, title, fontsize=10.5, fontweight="bold", color=EDGE[key])
+        for j, r in enumerate(rows):
+            ax.text(1.15, y - HEAD - ROW * j, r, fontsize=9, va="center", color="#212121")
+        spans.append((y, y - h))
+        if i < len(layers) - 1:
+            ax.add_patch(FancyArrowPatch((5, y - h), (5, y - h - GAP + 0.4),
+                                         arrowstyle="-|>", mutation_scale=16,
+                                         linewidth=1.4, color="#455A64"))
+            ax.text(5.3, y - h - GAP / 2, arrows[i], fontsize=8.5, style="italic",
+                    color="#455A64", va="center")
+        y -= h + GAP
+
+    # The feedback loop, which is what makes the workflow human-in-the-loop rather
+    # than a one-directional pipeline, so it is drawn rather than left to the caption.
+    top = spans[0][1] - 1.2                      # just under the client layer
+    stage5 = spans[2][0] - HEAD - ROW * 5        # row for stage 5
+    ax.add_patch(FancyArrowPatch((9.7, top), (9.7, stage5),
+                                 connectionstyle="arc3,rad=-0.32",
+                                 arrowstyle="-|>", mutation_scale=16,
+                                 linewidth=1.5, color="#C62828", linestyle=(0, (5, 3))))
+    ax.text(11.25, (top + stage5) / 2,
+            "user corrections re-feed the analytics engine at stage 5",
+            fontsize=8.5, color="#C62828", rotation=270, va="center", ha="center")
+    fig.tight_layout()
+    out = os.path.join(FIG, "fig_architecture.png")
+    fig.savefig(out, dpi=140); plt.close(fig)
+    print("wrote", os.path.basename(out))
+
+
 if __name__ == "__main__":
     fig_smoothing_sweep()
     fig_framing_vs_coverage()
     fig_touch_signature()
     fig_framing_frames()
+    fig_architecture()
