@@ -342,13 +342,19 @@ class TestMetricsEndpoint:
         basis = app_module.get_metrics(bout_id)["movement_basis"]
         assert "cumulative" in basis["source"]
 
-    def test_results_fixed_is_discoverable(self):
+    def test_the_sets_with_position_columns_are_discoverable(self):
         """
-        The only output carrying position columns must be reachable by the
-        interface, or every bout it can open silently uses the fallback.
+        Outputs carrying the raw position columns must be reachable, or every bout
+        the interface can open silently uses the cumulative fallback. results_current
+        is the reference set and must be first, since a selection that silently falls
+        through to another directory is how a 180p ablation clip got measured in place
+        of the clip under test.
         """
         import app as app_module
-        assert any(d.endswith("results_fixed") for d in app_module.RESULTS_DIRS)
+        names = [os.path.basename(d) for d in app_module.RESULTS_DIRS]
+        assert names[0] == "results_current"
+        for wanted in ("results_current", "results_fixed", "results_pose"):
+            assert wanted in names
 
 
 # -------------------- lunge labelling --------------------
@@ -698,3 +704,109 @@ class TestRecordIdsStayUniqueAmongLiveRecords:
         store.remove_lunge("b", "l0")
         store.add_lunge("b", 2.0, 0)
         assert [l["id"] for l in store.load("b")["lunges"]] == ["l0"]
+
+
+class TestReanchorExport:
+    """
+    Action 4 was stored and never consumed, so the interface offered a repair that
+    did nothing. The export is what makes it reach the pipeline.
+    """
+
+    def test_export_writes_what_the_pipeline_expects(self, metrics_bout):
+        app_module, bout_id = metrics_bout
+        app_module.store.add_reanchor(bout_id, 12.5, 1, 640.0, 300.0)
+        r = app_module.export_reanchors(bout_id)
+        entries = json.loads(open(r["path"]).read())
+        assert entries == [{"time_s": 12.5, "slot": 1, "x": 640.0, "y": 300.0}]
+        assert "--reanchors" in r["next"]
+
+    def test_the_pipeline_loader_accepts_the_export(self, metrics_bout):
+        """The two sides have to agree, so read it back with the real loader."""
+        from run_detection import load_reanchors
+        app_module, bout_id = metrics_bout
+        app_module.store.add_reanchor(bout_id, 2.0, 0, 100.0, 200.0)
+        r = app_module.export_reanchors(bout_id)
+        assert load_reanchors(r["path"], 30.0) == {60: [(0, 100.0, 200.0)]}
+
+    def test_already_applied_corrections_are_still_exported(self, metrics_bout):
+        """
+        A rerun starts from the original video every time, so every correction is
+        needed on every run. Filtering out the applied ones would silently undo them.
+        """
+        app_module, bout_id = metrics_bout
+        app_module.store.add_reanchor(bout_id, 1.0, 0, 10.0, 20.0)
+        app_module.store.mark_reanchors_applied(bout_id)
+        app_module.store.add_reanchor(bout_id, 2.0, 1, 30.0, 40.0)
+        r = app_module.export_reanchors(bout_id)
+        assert r["corrections"] == 2 and r["pending"] == 1
+
+    def test_exporting_nothing_is_refused(self, metrics_bout):
+        from fastapi import HTTPException
+        app_module, bout_id = metrics_bout
+        with pytest.raises(HTTPException) as e:
+            app_module.export_reanchors(bout_id)
+        assert e.value.status_code == 400
+
+    def test_marking_applied_clears_the_pending_count(self, metrics_bout):
+        app_module, bout_id = metrics_bout
+        app_module.store.add_reanchor(bout_id, 1.0, 0, 10.0, 20.0)
+        assert app_module.mark_reanchors_applied(bout_id)["marked"] == 1
+        data = app_module.store.load(bout_id)
+        assert all(a["applied"] for a in data["reanchors"])
+        # idempotent: saying it twice marks nothing further
+        assert app_module.mark_reanchors_applied(bout_id)["marked"] == 0
+
+
+class TestReanchorRerunCommand:
+    """
+    The export hands the user a command to run. Getting it wrong is worse than
+    omitting it, because a command that looks authoritative will be pasted.
+    """
+
+    def test_the_command_names_the_source_video_not_the_annotated_one(self, metrics_bout, tmp_path, monkeypatch):
+        """
+        b.video is the annotated output. Rerunning detection over a clip that already
+        has boxes and text burnt into it would be detecting on top of the overlay.
+        """
+        import app as app_module
+        monkeypatch.setattr(app_module, "PROTOTYPE_DIR", str(tmp_path))
+        (tmp_path / "mybout.mp4").write_bytes(b"x")
+        app_module, bout_id = metrics_bout
+        app_module.store.add_reanchor(bout_id, 1.0, 0, 5.0, 6.0)
+        r = app_module.export_reanchors(bout_id)
+        assert r["source_video_found"] is True
+        assert "mybout.mp4" in r["next"]
+        assert "_annotated" not in r["next"]
+
+    def test_a_missing_source_is_reported_rather_than_faked(self, metrics_bout, tmp_path, monkeypatch):
+        import app as app_module
+        monkeypatch.setattr(app_module, "PROTOTYPE_DIR", str(tmp_path))
+        app_module, bout_id = metrics_bout
+        app_module.store.add_reanchor(bout_id, 1.0, 0, 5.0, 6.0)
+        assert app_module.export_reanchors(bout_id)["source_video_found"] is False
+
+    def test_the_piste_config_is_carried_into_the_command(self, metrics_bout, tmp_path, monkeypatch):
+        """
+        A rerun without the piste configuration changes two things at once. Omitting
+        it once cost 18 points of coverage on clip 2 and read as a code regression.
+        """
+        import app as app_module
+        monkeypatch.setattr(app_module, "PROTOTYPE_DIR", str(tmp_path))
+        (tmp_path / "mybout.mp4").write_bytes(b"x")
+        (tmp_path / "piste_mybout.json").write_text("{}")
+        app_module, bout_id = metrics_bout
+        app_module.store.add_reanchor(bout_id, 1.0, 0, 5.0, 6.0)
+        r = app_module.export_reanchors(bout_id)
+        assert r["piste_config"] == "piste_mybout.json"
+        assert "--piste-config piste_mybout.json" in r["next"]
+
+    def test_no_piste_config_means_none_is_suggested(self, metrics_bout, tmp_path, monkeypatch):
+        """Clip 3 has no configuration, and inventing one would change the run."""
+        import app as app_module
+        monkeypatch.setattr(app_module, "PROTOTYPE_DIR", str(tmp_path))
+        (tmp_path / "mybout.mp4").write_bytes(b"x")
+        app_module, bout_id = metrics_bout
+        app_module.store.add_reanchor(bout_id, 1.0, 0, 5.0, 6.0)
+        r = app_module.export_reanchors(bout_id)
+        assert r["piste_config"] is None
+        assert "--piste-config" not in r["next"]

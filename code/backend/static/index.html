@@ -111,6 +111,13 @@
         <div class="cur" id="cur" style="left:0"></div>
         <div class="ax" id="ax"></div>
       </div>
+      <div id="anchorBar" class="mini" style="margin-top:8px">
+        <button data-act="anchor" data-slot="0">Re-anchor Fencer 1</button>
+        <button data-act="anchor" data-slot="1">Re-anchor Fencer 2</button>
+        <button id="exportAnchors">Export corrections</button>
+        <span id="anchorMsg" class="mini"></span>
+      </div>
+      <div id="anchorOut" class="mini"></div>
       <div class="keys mini">
         <span><code>J</code> prev touch</span>
         <span><code>K</code> play/pause</span>
@@ -255,6 +262,13 @@ function buildVideo(has) {
   vid.addEventListener('timeupdate', () => {
     $('#clock').textContent = vid.currentTime.toFixed(1) + 's';
     if (duration) $('#cur').style.left = (100 * vid.currentTime / duration) + '%';
+  });
+  // Only intercepts a click while a re-anchor is armed, so the player's own
+  // controls keep working the rest of the time.
+  vid.addEventListener('click', ev => {
+    if (armedSlot === null) return;
+    ev.preventDefault();
+    placeAnchor(ev);
   });
 }
 
@@ -470,6 +484,94 @@ function renderMetrics(m) {
         ? `<br><br><b>Warning.</b> ${w.data_quality_warnings.join(' ')}` : '');
 }
 
+// Action 4. Arming rather than prompting, because the correction is a POSITION and
+// the only sane way to express it is to point at the fencer. The video is paused on
+// arming so the frame cannot move between the click and the timestamp recorded with it.
+let armedSlot = null;
+
+function armAnchor(slot) {
+  armedSlot = slot;
+  if (vid) vid.pause();
+  $('#anchorMsg').innerHTML =
+    `<b>click Fencer ${slot + 1} in the video</b> (Esc to cancel)`;
+}
+
+function disarmAnchor(msg) {
+  armedSlot = null;
+  $('#anchorMsg').innerHTML = msg || '';
+}
+
+async function placeAnchor(ev) {
+  const v = ev.currentTarget;
+  // Before metadata arrives videoWidth is 0, which would make the scale infinite and
+  // silently record the correction at the origin. Refusing is the only safe option:
+  // a correction placed at (0, 0) is worse than no correction, because it looks
+  // deliberate.
+  if (!v.videoWidth || !v.videoHeight) {
+    disarmAnchor('the video has not loaded its size yet, nothing recorded. Try again once it plays.');
+    return;
+  }
+  const r = v.getBoundingClientRect();
+  // A collapsed element gives a zero scale, and dividing by it yields NaN, which
+  // passes every comparison in the bounds check below and would post NaN to the
+  // API. Guard the scale, not just the result: a check that silently accepts NaN is
+  // worse than no check.
+  if (r.width <= 0 || r.height <= 0) {
+    disarmAnchor('the video is not visible, nothing recorded');
+    return;
+  }
+  // The element is scaled, and the correction has to be in SOURCE pixels because
+  // that is the space the tracker works in. Letterboxing is accounted for: a video
+  // shown in a box of a different aspect ratio is centred with bars, and treating
+  // the element box as the image would offset every correction.
+  const scale = Math.min(r.width / v.videoWidth, r.height / v.videoHeight);
+  const shownW = v.videoWidth * scale, shownH = v.videoHeight * scale;
+  const padX = (r.width - shownW) / 2, padY = (r.height - shownH) / 2;
+  const x = (ev.clientX - r.left - padX) / scale;
+  const y = (ev.clientY - r.top  - padY) / scale;
+  if (!Number.isFinite(x) || !Number.isFinite(y) ||
+      x < 0 || y < 0 || x > v.videoWidth || y > v.videoHeight) {
+    disarmAnchor('that click was outside the picture, nothing recorded');
+    return;
+  }
+  const slot = armedSlot;
+  disarmAnchor('saving...');
+  try {
+    await api(`/api/bouts/${enc(boutId)}/reanchor`,
+              json('POST', {time_s: +v.currentTime.toFixed(3), slot,
+                            x: Math.round(x), y: Math.round(y)}));
+    disarmAnchor(`recorded for Fencer ${slot + 1} at ${v.currentTime.toFixed(2)}s. ` +
+                 `Takes effect only when the pipeline is rerun.`);
+    await load(true);
+  } catch (e) {
+    disarmAnchor(esc(e.message));
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && armedSlot !== null) disarmAnchor('cancelled');
+});
+
+$('#exportAnchors').addEventListener('click', async () => {
+  const out = $('#anchorOut');
+  out.textContent = 'exporting...';
+  try {
+    const r = await api(`/api/bouts/${enc(boutId)}/export-reanchors`, {method:'POST'});
+    out.innerHTML = `<div class="note">Wrote <b>${r.corrections}</b> correction(s) to
+      <code>${esc(r.path)}</code>. Rerun the pipeline with them:<br>
+      <code>${esc(r.next)}</code><br><br>
+      <button id="markApplied">I have rerun it</button></div>`;
+    $('#markApplied').addEventListener('click', async () => {
+      await api(`/api/bouts/${enc(boutId)}/reanchors/applied`, {method:'POST'});
+      out.innerHTML = '<div class="note">Marked as applied. This records what you ' +
+        'told me; nothing in a rerun reports back here.</div>';
+      await load(true);
+    });
+  } catch (e) {
+    out.innerHTML = `<div class="note">${esc(e.message)}</div>`;
+  }
+});
+
 let busy = false;
 
 async function decide(id, state, advance = false) {
@@ -505,6 +607,7 @@ document.addEventListener('click', async e => {
     else if (b.dataset.act === 'reject') await decide(id, 'rejected');
     else if (b.dataset.act === 'del') { await api(`${base}/touches/${id}`, {method:'DELETE'}); await load(true); }
     else if (b.dataset.act === 'delseg') { await api(`${base}/segments/${id}`, {method:'DELETE'}); await load(); }
+    else if (b.dataset.act === 'anchor') { armAnchor(+b.dataset.slot); return; }
     else if (b.dataset.act === 'dellunge') { await api(`${base}/lunges/${id}`, {method:'DELETE'}); await load(); }
   } catch (err) { alert(err.message); }
 });

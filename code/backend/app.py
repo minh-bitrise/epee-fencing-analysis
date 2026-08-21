@@ -51,8 +51,12 @@ from store import (  # noqa: E402
 # route by 3.5 m of net displacement on the club clip. The older directories stay
 # discoverable so the before/after comparisons in the evaluation remain openable,
 # and the interface reports which route each bout used rather than hiding it.
+# results_current is first because it is the reference set: all four clips from one
+# version of the pipeline, each with the piste configuration it needs, and the only
+# set where movement figures are comparable across clips. RESULTS.md says which
+# numbers to quote from where.
 RESULTS_DIRS = [os.path.join(PROTOTYPE_DIR, d) for d in
-                ("results_pose", "results_fixed", "results_after",
+                ("results_current", "results_pose", "results_fixed", "results_after",
                  "results_stabilised", "results_fixedscale", "results_ablation",
                  "results")]
 ANNOTATION_ROOT = os.path.join(PROTOTYPE_DIR, "annotations")
@@ -365,6 +369,83 @@ def export_touches(bout_id: str):
             "review_complete": progress["complete"],
             "next": (f'python3 generate_summary.py --csv "{b.metrics_csv}" '
                      f'--touches "{out_path}"')}
+
+
+@app.post("/api/bouts/{bout_id}/export-reanchors")
+def export_reanchors(bout_id: str):
+    """
+    Write the user's re-anchor corrections where the pipeline can read them.
+
+    Action 4 is the only one that changes tracking rather than interpretation, so it
+    cannot take effect in this interface: the tracker has already run. Until now the
+    corrections were stored and nothing consumed them, which meant the interface
+    offered a repair that did nothing at all. This closes that, in the same shape as
+    the touch export: a file beside the metrics CSV, nothing existing modified, and
+    the exact command to run returned with it.
+
+    Corrections already marked applied are included rather than filtered out. A
+    reprocess starts from the original video every time, so every correction is
+    needed on every run; excluding the applied ones would silently undo them.
+    """
+    b = _get_bout(bout_id)
+    data = store.load(bout_id)
+    reanchors = data["reanchors"]
+    if not reanchors:
+        raise HTTPException(400, "nothing to export: no re-anchor corrections recorded")
+
+    import json as _json
+    base = os.path.splitext(b.metrics_csv)[0]
+    out_path = f"{base}_reanchors.json"
+    with open(out_path, "w") as f:
+        _json.dump([{"time_s": a["time_s"], "slot": a["slot"],
+                     "x": a["x"], "y": a["y"]} for a in reanchors], f, indent=2)
+
+    # The rerun must start from the SOURCE video. b.video is the annotated output,
+    # and running detection over a clip with boxes and text already burnt into it
+    # would be detecting on top of the overlay.
+    stem = os.path.basename(base).replace("_distance", "")
+    source = os.path.join(PROTOTYPE_DIR, f"{stem}.mp4")
+    have_source = os.path.exists(source)
+
+    # And it must carry the same piste configuration, or the rerun changes two things
+    # at once. Omitting it once cost 18 points of coverage on clip 2 and looked
+    # exactly like a code regression, so the command is assembled rather than left
+    # to memory.
+    piste = None
+    for candidate in (f"piste_{stem}.json",
+                      f"piste_{stem.replace('fencing_clip', 'clip')}.json",
+                      f"piste_clip{stem.replace('fencing_clip', '') or '1'}.json"):
+        if os.path.exists(os.path.join(PROTOTYPE_DIR, candidate)):
+            piste = candidate
+            break
+
+    cmd = (f'python3 run_detection.py --video "{source if have_source else stem + ".mp4"}" '
+           f'--output results_reanchored --reanchors "{out_path}"')
+    if piste:
+        cmd += f' --piste-config {piste}'
+
+    return {
+        "path": out_path,
+        "corrections": len(reanchors),
+        "pending": sum(1 for a in reanchors if not a["applied"]),
+        "source_video_found": have_source,
+        "piste_config": piste,
+        "next": cmd,
+    }
+
+
+@app.post("/api/bouts/{bout_id}/reanchors/applied")
+def mark_reanchors_applied(bout_id: str):
+    """
+    Record the user's statement that they have reprocessed with the corrections.
+
+    Deliberately an assertion rather than a detection. Nothing in a pipeline run
+    writes back to the annotation store, and inferring a reprocess from a newer CSV
+    timestamp would be a guess dressed as a fact.
+    """
+    _get_bout(bout_id)
+    changed = store.mark_reanchors_applied(bout_id)
+    return {"ok": True, "marked": changed}
 
 
 class LungeIn(BaseModel):

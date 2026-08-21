@@ -52,6 +52,7 @@ from run_detection import (
     LM_LEFT_HIP,
     LM_RIGHT_HIP,
     get_stance_features,
+    load_reanchors,
     PUSH_PULL_NOISE_FLOOR_M,
 )
 
@@ -1480,3 +1481,127 @@ class TestOverlayShowsOnlyDefensibleMetrics:
         assert len(net_lines) == 2                      # one per fencer
         assert "+4.00 m" in net_lines[0]                # the fencer that advanced
         assert "~0 m" in net_lines[1]                   # the one that stood still
+
+
+class TestReanchor:
+    """
+    Annotation action 4, and the one the project's central claim leans on hardest:
+    that one high-level correction per error is enough. It was recorded but never
+    applied, so the interface offered a repair that did nothing. These tests check
+    it repairs the failure it exists for rather than merely storing a click.
+    """
+
+    SCALE = 100.0
+
+    def _box(self, cx, cy, h=100.0, w=40.0):
+        return [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2]
+
+    def test_a_slot_locked_onto_a_bystander_is_recovered(self):
+        """
+        The failure in full. Two fencers are tracked, a bystander passes close to
+        Fencer 2 and captures the slot, and the slot then follows the bystander
+        because its history has moved. One correction should hand it back.
+        """
+        t = FencerTracker()
+        fencer1, fencer2, bystander = 200.0, 600.0, 640.0
+        # establish both slots
+        for _ in range(3):
+            t.select([1, 2], [self._box(fencer1, 300), self._box(fencer2, 300)],
+                     [0.9, 0.9])
+        # the bystander is nearer to slot 1's last position than the real fencer,
+        # who has stepped away, so the slot follows the wrong person
+        for _ in range(5):
+            t.select([1, 3], [self._box(fencer1, 300), self._box(bystander, 300)],
+                     [0.9, 0.9])
+            bystander += 25.0
+        captured = t.last_pos[1][0]
+        assert captured > 700, f"the bystander should have carried the slot: {captured}"
+
+        # the user scrubs back and clicks the real Fencer 2, who is at 600
+        t.reanchor(1, fencer2, 300.0)
+        slots = t.select([1, 2, 3], [self._box(fencer1, 300), self._box(fencer2, 300),
+                                     self._box(bystander, 300)], [0.9, 0.9, 0.9])
+        assert slots[1] is not None, "slot 1 should have re-acquired a fencer"
+        cx = (slots[1][0][0] + slots[1][0][2]) / 2
+        assert abs(cx - fencer2) < 30, f"expected the real fencer at {fencer2}, got {cx}"
+
+    def test_velocity_is_not_extrapolated_across_a_correction(self):
+        """
+        A velocity measured across a correction describes the tracker's error, not
+        the fencer's motion. Extrapolating from such a pair is the defect that took
+        clip 2's coverage from 87 to 13 per cent, so the correction must forget it.
+        """
+        t = FencerTracker()
+        for x in (200.0, 240.0, 280.0):
+            t.select([1, 2], [self._box(x, 300), self._box(900, 300)], [0.9, 0.9])
+        assert t.prev_pos[0] is not None          # a velocity exists to begin with
+        t.reanchor(0, 500.0, 300.0)
+        assert t.prev_pos[0] is None
+        assert t.prev_seen[0] is None
+        # and the prediction is the click itself, not an extrapolation past it
+        assert t.predicted_pos(0) == (500.0, 300.0)
+
+    def test_the_correction_overrules_the_gates(self):
+        """
+        The gates are what rejected the correct fencer in the first place, so a
+        correction that they could veto would be unable to repair anything. Clearing
+        the height makes both gates pass for one frame, which is the intent.
+        """
+        t = FencerTracker()
+        for _ in range(3):
+            t.select([1, 2], [self._box(200, 300), self._box(900, 300)], [0.9, 0.9])
+        # a candidate that both gates would normally reject: far away and tiny
+        assert not t._passes_gate(0, (1200.0, 300.0), 20.0)
+        t.reanchor(0, 1200.0, 300.0)
+        assert t._passes_gate(0, (1200.0, 300.0), 20.0)
+
+    def test_the_slot_is_not_treated_as_stale_after_a_correction(self):
+        """
+        A correction has to leave the slot live. If it read as stale the very next
+        frame would discard the click, which is the silent no-op this whole feature
+        was.
+        """
+        t = FencerTracker()
+        for _ in range(3):
+            t.select([1, 2], [self._box(200, 300), self._box(900, 300)], [0.9, 0.9])
+        for _ in range(FencerTracker.STALE_RESET_FRAMES + 5):
+            t.select([], [], [])                  # nothing detected, slots go stale
+        t.reanchor(0, 400.0, 300.0)
+        t._expire_stale_slots()
+        assert t.last_pos[0] == (400.0, 300.0), "the correction was expired away"
+
+    def test_a_bad_slot_is_rejected(self):
+        t = FencerTracker()
+        with pytest.raises(ValueError):
+            t.reanchor(2, 100.0, 100.0)
+
+
+class TestLoadReanchors:
+    def _write(self, tmp_path, entries):
+        import json
+        p = tmp_path / "reanchors.json"
+        p.write_text(json.dumps(entries))
+        return str(p)
+
+    def test_timestamps_become_frame_numbers(self, tmp_path):
+        p = self._write(tmp_path, [{"time_s": 2.0, "slot": 0, "x": 10, "y": 20}])
+        assert load_reanchors(p, 30.0) == {60: [(0, 10.0, 20.0)]}
+
+    def test_the_timestamp_rounds_rather_than_truncating(self, tmp_path):
+        """
+        A user pausing on the frame where tracking fails is identifying THAT frame.
+        Truncating 12.999 s at 30 fps would fix frame 389, one before the one they
+        were looking at.
+        """
+        p = self._write(tmp_path, [{"time_s": 12.999, "slot": 1, "x": 1, "y": 2}])
+        assert list(load_reanchors(p, 30.0)) == [390]
+
+    def test_two_corrections_on_one_frame_are_both_kept(self, tmp_path):
+        """Both fencers can be wrong at once, and usually are after a clinch."""
+        p = self._write(tmp_path, [
+            {"time_s": 1.0, "slot": 0, "x": 10, "y": 20},
+            {"time_s": 1.0, "slot": 1, "x": 90, "y": 20}])
+        assert len(load_reanchors(p, 30.0)[30]) == 2
+
+    def test_an_empty_file_yields_no_corrections(self, tmp_path):
+        assert load_reanchors(self._write(tmp_path, []), 30.0) == {}
