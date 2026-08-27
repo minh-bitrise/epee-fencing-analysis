@@ -303,16 +303,67 @@ def derive_piste(video_path, sample_every=SAMPLE_EVERY, progress_cb=None):
         elif g_low > main.max():
             bottom = min(bottom, (main.max() + g_low) / 2.0)
 
-    # A band that spans essentially the whole frame filters nothing, and saying
-    # so is more useful than returning a polygon that gives false assurance.
-    confident = (bottom - top) < 0.9 * height
+    # How many people the band will still let through.
+    #
+    # This is the check that matters, and coverage does not provide it. Measured
+    # on clip 1, a derived band and the hand-authored one give almost the same
+    # tracking coverage, 92.5 against 92.9 per cent, while physically impossible
+    # distance readings go from 1 to 37 and the largest measured separation goes
+    # from 6.44 m to 9.63 m. The cause is that the officials sit behind the far
+    # end of the strip, so their feet land at y 430-460, inside a fencer band
+    # that runs from 421 to 695 because the piste recedes from the camera. No
+    # horizontal band can separate them: the strip itself spans that depth. The
+    # hand-authored polygon resolved it by starting at y=470 and giving up the
+    # far end of the strip, which is a trade requiring the knowledge that the
+    # officials are there at all.
+    #
+    # So rather than guess, this counts the detections that fall inside the band
+    # and were NOT chosen as part of a fencer pair, and hands the number to the
+    # interface. A band the fencers share with nobody reports close to zero; one
+    # that still contains bystanders says so, and the user can drag the edge.
+    inside_extra = 0
+    for boxes in per_frame:
+        if not boxes:
+            continue
+        pair = select_fencer_pair(boxes)
+        chosen = {id(b) for b in (pair or ())}
+        for b in boxes:
+            if id(b) not in chosen and top <= float(b[3]) <= bottom:
+                inside_extra += 1
+    per_frame_extra = inside_extra / sampled if sampled else 0.0
+    measurements["unselected_people_inside_band"] = inside_extra
+    measurements["unselected_per_sampled_frame"] = round(per_frame_extra, 3)
+
+    # Two separate ways the result can be weak, reported separately because they
+    # call for different responses. A band covering the whole frame filters
+    # nothing. A band that still contains other people filters the wrong thing.
+    #
+    # The 0.5 threshold rests on three clips and should be treated as
+    # provisional. Measured, unselected people per sampled frame come out at 0.33
+    # on clip 2, where the derived band matches the hand-authored one exactly,
+    # and at 0.59 and 1.88 on clips 4 and 1, where the derived band is measurably
+    # worse. It separates the cases available, and three points is not many. The
+    # measurement itself is reported on every result regardless, and it is the
+    # substance; this flag only decides whether to add a sentence explaining it.
+    CROWDED_PER_FRAME = 0.5
+    covers_everything = (bottom - top) >= 0.9 * height
+    still_crowded = per_frame_extra >= CROWDED_PER_FRAME
+    confident = not (covers_everything or still_crowded)
+
     reason = (f"{extra_people} of {sampled} sampled frames contain people besides "
               f"the two fencers; fencer feet measured in y "
-              f"[{feet.min():.0f}, {feet.max():.0f}]")
-    if not confident:
+              f"[{main.min():.0f}, {main.max():.0f}]")
+    if covers_everything:
         reason += (f". The measured band covers {(bottom - top) / height:.0%} of "
                    f"the frame height, so it will reject little. Check whether "
-                   f"the two tallest detections really are the fencers.")
+                   f"the two people it found really are the fencers.")
+    if still_crowded:
+        reason += (f". About {per_frame_extra:.1f} other people per frame still "
+                   f"fall inside this band, so it will not exclude them. This "
+                   f"happens when the strip recedes from the camera and other "
+                   f"people stand at the same apparent depth as its far end; "
+                   f"raising the top edge excludes them at the cost of the far "
+                   f"end of the strip.")
 
     return {
         "needed": True,

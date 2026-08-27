@@ -40,6 +40,27 @@ python3 run_detection.py --video fencing_clip4.mp4 --output results_current --pi
 
 Everything else is default: pose stride 3, fixed scale on, stabilisation off.
 
+## Piste configs can now be measured instead of hand-authored
+
+`derive_piste.py` reproduces the procedure that produced the hand-authored polygons: sample every
+tenth frame, take the pair of detections at the same apparent depth (NOT the two tallest - on
+broadcast footage the nearest person is the referee), cluster their feet-y and keep the largest
+group, then set the edges just outside it.
+
+It matches the hand-authored polygon where a horizontal band can separate the groups, and is worse
+where it cannot. Coverage alone does not show this, so both are quoted. Implausible = inter-fencer
+distance over 6 m, same threshold both sides.
+
+| clip | coverage hand / derived | >6 m hand / derived | verdict |
+|------|-------------------------|---------------------|---------|
+| 1 | 92.9% / 92.5% | 1 / 37 | worse: officials sit at y 430-460, inside a fencer band of 421-695 |
+| 2 | 98.0% / 98.0% | 245 / 245 | identical |
+| 4 | 73.7% / 75.9% | 208 / 301 | worse, while coverage improved |
+
+**Keep using the hand-authored configs for anything the report quotes.** The derived ones exist so
+that an uploaded video, which has no config at all, gets something measured rather than nothing,
+with the user confirming it in the interface.
+
 ## Reproducing any of them
 
 ```
