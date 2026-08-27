@@ -1249,7 +1249,16 @@ def _fmt_net(v):
 
 def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=None,
         show_piste=False, stabilise_camera=False, fixed_scale_calibration=True,
-        reanchor_path=None):
+        reanchor_path=None, progress=False):
+    """
+    Process one video end to end.
+
+    `progress` adds a machine-readable counter line to the output. It exists for
+    the web layer, which supervises this as a subprocess and has no other way to
+    know how far along a run is: the alternative was importing this module into
+    the API process, which would put YOLO and MediaPipe in the request path and
+    is the arrangement the architecture rules out.
+    """
     os.makedirs(output_dir, exist_ok=True)
 
     base      = os.path.splitext(os.path.basename(video_path))[0]
@@ -1497,6 +1506,12 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
         frame_idx += 1
         if frame_idx % 100 == 0:
             print(f"  {frame_idx}/{total} frames processed")
+            if progress:
+                # Emitted on the same cadence as the human-readable counter, and
+                # flushed, because a supervising process reads this through a
+                # pipe and block buffering would deliver the whole run's worth
+                # at once, on exit, which is no progress reporting at all.
+                print(f"PROGRESS {frame_idx} {total}", flush=True)
 
     cap.release()
     writer.release()
@@ -1584,6 +1599,11 @@ def main():
                              "clip, enabling it made the worst net displacement worse, "
                              "21.88 -> 37.34 m, while helping the three fixed-camera clips "
                              "only slightly.")
+    parser.add_argument("--progress", action="store_true",
+                        help="Print a machine-readable 'PROGRESS done total' line "
+                             "as processing advances, for a caller that is "
+                             "supervising this as a subprocess. The human-readable "
+                             "counter is unaffected.")
     parser.add_argument("--show-piste", action="store_true",
                         help="Draw the piste polygon on the annotated video. "
                              "Diagnostic only; useful for checking that a "
@@ -1593,7 +1613,7 @@ def main():
         piste_config=args.piste_config, show_piste=args.show_piste,
         stabilise_camera=args.stabilise,
         fixed_scale_calibration=not args.no_fixed_scale,
-        reanchor_path=args.reanchors)
+        reanchor_path=args.reanchors, progress=args.progress)
 
 
 if __name__ == "__main__":

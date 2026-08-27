@@ -13,23 +13,46 @@ A web application that helps fencers and coaches analyse epee bout videos. Users
 - Bout statistics and tactical profile
 - LLM-generated written summary
 
-## Prototype
-The current prototype demonstrates person detection, tracking, and distance measurement on a fencing video clip.
+## Running the application
+The whole workflow runs in a browser: upload a bout, watch it process, review the result.
 
 ### Requirements
-- Python 3.10+
-- See `code/prototype/requirements.txt`
+- Python 3.10+, and `pip install -r code/prototype/requirements.txt`
+- Node 18+ (only to build the interface; see the fallback below if you would rather not)
+- `ffmpeg` on the PATH, for converting the annotated render into something browsers play
 
 ### Run
 ```bash
+cd code/frontend && npm install && npm run build
+cd ../backend && python3 -m uvicorn app:app --port 8000
+```
+Then open http://localhost:8000.
+
+Without the Node build step the server still works: it falls back to a no-build-step
+interface that reviews already-processed bouts, also available at `/legacy`. That page
+needs nothing but Python.
+
+For front-end development, `npm run dev` in `code/frontend` serves on port 5173 and
+proxies the API to the backend, so the two restart independently and a page reload never
+interrupts a running job.
+
+### Running the pipeline directly
+Every stage is a command-line program, and the web layer invokes exactly these commands
+rather than reimplementing them:
+```bash
 cd code/prototype
-pip install -r requirements.txt
-python run_detection.py --video <path_to_video>
+python3 derive_piste.py    --video <bout.mp4> --output piste.json   # optional
+python3 run_detection.py   --video <bout.mp4> --output results/ [--piste-config piste.json]
+python3 detect_touches.py  --csv results/<bout>_distance.csv
+python3 generate_summary.py --csv results/<bout>_distance.csv --touches <touches.csv>
 ```
 
 ## Project structure
 ```
-code/             ALL project code (prototype + future backend/frontend)
+code/prototype/   The AI pipeline: detection, tracking, pose, distance, touches, summary
+code/backend/     FastAPI application: upload, job runner, annotation API
+code/frontend/    React client (Vite)
+code/var/         Runtime data: uploads, job records, their outputs (gitignored)
 uni_modules/      Read-only university materials
 proposal/         Project proposal submission deliverables
 preliminary/      Preliminary report submission deliverables

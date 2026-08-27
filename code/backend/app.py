@@ -23,12 +23,16 @@ Run with:
 Then open http://localhost:8000
 """
 
+import glob
 import os
+import shutil
 import subprocess
 import sys
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 # The pipeline modules live alongside the prototype, and are imported rather
@@ -41,6 +45,10 @@ sys.path.insert(0, PROTOTYPE_DIR)
 from store import (  # noqa: E402
     AnnotationStore, SCORERS, VALID_STATES,
     discover_bouts, load_proposed_touches,
+)
+from jobs import (  # noqa: E402
+    ALLOWED_EXTENSIONS, AWAITING_PISTE, MAX_UPLOAD_BYTES, TERMINAL_STATES,
+    JobRunner, JobStore, pipeline_stages, write_piste_config,
 )
 
 # results_fixed is listed first because it is the only output produced since the
@@ -62,12 +70,46 @@ RESULTS_DIRS = [os.path.join(PROTOTYPE_DIR, d) for d in
 ANNOTATION_ROOT = os.path.join(PROTOTYPE_DIR, "annotations")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
-app = FastAPI(title="Epee Bout Analysis", version="0.1.0")
+# Everything produced at runtime lives under one root, separate from both the
+# code and the evaluation artefacts. Bouts uploaded through the browser are kept
+# apart from the four clips the report's figures come from, so that "the results
+# directory" continues to mean the evaluation set and a user's upload cannot be
+# mistaken for one.
+VAR_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "var"))
+UPLOAD_ROOT = os.path.join(VAR_ROOT, "uploads")
+JOB_ROOT = os.path.join(VAR_ROOT, "jobs")
+UPLOAD_RESULTS_ROOT = os.path.join(VAR_ROOT, "results_uploads")
+for _d in (UPLOAD_ROOT, JOB_ROOT, UPLOAD_RESULTS_ROOT):
+    os.makedirs(_d, exist_ok=True)
+
 store = AnnotationStore(ANNOTATION_ROOT)
+job_store = JobStore(JOB_ROOT)
+runner = JobRunner(job_store, pipeline_stages(), cwd=PROTOTYPE_DIR)
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    # Jobs left mid-run by a previous process are reconciled before the worker
+    # starts, so a restart cannot leave a record claiming to be running with
+    # nothing behind it.
+    runner.reconcile()
+    runner.start()
+    yield
+    # Nothing to tear down. The worker is a daemon thread holding no state that
+    # is not already on disk, and a job caught mid-run is recovered by the
+    # reconcile above rather than by a shutdown handler that a hard kill would
+    # skip anyway.
+
+
+app = FastAPI(title="Epee Bout Analysis", version="0.2.0", lifespan=lifespan)
 
 
 def _bouts():
-    return discover_bouts(RESULTS_DIRS)
+    # Uploaded bouts are discovered by scanning rather than from a fixed list,
+    # because unlike the evaluation set their number is not known in advance.
+    upload_dirs = sorted(glob.glob(os.path.join(UPLOAD_RESULTS_ROOT, "upload_*")))
+    return discover_bouts(RESULTS_DIRS + upload_dirs)
 
 
 def _get_bout(bout_id):
@@ -600,10 +642,341 @@ def add_reanchor(bout_id: str, body: Reanchor):
             "note": "recorded as pending; re-run the detection pipeline to apply it"}
 
 
+# --- processing jobs ----------------------------------------------------
+#
+# The endpoints below are what turn the pipeline from a command line into an
+# application. Everything above this point reads artefacts that someone had
+# already produced in a terminal.
+
+def _probe_video(path):
+    """
+    Confirm the upload is a video this pipeline can open, and measure it.
+
+    Done in the request, deliberately, because it is the one check that must
+    happen before a job is accepted: OpenCV opening the file is the same test
+    the pipeline itself will apply, so failing it here turns a job that would
+    die two stages later into an immediate, explainable rejection. It costs one
+    file open and one frame read, and loads no models.
+    """
+    import cv2
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        cap.release()
+        return None
+    fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+    frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    ok, _ = cap.read()
+    cap.release()
+    if not ok or width == 0 or height == 0:
+        return None
+    return {"width": width, "height": height, "fps": round(fps, 2),
+            "frames": frames,
+            "duration_s": round(frames / fps, 1) if fps else None}
+
+
+def _job_view(job):
+    """
+    The job as the client sees it.
+
+    Adds the things that are derived rather than stored: queue position, elapsed
+    time, and the bout id, which only means anything once there is an output
+    directory for it to point at.
+    """
+    import time as _time
+    view = dict(job)
+    view.pop("log_tail", None)
+    view["queue_position"] = runner.queue_position(job["job_id"])
+    started, finished = job.get("started_at"), job.get("finished_at")
+    view["elapsed_s"] = round((finished or _time.time()) - started, 1) if started else None
+    if job["state"] == "done":
+        stem = os.path.splitext(os.path.basename(job["source_path"]))[0]
+        view["bout_id"] = f"{os.path.basename(job['output_dir'])}:{stem}"
+    if job["state"] in ("failed", "interrupted"):
+        view["log_tail"] = job.get("log_tail", [])
+    return view
+
+
+@app.post("/api/jobs")
+async def create_job(
+    video: UploadFile = File(...),
+    confirm_piste: bool = Form(True),
+    pose_stride: int = Form(0),
+):
+    """
+    Accept a bout video and queue it for processing.
+
+    The request writes the file to disk, checks it opens, and returns. It does
+    not process anything, which is the separation the architecture requires and
+    the reason this layer exists at all: a three minute clip takes minutes to
+    process, and a request that waited for it would time out in the proxy, the
+    browser, or both, while holding a worker for the duration.
+
+    The upload is streamed in chunks rather than read whole. A 500 MB file read
+    into memory to be written straight back out is 500 MB of resident memory
+    spent for nothing, on the same machine that is about to load three models.
+    """
+    filename = os.path.basename(video.filename or "bout.mp4")
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            400, f"unsupported file type '{ext}'. Accepted: "
+                 f"{', '.join(ALLOWED_EXTENSIONS)}")
+
+    job = job_store.create(
+        filename=filename,
+        confirm_piste=confirm_piste,
+        pose_stride=pose_stride or None,
+        source_path="", output_dir="", log_path="",
+        piste_result_path="", piste_config_path="", web_video_path="",
+    )
+    job_id = job["job_id"]
+
+    upload_dir = os.path.join(UPLOAD_ROOT, job_id)
+    os.makedirs(upload_dir, exist_ok=True)
+    # The stored name comes from the job, not from the upload. A filename
+    # arriving over the wire is user input, and it also becomes the bout id and
+    # the stem of every output file, so a name with a space or a slash in it
+    # would propagate into paths the whole pipeline then has to quote correctly.
+    source_path = os.path.join(upload_dir, f"bout_{job_id}{ext}")
+
+    written = 0
+    try:
+        with open(source_path, "wb") as f:
+            while chunk := await video.read(1024 * 1024):
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        413, f"file exceeds the {MAX_UPLOAD_BYTES // (1024*1024)} MB limit")
+                f.write(chunk)
+    except HTTPException:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        job_store.delete(job_id)
+        raise
+
+    info = _probe_video(source_path)
+    if info is None:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        job_store.delete(job_id)
+        raise HTTPException(
+            400, "the file could not be opened as a video. It may be corrupt, or "
+                 "in a container this build of OpenCV cannot read.")
+
+    output_dir = os.path.join(UPLOAD_RESULTS_ROOT, f"upload_{job_id}")
+    os.makedirs(output_dir, exist_ok=True)
+    stem = f"bout_{job_id}"
+    job_store.update(
+        job_id,
+        source_path=source_path,
+        output_dir=output_dir,
+        size_bytes=written,
+        video_info=info,
+        log_path=os.path.join(JOB_ROOT, f"{job_id}.log"),
+        piste_result_path=os.path.join(upload_dir, "piste_measurement.json"),
+        piste_config_path=os.path.join(upload_dir, "piste.json"),
+        # Written where the existing video endpoint already looks for a
+        # browser-playable copy, so transcoding during the job removes the
+        # on-demand ffmpeg run rather than duplicating it.
+        web_video_path=os.path.join(
+            WEB_VIDEO_DIR, f"upload_{job_id}__{stem}_annotated.h264.mp4"),
+    )
+    os.makedirs(WEB_VIDEO_DIR, exist_ok=True)
+    runner.submit(job_id)
+    return _job_view(job_store.load(job_id))
+
+
+@app.get("/api/jobs")
+def list_jobs():
+    return {"jobs": [_job_view(j) for j in job_store.list()]}
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job(job_id: str):
+    job = job_store.load(job_id)
+    if job is None:
+        raise HTTPException(404, f"unknown job: {job_id}")
+    return _job_view(job)
+
+
+@app.get("/api/jobs/{job_id}/log", response_class=PlainTextResponse)
+def get_job_log(job_id: str):
+    """The full pipeline output for a job, for when the summary is not enough."""
+    job = job_store.load(job_id)
+    if job is None:
+        raise HTTPException(404, f"unknown job: {job_id}")
+    path = job.get("log_path")
+    if not path or not os.path.exists(path):
+        return PlainTextResponse("no output recorded yet")
+    with open(path) as f:
+        return PlainTextResponse(f.read())
+
+
+@app.get("/api/jobs/{job_id}/frame")
+def get_job_frame(job_id: str):
+    """
+    A still from the uploaded video, for drawing the piste region over.
+
+    Taken from a quarter of the way in rather than from frame one. Broadcast
+    footage routinely opens on a title card or a crowd shot, and a first frame
+    with no fencers in it is exactly the wrong picture to ask someone to confirm
+    a fencer-detection boundary against.
+    """
+    import cv2
+    job = job_store.load(job_id)
+    if job is None:
+        raise HTTPException(404, f"unknown job: {job_id}")
+    src = job.get("source_path")
+    if not src or not os.path.exists(src):
+        raise HTTPException(404, "no source video for this job")
+
+    out = os.path.join(os.path.dirname(src), "frame.jpg")
+    if not os.path.exists(out):
+        cap = cv2.VideoCapture(src)
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, total // 4)
+        ok, frame = cap.read()
+        cap.release()
+        if not ok:
+            raise HTTPException(500, "could not read a frame from the video")
+        cv2.imwrite(out, frame)
+    return FileResponse(out, media_type="image/jpeg")
+
+
+class PisteDecision(BaseModel):
+    """
+    What the user decided about the measured piste region.
+
+    `polygon` overrides the measurement; omitting it accepts what was measured.
+    `skip` runs with no region at all, which is the right answer for footage
+    containing nobody but the two fencers and the wrong one for a competition.
+    """
+    polygon: list[list[float]] | None = None
+    skip: bool = False
+
+
+@app.post("/api/jobs/{job_id}/piste")
+def confirm_piste(job_id: str, body: PisteDecision):
+    """
+    Accept, adjust or skip the measured piste region, and let the job continue.
+
+    WHY THE JOB PAUSES HERE. The region decides which detections the tracker is
+    allowed to see, and getting it wrong is not a small error: rebuilding the
+    reference results without the regions dropped the broadcast clip from 98.0
+    per cent coverage to 80.1. It is also the one decision in the pipeline that
+    a person can make far better than the system, because they can see at a
+    glance whether the band drawn on the frame contains the fencers and excludes
+    the referee.
+
+    WHAT THE USER IS BEING ASKED. To confirm a measurement, not to produce a
+    guess. The distinction is the whole reason the region is measured first: a
+    polygon placed by eye on this project once admitted the adjacent piste and
+    raised the count of physically impossible distance readings from 53 to 252,
+    while the headline coverage figure went up. The interface therefore shows
+    what was measured and offers agreement, not an empty canvas.
+    """
+    job = job_store.load(job_id)
+    if job is None:
+        raise HTTPException(404, f"unknown job: {job_id}")
+    if job["state"] != AWAITING_PISTE:
+        raise HTTPException(
+            409, f"job is {job['state']}, not waiting on a piste decision")
+
+    piste = dict(job.get("piste") or {})
+    if body.skip:
+        piste["polygon"] = None
+        piste["needed"] = False
+        piste["decision"] = "skipped by the user"
+    elif body.polygon:
+        if len(body.polygon) < 3:
+            raise HTTPException(400, "a polygon needs at least three vertices")
+        piste["polygon"] = body.polygon
+        piste["decision"] = "adjusted by the user"
+        write_piste_config(piste, job["piste_config_path"])
+    else:
+        piste["decision"] = "accepted as measured"
+
+    job_store.update(job_id, piste=piste, state="queued")
+    runner.submit(job_id)
+    return _job_view(job_store.load(job_id))
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str):
+    job = job_store.load(job_id)
+    if job is None:
+        raise HTTPException(404, f"unknown job: {job_id}")
+    if not runner.cancel(job_id):
+        raise HTTPException(409, f"job is already {job['state']}")
+    return _job_view(job_store.load(job_id))
+
+
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str):
+    """
+    Remove a job and everything it produced.
+
+    Needed rather than tidy. Each bout keeps its source, an annotated render, a
+    browser copy of that render, a metrics CSV and a plot, which is several
+    times the size of the upload, and nothing else in this system ever deletes
+    anything. Without this the only way to reclaim the disk is to know the
+    layout and use a terminal, which is the situation this whole layer exists to
+    remove.
+    """
+    job = job_store.load(job_id)
+    if job is None:
+        raise HTTPException(404, f"unknown job: {job_id}")
+    if job["state"] not in TERMINAL_STATES and job["state"] != AWAITING_PISTE:
+        raise HTTPException(
+            409, f"job is {job['state']}; cancel it before deleting")
+    for path in (os.path.join(UPLOAD_ROOT, job_id), job.get("output_dir")):
+        if path and os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+    for path in (job.get("log_path"), job.get("web_video_path")):
+        if path and os.path.exists(path):
+            os.remove(path)
+    job_store.delete(job_id)
+    return {"ok": True}
+
+
 # --- static UI ----------------------------------------------------------
+#
+# Two interfaces are served, and both are kept deliberately.
+#
+# `/` is the React application: upload, job progress and review in one place.
+# `/legacy` is the original no-build-step page, which reviews already-processed
+# bouts and needs nothing but Python to run. It stays because it is the fallback
+# when the React build is absent, and because the two are directly comparable:
+# the same workflow, the same API, one with a build step and one without.
+
+REACT_DIR = os.path.join(STATIC_DIR, "app")
+
+if os.path.isdir(REACT_DIR):
+    # Mounted rather than routed one file at a time, because a Vite build emits
+    # hashed asset names that are not known here.
+    app.mount("/app", StaticFiles(directory=REACT_DIR, html=True), name="app")
+
 
 @app.get("/", response_class=HTMLResponse)
 def index():
+    built = os.path.join(REACT_DIR, "index.html")
+    if os.path.exists(built):
+        return FileResponse(built)
+    # Falling back rather than failing. A checkout without `npm run build` still
+    # has a working interface, which matters for a project whose examiner may
+    # never run npm at all.
+    legacy = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(legacy):
+        return FileResponse(legacy)
+    return HTMLResponse(
+        "<h1>No interface built</h1><p>Run <code>npm install &amp;&amp; npm run "
+        "build</code> in <code>code/frontend</code>, or use the legacy page.</p>",
+        status_code=404)
+
+
+@app.get("/legacy", response_class=HTMLResponse)
+def legacy_index():
     path = os.path.join(STATIC_DIR, "index.html")
     if not os.path.exists(path):
         return HTMLResponse("<h1>UI not built</h1>", status_code=404)

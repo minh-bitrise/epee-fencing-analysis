@@ -1,0 +1,143 @@
+/* Ported from the no-build-step review page so the two interfaces remain one
+   system rather than two that merely share a backend. The comments explaining
+   why particular rules exist came with it: each records a real layout failure,
+   and dropping them would mean the next person re-learns the same lesson.
+   Additions for the upload and job views follow at the end. */
+
+:root { --bg:#14161a; --panel:#1d2027; --line:#2c313b; --fg:#e6e8ec;
+          --muted:#9aa3b2; --accent:#4da3ff; --ok:#3ddc84; --no:#ff6b6b;
+          --warn:#ffc857; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  header { padding:12px 18px; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  header > * { flex-shrink:0; }
+  h1 { font-size:15px; margin:0; font-weight:600; }
+  select, button, input { background:var(--panel); color:var(--fg);
+                   border:1px solid var(--line); border-radius:6px;
+                   padding:6px 10px; font-size:13px; }
+  button { cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:#22344a; border-color:var(--accent); }
+  /* Cap the working area. Without a cap the left column takes the full width of
+     a wide display and the video goes with it, which is worse than merely ugly:
+     the fencer labels and the distance readout are drawn INTO the frame by
+     run_detection, so upscaling the video upscales the burnt-in text with it. On
+     a 2000 px monitor the video rendered about 1620 px wide and the overlay
+     filled the screen. Capping the layout fixes the cause; the max-height below
+     covers the other axis, since a 16:9 video 1050 px wide is still 590 px tall
+     and would push the metrics panel out of view on a short window. */
+  main { display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:16px;
+         padding:16px 18px; align-items:start;
+         max-width:1440px; margin:0 auto; }
+  .panel { background:var(--panel); border:1px solid var(--line);
+           border-radius:8px; padding:13px; }
+  .panel + .panel { margin-top:13px; }
+  .panel h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em;
+              color:var(--muted); margin:0 0 9px; font-weight:600; }
+  video { width:100%; height:auto; max-height:62vh; border-radius:6px;
+          background:#000; display:block; }
+  .novid { padding:40px; text-align:center; color:var(--muted);
+           border:1px dashed var(--line); border-radius:6px; }
+
+  /* timeline: touches as markers, excluded ranges shaded */
+  .tl { position:relative; height:44px; margin-top:10px; background:#12141a;
+        border:1px solid var(--line); border-radius:6px; cursor:pointer;
+        overflow:hidden; }
+  .tl .seg { position:absolute; top:0; bottom:0; background:#3a2c2c; }
+  .tl .mk { position:absolute; top:4px; bottom:16px; width:3px;
+            margin-left:-1.5px; border-radius:2px; }
+  .tl .mk.pending   { background:var(--warn); }
+  .tl .mk.confirmed { background:var(--ok); }
+  .tl .mk.rejected  { background:#4a4a4a; }
+  .tl .mk.added     { background:var(--accent); }
+  .tl .cur { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px;
+             background:#fff; pointer-events:none; }
+  .tl .ax { position:absolute; bottom:2px; left:0; right:0; height:12px;
+            color:var(--muted); font-size:10px; }
+  .tl .ax span { position:absolute; transform:translateX(-50%); }
+
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  th, td { text-align:left; padding:5px 7px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  tbody tr { cursor:pointer; }
+  tbody tr:hover { background:#232830; }
+  tbody tr.sel { background:#26313d; }
+  tr.confirmed td:first-child { box-shadow:inset 3px 0 0 var(--ok); }
+  tr.rejected  td:first-child { box-shadow:inset 3px 0 0 var(--no); opacity:.55; }
+  tr.pending   td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
+  tr.added     td:first-child { box-shadow:inset 3px 0 0 var(--accent); }
+  .mini { color:var(--muted); font-size:12px; }
+  .stat { display:flex; justify-content:space-between; padding:3px 0; }
+  .stat b { font-variant-numeric:tabular-nums; font-weight:600; }
+  .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden;
+         margin:7px 0 4px; }
+  .bar > div { height:100%; background:var(--accent); transition:width .2s; }
+  .note { background:#20242c; border-left:3px solid var(--warn);
+          padding:7px 9px; border-radius:4px; color:var(--muted);
+          font-size:12px; margin-top:9px; }
+  .keys { display:flex; gap:12px; flex-wrap:wrap; margin-top:8px; }
+  .keys code { background:#12141a; border:1px solid var(--line); border-radius:4px;
+               padding:1px 6px; font-size:12px; }
+  /* Below this the two columns cannot both hold their content, so stack them
+     rather than squeezing the video into a sliver beside the sidebar. */
+  @media (max-width: 860px) {
+    main { grid-template-columns:minmax(0,1fr); }
+  }
+  form.inline { display:flex; gap:6px; margin-top:9px; }
+  form.inline input { flex:1; min-width:0; }
+
+/* ---- added for the upload and job views ---- */
+
+nav { display:flex; gap:6px; margin-left:auto; }
+nav button { background:transparent; border-color:transparent; color:var(--muted); }
+nav button.active { background:var(--panel); border-color:var(--line); color:var(--fg); }
+
+/* One column for the upload view: it has no video to sit beside. */
+main.single { grid-template-columns:minmax(0,1fr); max-width:900px; }
+
+.drop { border:2px dashed var(--line); border-radius:10px; padding:34px 20px;
+        text-align:center; color:var(--muted); transition:border-color .15s; }
+.drop.over { border-color:var(--accent); background:#1a2330; color:var(--fg); }
+.drop input[type=file] { display:none; }
+
+.bar { background:#12141a; border:1px solid var(--line); border-radius:5px;
+       height:9px; overflow:hidden; }
+.bar > div { background:var(--accent); height:100%; transition:width .3s; }
+
+.job { border:1px solid var(--line); border-radius:8px; padding:11px;
+       margin-bottom:9px; background:#191c22; }
+.job + .job { margin-top:0; }
+.job header { padding:0; border:0; margin-bottom:7px; gap:9px; }
+.job .name { font-weight:600; overflow:hidden; text-overflow:ellipsis;
+             white-space:nowrap; }
+.job .spacer { flex:1 1 auto; min-width:0; }
+
+.state { font-size:11px; text-transform:uppercase; letter-spacing:.05em;
+         padding:2px 7px; border-radius:4px; border:1px solid var(--line); }
+.state.done      { color:var(--ok);   border-color:#26593c; }
+.state.failed,
+.state.interrupted { color:var(--no); border-color:#5c2a2a; }
+.state.running   { color:var(--accent); border-color:#2b4d70; }
+.state.queued    { color:var(--muted); }
+.state.awaiting_piste { color:var(--warn); border-color:#5c4a1e; }
+.state.cancelled { color:var(--muted); }
+
+/* The piste frame and its overlay have to scale together, so the canvas is
+   positioned over the image rather than sized in pixels. */
+.piste-frame { position:relative; display:inline-block; max-width:100%; }
+.piste-frame img { display:block; width:100%; height:auto; border-radius:6px; }
+.piste-frame canvas { position:absolute; inset:0; width:100%; height:100%;
+                      cursor:ns-resize; }
+
+.err { color:var(--no); }
+pre.log { background:#12141a; border:1px solid var(--line); border-radius:6px;
+          padding:9px; overflow:auto; max-height:220px; font-size:11.5px;
+          white-space:pre-wrap; color:var(--muted); }
+.row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+label.opt { display:flex; gap:6px; align-items:center; color:var(--muted);
+            font-size:12.5px; }
+
+.md-h { font-size:12px; margin:10px 0 4px; text-transform:uppercase;
+        letter-spacing:.05em; color:var(--muted); }
