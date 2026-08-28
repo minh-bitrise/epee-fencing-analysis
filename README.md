@@ -28,6 +28,12 @@ cd ../backend && python3 -m uvicorn app:app --port 8000
 ```
 Then open http://localhost:8000.
 
+To enable the summary button, start the server with an API key in its
+environment. Without it everything else works and the button explains itself:
+```bash
+ANTHROPIC_API_KEY=sk-ant-... python3 -m uvicorn app:app --port 8000
+```
+
 Without the Node build step the server still works: it falls back to a no-build-step
 interface that reviews already-processed bouts, also available at `/legacy`. That page
 needs nothing but Python.

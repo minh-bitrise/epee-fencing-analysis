@@ -48,7 +48,8 @@ from store import (  # noqa: E402
 )
 from jobs import (  # noqa: E402
     ALLOWED_EXTENSIONS, AWAITING_PISTE, MAX_UPLOAD_BYTES, TERMINAL_STATES,
-    JobRunner, JobStore, pipeline_stages, write_piste_config,
+    JobRunner, JobStore, pipeline_stages, summary_stages,
+    write_piste_config,
 )
 
 # results_fixed is listed first because it is the only output produced since the
@@ -85,7 +86,25 @@ for _d in (UPLOAD_ROOT, JOB_ROOT, UPLOAD_RESULTS_ROOT):
 
 store = AnnotationStore(ANNOTATION_ROOT)
 job_store = JobStore(JOB_ROOT)
-runner = JobRunner(job_store, pipeline_stages(), cwd=PROTOTYPE_DIR)
+
+_PROCESSING_STAGES = pipeline_stages()
+_SUMMARY_STAGES = summary_stages()
+
+
+def _stages_for(job):
+    """
+    Which pipeline a job runs.
+
+    Two kinds share one worker rather than one runner each, because a second
+    runner would mean a second worker thread and the one-job-at-a-time guarantee
+    exists precisely so two CPU-bound runs do not fight over a machine with no
+    GPU. A summary job is cheap, but it is not free and it is not worth a
+    special case that could let it start while detection is mid-run.
+    """
+    return _SUMMARY_STAGES if job.get("kind") == "summary" else _PROCESSING_STAGES
+
+
+runner = JobRunner(job_store, _stages_for, cwd=PROTOTYPE_DIR)
 
 
 @asynccontextmanager
@@ -640,6 +659,213 @@ def add_reanchor(bout_id: str, body: Reanchor):
         raise HTTPException(400, str(e))
     return {"ok": True,
             "note": "recorded as pending; re-run the detection pipeline to apply it"}
+
+
+def _source_for_bout(bout_id, b):
+    """
+    The ORIGINAL video a bout was produced from, and the piste config used.
+
+    Needed by any reprocess, and the two kinds of bout keep it in different
+    places: an uploaded bout's source is recorded on its job, while an evaluation
+    bout's sits in the prototype directory under the clip's stem.
+
+    The distinction that matters is that this must never return the ANNOTATED
+    render. That file has boxes, labels and a distance readout burnt into it, so
+    re-running detection over it would be detecting on top of the overlay.
+
+    Returns (source_path or None, piste_config_path or None).
+    """
+    directory = bout_id.split(":")[0]
+    if directory.startswith("upload_"):
+        job = job_store.load(directory[len("upload_"):])
+        if job:
+            piste = job.get("piste") or {}
+            config = job.get("piste_config_path")
+            source = job.get("source_path")
+            # Existence is checked here as well as on the evaluation branch. The
+            # job record says where the source WAS, and an upload whose files
+            # have since been deleted would otherwise queue a job that fails
+            # several minutes later instead of being refused immediately.
+            return (source if source and os.path.exists(source) else None,
+                    config if piste.get("polygon") and config
+                    and os.path.exists(config) else None)
+        return None, None
+
+    base = os.path.splitext(b.metrics_csv)[0]
+    stem = os.path.basename(base).replace("_distance", "")
+    source = os.path.join(PROTOTYPE_DIR, f"{stem}.mp4")
+    # The piste config has to come with it, or a rerun changes two things at
+    # once. Omitting it cost 18 points of coverage on clip 2 and looked exactly
+    # like a code regression.
+    config = None
+    for candidate in (f"piste_{stem}.json",
+                      f"piste_{stem.replace('fencing_clip', 'clip')}.json",
+                      f"piste_clip{stem.replace('fencing_clip', '') or '1'}.json"):
+        path = os.path.join(PROTOTYPE_DIR, candidate)
+        if os.path.exists(path):
+            config = path
+            break
+    return (source if os.path.exists(source) else None), config
+
+
+@app.post("/api/bouts/{bout_id}/reprocess")
+def reprocess_bout(bout_id: str):
+    """
+    Re-run the pipeline on this bout's source video, applying the user's
+    re-anchor corrections.
+
+    WHY THIS EXISTS. Action 4 changes tracking rather than interpretation, so it
+    can only take effect on a reprocess. Until now the interface's answer to "I
+    have corrected the tracking" was a command line for the user to go and type
+    in a terminal, which is precisely the arrangement this whole application
+    layer exists to remove. The corrections were recorded, exported, and then
+    depended on the user being someone who could run the pipeline by hand.
+
+    The result is a NEW bout rather than an overwrite. That is the same guarantee
+    the annotation store makes: a reprocess must never destroy a previous result,
+    and here it also means the before and after can be opened side by side, which
+    is the only way to see whether a correction helped.
+    """
+    b = _get_bout(bout_id)
+    source, piste_config = _source_for_bout(bout_id, b)
+    if not source:
+        raise HTTPException(
+            404, "the original video for this bout could not be found, so it "
+                 "cannot be reprocessed. Only the annotated render is on disk, "
+                 "and re-running detection over that would be detecting on top "
+                 "of the overlay.")
+
+    data = store.load(bout_id)
+    reanchors = data["reanchors"]
+
+    job = job_store.create(
+        kind="processing",
+        filename=f"reprocess of {bout_id}",
+        reprocess_of=bout_id,
+        confirm_piste=False,
+        source_path=source,
+        # The piste region is carried over rather than re-measured, so the rerun
+        # changes exactly one thing: the corrections.
+        piste=({"needed": True, "polygon": True,
+                "decision": "carried over from the original run"}
+               if piste_config else {"needed": False, "polygon": None}),
+        piste_config_path=piste_config or "",
+        piste_result_path="",
+    )
+    job_id = job["job_id"]
+    output_dir = os.path.join(UPLOAD_RESULTS_ROOT, f"upload_{job_id}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    reanchor_path = ""
+    if reanchors:
+        # Corrections already marked applied are included rather than filtered
+        # out. A reprocess starts from the original video every time, so every
+        # correction is needed on every run; excluding the applied ones would
+        # silently undo them.
+        import json as _json
+        reanchor_path = os.path.join(JOB_ROOT, f"{job_id}_reanchors.json")
+        with open(reanchor_path, "w") as f:
+            _json.dump([{"time_s": a["time_s"], "slot": a["slot"],
+                         "x": a["x"], "y": a["y"]} for a in reanchors], f, indent=2)
+
+    stem = os.path.splitext(os.path.basename(source))[0]
+    job_store.update(
+        job_id,
+        output_dir=output_dir,
+        reanchor_path=reanchor_path,
+        log_path=os.path.join(JOB_ROOT, f"{job_id}.log"),
+        web_video_path=os.path.join(
+            WEB_VIDEO_DIR, f"upload_{job_id}__{stem}_annotated.h264.mp4"),
+        video_info=_probe_video(source),
+    )
+    os.makedirs(WEB_VIDEO_DIR, exist_ok=True)
+    runner.submit(job_id)
+    return {
+        "job_id": job_id,
+        "corrections": len(reanchors),
+        "piste_config": os.path.basename(piste_config) if piste_config else None,
+        "note": ("re-running with your corrections; the result arrives as a new "
+                 "bout so you can compare it against this one"
+                 if reanchors else
+                 "no re-anchor corrections recorded, so this is a plain re-run"),
+    }
+
+
+@app.get("/api/bouts/{bout_id}/reanchor-outcomes")
+def get_reanchor_outcomes(bout_id: str):
+    """
+    Whether the corrections applied to this bout actually changed anything.
+
+    A re-anchor is not a force-assignment: it moves the slot's reference point
+    and clears its gates for one frame, then lets ordinary matching resume. A
+    correction the matcher disagrees with leaves no trace at all, which was
+    confirmed on real footage when a mis-aimed correction produced output
+    byte-identical to its baseline. Without this the user re-runs a job that
+    takes minutes and is told nothing, and cannot tell "my correction was wrong"
+    from "my correction was right and did not help".
+    """
+    b = _get_bout(bout_id)
+    base = os.path.splitext(b.metrics_csv)[0]
+    path = f"{base}_reanchor_outcomes.json"
+    if not os.path.exists(path):
+        return {"exists": False, "outcomes": []}
+    import json as _json
+    with open(path) as f:
+        outcomes = _json.load(f)
+    return {
+        "exists": True,
+        "outcomes": outcomes,
+        "applied": sum(1 for o in outcomes if o["outcome"] == "applied"),
+        "total": len(outcomes),
+    }
+
+
+@app.post("/api/bouts/{bout_id}/summary/generate")
+def generate_summary_for_bout(bout_id: str, force: bool = False):
+    """
+    Generate the written summary for this bout, as a background job.
+
+    Deliberately never automatic. It costs a paid API call per run, and a job
+    that quietly spent money on every upload would reverse a decision the
+    annotation API took on purpose. What has changed is only that the user
+    presses a button rather than being handed a command to type: the decision is
+    still theirs, the terminal is no longer required.
+
+    The touch file is the reviewed export where one exists, so the summary
+    describes the record the user confirmed rather than the detector's first
+    guess. That was the point of the export, and without preferring it here the
+    prose a reader sees would still come from unreviewed output.
+    """
+    b = _get_bout(bout_id)
+    if "ANTHROPIC_API_KEY" not in os.environ:
+        raise HTTPException(
+            400, "ANTHROPIC_API_KEY is not set in the server's environment, so "
+                 "the summary cannot be generated. Restart the server with the "
+                 "key exported, for example: "
+                 "ANTHROPIC_API_KEY=... python3 -m uvicorn app:app --port 8000")
+
+    base = os.path.splitext(b.metrics_csv)[0]
+    reviewed = f"{base}_touches_confirmed.csv"
+    touches = reviewed if os.path.exists(reviewed) else b.touches_csv
+
+    job = job_store.create(
+        kind="summary",
+        filename=f"summary for {bout_id}",
+        summary_of=bout_id,
+        metrics_csv=b.metrics_csv,
+        touches_csv=touches,
+        force=force,
+        source_path=b.metrics_csv,
+        output_dir=os.path.dirname(b.metrics_csv),
+    )
+    job_store.update(job["job_id"],
+                     log_path=os.path.join(JOB_ROOT, f"{job['job_id']}.log"))
+    runner.submit(job["job_id"])
+    return {
+        "job_id": job["job_id"],
+        "touches_used": ("the touches you confirmed" if touches == reviewed
+                         else "the detector's proposals, unreviewed"),
+    }
 
 
 # --- processing jobs ----------------------------------------------------

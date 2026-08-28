@@ -57,9 +57,9 @@ export default function SummaryPanel({ boutId }) {
   if (!r.exists) {
     return (
       <div className="note">
-        No summary for this bout yet. Generating one costs an API call, so it
-        stays a command you run:
-        <br /><code>{r.hint}</code>
+        No summary for this bout yet. Generating one costs a paid API call, so
+        it happens only when you ask for it.
+        <Generate boutId={boutId} />
       </div>
     )
   }
@@ -79,6 +79,50 @@ export default function SummaryPanel({ boutId }) {
       <div className="mini" style={{ marginTop: 8, color: 'var(--muted)' }}>
         {r.model || 'unknown model'}, from {r.generated_from}
       </div>
+      {r.stale && <Generate boutId={boutId} force />}
     </>
+  )
+}
+
+/**
+ * The button that spends money.
+ *
+ * Kept as an explicit action, never automatic, because each press costs a paid
+ * API call. What changed when the job runner arrived is only that the user
+ * presses a button instead of being handed a command line to type in a terminal,
+ * which was this panel's previous answer.
+ *
+ * The request only QUEUES the job. The summary appears on the next load rather
+ * than streaming in, which is honest about what is happening: the work is
+ * running in the same single-slot queue as everything else and may be behind a
+ * detection run.
+ */
+function Generate({ boutId, force = false }) {
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState(null)
+
+  const go = async () => {
+    setBusy(true)
+    setNote(null)
+    try {
+      const r = await api(
+        `${boutPath(boutId)}/summary/generate${force ? '?force=true' : ''}`,
+        { method: 'POST' })
+      setNote(`Queued, using ${r.touches_used}. Watch it on the upload tab, `
+              + 'then reload this bout.')
+    } catch (e) {
+      setNote(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 9 }}>
+      <button className="primary" disabled={busy} onClick={go}>
+        {force ? 'Regenerate the summary' : 'Generate a summary'}
+      </button>
+      {note && <div className="mini" style={{ marginTop: 6 }}>{note}</div>}
+    </div>
   )
 }

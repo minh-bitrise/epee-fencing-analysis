@@ -212,6 +212,12 @@ class JobRunner:
 
     def __init__(self, store, stages, cwd=None, env=None):
         self.store = store
+        # Either a list of stages for every job, or a callable taking a job and
+        # returning its stages. The callable form lets one worker serve more than
+        # one kind of job - processing a bout, and generating a summary - which
+        # matters because a second runner would mean a second worker, and the
+        # one-job-at-a-time guarantee exists so that two CPU-bound runs do not
+        # fight over a machine without a GPU.
         self.stages = stages
         self.cwd = cwd
         self.env = env
@@ -341,7 +347,7 @@ class JobRunner:
                           started_at=job.get("started_at") or time.time(),
                           error=None)
 
-        for stage in self.stages:
+        for stage in self._stages_for(job):
             job = self.store.load(job_id)
             if job is None or job["state"] in TERMINAL_STATES:
                 return
@@ -395,6 +401,9 @@ class JobRunner:
         self.store.update(job_id, state=DONE, stage=None,
                           finished_at=time.time(),
                           progress={"done": 1, "total": 1, "pct": 100.0})
+
+    def _stages_for(self, job):
+        return self.stages(job) if callable(self.stages) else self.stages
 
     def _run_stage(self, job_id, cmd):
         """
@@ -508,6 +517,14 @@ def pipeline_stages(python_exe=None, prototype_dir=None):
             cmd += ["--piste-config", job["piste_config_path"]]
         if job.get("pose_stride"):
             cmd += ["--pose-stride", str(job["pose_stride"])]
+        # Re-anchor corrections are applied here because they change TRACKING
+        # rather than interpretation, so they can only take effect on a
+        # reprocess. Carrying them on the job is what lets the interface offer a
+        # button: before this, the review page's answer to "I have corrected the
+        # tracking" was a command line for the user to go and type, which is the
+        # arrangement the whole application layer exists to remove.
+        if job.get("reanchor_path") and os.path.exists(job["reanchor_path"]):
+            cmd += ["--reanchors", job["reanchor_path"]]
         return cmd
 
     def build_touches(job):
@@ -541,6 +558,30 @@ def pipeline_stages(python_exe=None, prototype_dir=None):
         Stage("touches", build_touches, label="touch proposal"),
         Stage("transcode", build_transcode, label="video conversion"),
     ]
+
+
+def summary_stages(python_exe=None):
+    """
+    The one stage of a summary job.
+
+    Kept as its own job type rather than appended to the processing pipeline,
+    because generating a summary costs a paid API call and the decision to spend
+    it is the user's. Every upload silently spending money would reverse a
+    decision the annotation API took deliberately. What has changed is only that
+    the user now presses a button instead of being handed a command line to type,
+    which was the review page's answer before this layer existed.
+    """
+    python_exe = python_exe or sys.executable
+
+    def build_summary(job):
+        cmd = [python_exe, "generate_summary.py", "--csv", job["metrics_csv"]]
+        if job.get("touches_csv"):
+            cmd += ["--touches", job["touches_csv"]]
+        if job.get("force"):
+            cmd += ["--force"]
+        return cmd
+
+    return [Stage("summary", build_summary, label="summary generation")]
 
 
 def write_piste_config(result, path):

@@ -23,6 +23,7 @@ export default function ReviewView({ initialBoutId }) {
   const [exportOut, setExportOut] = useState(null)
   const [anchorOut, setAnchorOut] = useState(null)
   const [listError, setListError] = useState(null)
+  const [outcomes, setOutcomes] = useState(null)
   const videoRef = useRef(null)
   // Guards against keystrokes arriving mid-request. A ref rather than state
   // because the keyboard handler has to read the current value at the moment the
@@ -51,6 +52,18 @@ export default function ReviewView({ initialBoutId }) {
 
   useEffect(() => { if (initialBoutId) setBoutId(initialBoutId) }, [initialBoutId])
 
+  // Whether corrections already applied to this bout actually changed anything.
+  // Fetched per bout rather than folded into the touches payload because it is a
+  // property of how this bout was PRODUCED, not of the review in progress.
+  useEffect(() => {
+    if (!boutId) return
+    let cancelled = false
+    api(`${boutPath(boutId)}/reanchor-outcomes`)
+      .then((r) => !cancelled && setOutcomes(r))
+      .catch(() => !cancelled && setOutcomes(null))
+    return () => { cancelled = true }
+  }, [boutId])
+
   // Move the cursor to the first undecided proposal, but only when the bout
   // changes. Recomputing it on every refresh made keyboard review skip
   // proposals, because each decision triggered a reload that moved the cursor
@@ -59,6 +72,7 @@ export default function ReviewView({ initialBoutId }) {
     setSelIdx(0)
     setExportOut(null)
     setAnchorOut(null)
+    setOutcomes(null)
   }, [boutId])
 
   const jumpedRef = useRef(null)
@@ -274,18 +288,26 @@ export default function ReviewView({ initialBoutId }) {
     } catch (e) { setExportOut({ error: e.message }) }
   }
 
+  // Applying tracking corrections used to end in a command line for the user to
+  // go and type. Action 4 changes tracking rather than interpretation, so it can
+  // only take effect on a reprocess, and until the job runner existed there was
+  // nowhere for that reprocess to happen but a terminal.
+  const reprocess = async () => {
+    setAnchorOut({ text: 'starting...' })
+    try {
+      const r = await api(`${boutPath(boutId)}/reprocess`, { method: 'POST' })
+      setAnchorOut({ reprocess: r })
+      await api(`${boutPath(boutId)}/reanchors/applied`, { method: 'POST' })
+      await reload()
+    } catch (e) { setAnchorOut({ error: e.message }) }
+  }
+
   const exportAnchors = async () => {
     setAnchorOut({ text: 'exporting...' })
     try {
       const r = await api(`${boutPath(boutId)}/export-reanchors`, { method: 'POST' })
       setAnchorOut({ result: r })
     } catch (e) { setAnchorOut({ error: e.message }) }
-  }
-
-  const markApplied = async () => {
-    await api(`${boutPath(boutId)}/reanchors/applied`, { method: 'POST' })
-    setAnchorOut({ applied: true })
-    await reload()
   }
 
   // --- render ------------------------------------------------------------
@@ -382,15 +404,43 @@ export default function ReviewView({ initialBoutId }) {
           <div className="row">
             <button onClick={() => armAnchor(0)}>Re-anchor Fencer 1</button>
             <button onClick={() => armAnchor(1)}>Re-anchor Fencer 2</button>
-            <button onClick={exportAnchors}>Export corrections</button>
+            <button className="primary"
+                    disabled={!data?.reanchors?.length}
+                    onClick={reprocess}>
+              Re-run with corrections
+              {data?.reanchors?.length ? ` (${data.reanchors.length})` : ''}
+            </button>
+            <button onClick={exportAnchors}>Export to a file</button>
           </div>
+          {outcomes?.exists && (
+            <div className="note">
+              Of the {outcomes.total} correction(s) applied to this bout,
+              {' '}<b>{outcomes.applied}</b> changed the tracker's assignment.
+              {outcomes.applied < outcomes.total && (
+                <> The rest were overruled by the ordinary matching, which is
+                   this action's designed behaviour: nothing is force-assigned,
+                   so a correction the matcher disagrees with has no effect.
+                   {outcomes.outcomes.filter(o => o.outcome !== 'applied')
+                     .map(o => (
+                       <div key={`${o.frame}-${o.slot}`} className="mini">
+                         {o.time_s.toFixed(2)}s, Fencer {o.slot + 1}: {o.outcome}
+                       </div>
+                     ))}
+                </>
+              )}
+            </div>
+          )}
           {anchorMsg && <div className="note">{anchorMsg}</div>}
           {anchorOut?.error && <div className="note err">{anchorOut.error}</div>}
           {anchorOut?.text && <div className="mini">{anchorOut.text}</div>}
-          {anchorOut?.applied && (
+          {anchorOut?.reprocess && (
             <div className="note">
-              Marked as applied. This records what you told me; nothing in a
-              rerun reports back here.
+              Re-running with <b>{anchorOut.reprocess.corrections}</b>{' '}
+              correction(s){anchorOut.reprocess.piste_config
+                ? `, carrying over ${anchorOut.reprocess.piste_config}` : ''}.
+              {' '}Watch it on the upload tab. The result arrives as a separate
+              bout, so you can open this one beside it and see whether the
+              correction helped.
             </div>
           )}
           {anchorOut?.result && (

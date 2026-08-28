@@ -97,6 +97,14 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "job_store", store)
     monkeypatch.setattr(appmod, "runner", runner)
 
+    # The ANNOTATION store too, and not merely for isolation between tests: it
+    # defaults to the real prototype/annotations directory, which holds the
+    # user's own hand-made labels. A test writing there would leave debris beside
+    # genuine work, and an earlier version of this file did exactly that.
+    from store import AnnotationStore
+    monkeypatch.setattr(appmod, "store",
+                        AnnotationStore(str(tmp_path / "annotations")))
+
     with TestClient(appmod.app) as c:
         c.stub = runner
         c.store = store
@@ -277,3 +285,114 @@ class TestLifecycle:
         job = upload(client, tiny_video).json()
         r = client.get(f"/api/jobs/{job['job_id']}/log")
         assert r.status_code == 200
+
+
+class TestReprocessAndSummary:
+    """
+    The two endpoints that replace a command line with a button.
+
+    Both existed as instructions before this: the review page told the user to go
+    and run the pipeline in a terminal to apply their tracking corrections, and
+    to run another command to generate a summary. That is the arrangement the
+    application layer exists to remove.
+    """
+
+    @pytest.fixture
+    def bout(self, tmp_path, monkeypatch, client):
+        """An uploaded bout that has finished processing, with a source video."""
+        results = tmp_path / "results_uploads" / "upload_abc"
+        results.mkdir(parents=True)
+        (results / "bout_abc_distance.csv").write_text(
+            "frame,time_s,distance_raw_m,distance_smooth_m,method,"
+            "f1_advance_m,f1_retreat_m,f2_advance_m,f2_retreat_m\n"
+            "0,0.0,2.0,2.0,pose,0,0,0,0\n1,0.5,2.0,2.0,pose,0,0,0,0\n")
+        source = tmp_path / "uploads" / "abc" / "bout_abc.mp4"
+        source.parent.mkdir(parents=True)
+        source.write_bytes(b"not really a video, only its path is used here")
+
+        client.store.create(job_id_placeholder=True)
+        # a job record whose id matches the bout's directory suffix
+        job = client.store.create(
+            state="done", source_path=str(source),
+            piste={"needed": True, "polygon": [[0, 1], [2, 1], [2, 3], [0, 3]]},
+            piste_config_path=str(tmp_path / "uploads" / "abc" / "piste.json"))
+        # rename the record so the bout id resolves to it
+        os.rename(os.path.join(client.store.root, f"{job['job_id']}.json"),
+                  os.path.join(client.store.root, "abc.json"))
+        job["job_id"] = "abc"
+        client.store.save(job)
+        return "upload_abc:bout_abc"
+
+    def test_reprocess_queues_a_job_carrying_the_corrections(self, client, bout,
+                                                             monkeypatch):
+        appmod.store.add_reanchor(bout, 12.0, 0, 500, 280)
+        r = client.post(f"/api/bouts/{bout}/reprocess")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["corrections"] == 1
+        job = client.store.load(body["job_id"])
+        # The corrections must reach a file the pipeline can read, or the button
+        # is decorative.
+        assert os.path.exists(job["reanchor_path"])
+        import json
+        assert json.load(open(job["reanchor_path"]))[0]["slot"] == 0
+
+    def test_reprocess_does_not_overwrite_the_original(self, client, bout):
+        r = client.post(f"/api/bouts/{bout}/reprocess")
+        job = client.store.load(r.json()["job_id"])
+        # A reprocess must never destroy a previous result: the before and after
+        # side by side is the only way to see whether a correction helped.
+        assert "upload_abc" not in job["output_dir"]
+
+    def test_reprocess_re_uses_the_piste_region_rather_than_re_measuring(
+            self, client, bout):
+        # Otherwise the rerun changes two things at once. Omitting the config
+        # once cost 18 points of coverage on clip 2 and looked like a regression.
+        r = client.post(f"/api/bouts/{bout}/reprocess")
+        job = client.store.load(r.json()["job_id"])
+        assert job["confirm_piste"] is False
+        assert "piste" in job["stages_done"] or job["piste"] is not None
+
+    def test_reprocess_refuses_when_the_source_video_is_gone(self, client, bout):
+        job = client.store.load("abc")
+        os.remove(job["source_path"])
+        r = client.post(f"/api/bouts/{bout}/reprocess")
+        assert r.status_code == 404
+        assert "annotated" in r.json()["detail"]
+
+    def test_summary_refuses_without_an_api_key(self, client, bout, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        r = client.post(f"/api/bouts/{bout}/summary/generate")
+        assert r.status_code == 400
+        assert "ANTHROPIC_API_KEY" in r.json()["detail"]
+
+    def test_summary_is_a_job_not_an_automatic_stage(self, client, bout,
+                                                     monkeypatch):
+        """
+        Generating a summary costs a paid API call, so it must never happen
+        because a user uploaded a video. The processing pipeline has no summary
+        stage at all; this endpoint is the only way to reach one.
+        """
+        from jobs import pipeline_stages
+        for stage in pipeline_stages():
+            assert stage.name != "summary"
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-used")
+        r = client.post(f"/api/bouts/{bout}/summary/generate")
+        assert r.status_code == 200
+        assert client.store.load(r.json()["job_id"])["kind"] == "summary"
+
+    def test_summary_prefers_the_reviewed_touch_list(self, client, bout,
+                                                     monkeypatch, tmp_path):
+        """
+        The whole point of the export. Without preferring it, the prose a reader
+        sees is still built from unreviewed detector output, which undercuts the
+        claim that user correction improves the output.
+        """
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-used")
+        reviewed = (tmp_path / "results_uploads" / "upload_abc" /
+                    "bout_abc_distance_touches_confirmed.csv")
+        reviewed.write_text("time_s,scorer,annulled,notes\n5.0,left,0,confirmed\n")
+        r = client.post(f"/api/bouts/{bout}/summary/generate")
+        assert r.json()["touches_used"] == "the touches you confirmed"
+        assert client.store.load(r.json()["job_id"])["touches_csv"] == str(reviewed)
