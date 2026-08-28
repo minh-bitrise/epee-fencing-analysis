@@ -107,11 +107,56 @@ def _stages_for(job):
 runner = JobRunner(job_store, _stages_for, cwd=PROTOTYPE_DIR)
 
 
+# The service name the key is stored under in the macOS Keychain.
+KEYCHAIN_SERVICE = "anthropic-api-key"
+
+
+def _load_api_key_from_keychain():
+    """
+    Put the Anthropic key into the environment at startup, reading it from the
+    macOS Keychain when it is not already there.
+
+    WHY AT STARTUP AND NOT ON DEMAND. Starting the server is a deliberate act by
+    the person who owns the key, and macOS can prompt them for Keychain access
+    while they are still at the keyboard. Reading a secret in response to an HTTP
+    request would move that prompt to a moment nobody is watching, and would make
+    a web request the thing that reaches into the Keychain. Once here, the value
+    lives in this process's environment and is inherited by the summary
+    subprocess, which is where it is actually needed.
+
+    The key is never logged, never returned by any endpoint, and never written to
+    a job record. Only whether one was found is reported.
+
+    Failing is not an error. A machine without the key, or without `security`,
+    simply has no summary button, and the endpoint says so.
+    """
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "environment"
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password",
+             "-a", os.environ.get("USER", ""), "-s", KEYCHAIN_SERVICE, "-w"],
+            capture_output=True, text=True, timeout=15)
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    key = result.stdout.strip()
+    if result.returncode != 0 or not key:
+        return None
+    os.environ["ANTHROPIC_API_KEY"] = key
+    return "keychain"
+
+
 @asynccontextmanager
 async def lifespan(_app):
     # Jobs left mid-run by a previous process are reconciled before the worker
     # starts, so a restart cannot leave a record claiming to be running with
     # nothing behind it.
+    source = _load_api_key_from_keychain()
+    print(f"[startup] Anthropic API key: "
+          + (f"loaded from the {source}, summary generation is available"
+             if source else
+             f"not found in the environment or in the Keychain under "
+             f"'{KEYCHAIN_SERVICE}'; everything except summary generation works"))
     runner.reconcile()
     runner.start()
     yield
@@ -837,12 +882,12 @@ def generate_summary_for_bout(bout_id: str, force: bool = False):
     prose a reader sees would still come from unreviewed output.
     """
     b = _get_bout(bout_id)
-    if "ANTHROPIC_API_KEY" not in os.environ:
+    if not os.environ.get("ANTHROPIC_API_KEY"):
         raise HTTPException(
-            400, "ANTHROPIC_API_KEY is not set in the server's environment, so "
-                 "the summary cannot be generated. Restart the server with the "
-                 "key exported, for example: "
-                 "ANTHROPIC_API_KEY=... python3 -m uvicorn app:app --port 8000")
+            400, f"No Anthropic API key is available, so the summary cannot be "
+                 f"generated. The server looks in ANTHROPIC_API_KEY and then in "
+                 f"the macOS Keychain under the service '{KEYCHAIN_SERVICE}', "
+                 f"once, at startup. Add the key there and restart the server.")
 
     base = os.path.splitext(b.metrics_csv)[0]
     reviewed = f"{base}_touches_confirmed.csv"

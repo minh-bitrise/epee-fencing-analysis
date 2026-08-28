@@ -396,3 +396,71 @@ class TestReprocessAndSummary:
         r = client.post(f"/api/bouts/{bout}/summary/generate")
         assert r.json()["touches_used"] == "the touches you confirmed"
         assert client.store.load(r.json()["job_id"])["touches_csv"] == str(reviewed)
+
+
+class TestApiKeyResolution:
+    """
+    The key lives in the macOS Keychain on this machine, not in a file and not in
+    a shell profile, so requiring it in the environment would mean the user
+    exporting it by hand every time they start the server.
+    """
+
+    def test_an_existing_environment_key_is_left_alone(self, monkeypatch):
+        # Never overwrite what the operator set deliberately.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "already-set")
+        assert appmod._load_api_key_from_keychain() == "environment"
+        assert os.environ["ANTHROPIC_API_KEY"] == "already-set"
+
+    def test_reads_the_keychain_when_the_environment_is_empty(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        calls = []
+
+        class Result:
+            returncode = 0
+            stdout = "sk-ant-from-keychain\n"
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return Result()
+
+        monkeypatch.setattr(appmod.subprocess, "run", fake_run)
+        assert appmod._load_api_key_from_keychain() == "keychain"
+        assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant-from-keychain"
+        assert appmod.KEYCHAIN_SERVICE in calls[0]
+
+    def test_a_missing_key_is_not_an_error(self, monkeypatch):
+        """
+        A machine without the key simply has no summary button. Raising here
+        would stop the server starting over a feature most sessions never touch.
+        """
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        class Result:
+            returncode = 44
+            stdout = ""
+
+        monkeypatch.setattr(appmod.subprocess, "run", lambda *a, **k: Result())
+        assert appmod._load_api_key_from_keychain() is None
+        assert "ANTHROPIC_API_KEY" not in os.environ
+
+    def test_a_machine_without_the_security_tool_is_not_an_error(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        def boom(*a, **k):
+            raise FileNotFoundError("security")
+
+        monkeypatch.setattr(appmod.subprocess, "run", boom)
+        assert appmod._load_api_key_from_keychain() is None
+
+    def test_an_empty_keychain_entry_is_treated_as_missing(self, monkeypatch):
+        # A blank value would otherwise be exported and then fail inside the
+        # summary subprocess, several minutes and one queue position later.
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        class Result:
+            returncode = 0
+            stdout = "   \n"
+
+        monkeypatch.setattr(appmod.subprocess, "run", lambda *a, **k: Result())
+        assert appmod._load_api_key_from_keychain() is None
+        assert "ANTHROPIC_API_KEY" not in os.environ

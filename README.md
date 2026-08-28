@@ -28,11 +28,11 @@ cd ../backend && python3 -m uvicorn app:app --port 8000
 ```
 Then open http://localhost:8000.
 
-To enable the summary button, start the server with an API key in its
-environment. Without it everything else works and the button explains itself:
-```bash
-ANTHROPIC_API_KEY=sk-ant-... python3 -m uvicorn app:app --port 8000
-```
+The summary button needs an Anthropic API key. The server looks for it once at
+startup, first in `ANTHROPIC_API_KEY` and then in the macOS Keychain under the
+service `anthropic-api-key`, so on a machine where the key is already in the
+Keychain there is nothing to do. Without a key everything else works and the
+button explains itself.
 
 Without the Node build step the server still works: it falls back to a no-build-step
 interface that reviews already-processed bouts, also available at `/legacy`. That page
