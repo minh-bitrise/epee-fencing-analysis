@@ -47,15 +47,21 @@ tenth frame, take the pair of detections at the same apparent depth (NOT the two
 broadcast footage the nearest person is the referee), cluster their feet-y and keep the largest
 group, then set the edges just outside it.
 
-It matches the hand-authored polygon where a horizontal band can separate the groups, and is worse
-where it cannot. Coverage alone does not show this, so both are quoted. Implausible = inter-fencer
-distance over 6 m, same threshold both sides.
+It reproduces the hand-authored polygon exactly on clip 2, the hardest one. On clips 1 and 4 the
+distance distribution's tail changes; whether that is worse is NOT yet established, see the caveat.
 
-| clip | coverage hand / derived | >6 m hand / derived | verdict |
-|------|-------------------------|---------------------|---------|
-| 1 | 92.9% / 92.5% | 1 / 37 | worse: officials sit at y 430-460, inside a fencer band of 421-695 |
-| 2 | 98.0% / 98.0% | 245 / 245 | identical |
-| 4 | 73.7% / 75.9% | 208 / 301 | worse, while coverage improved |
+| clip | coverage hand / derived | >6 m rate hand / derived |
+|------|-------------------------|--------------------------|
+| 1 | 92.9% / 92.5% | 0.01% / 0.37% |
+| 2 | 98.0% / 98.0% | 2.78% / 2.78% |
+| 4 | 73.7% / 75.9% | 4.95% / 6.96% |
+
+**The 6 m threshold is a weak proxy and should not be quoted as a defect count.** Checked against
+frames: clip 4 at 86.0 s reads 7.44 m and shows two real fencers genuinely far apart during a
+reset, because the shot is wide and they were walking back to their guard lines. A raised rate can
+mean a bystander was captured OR that resets are tracked more completely, and those are opposite
+verdicts. Use single-frame position jumps over 1.5 m instead: a slot switching person teleports and
+a fencer cannot. Measured on the reference outputs, clip 1: 2, clip 2: 15, clip 4: 114.
 
 **Keep using the hand-authored configs for anything the report quotes.** The derived ones exist so
 that an uploaded video, which has no config at all, gets something measured rather than nothing,
