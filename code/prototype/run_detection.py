@@ -355,6 +355,35 @@ def load_reanchors(path, fps):
     return by_frame
 
 
+def reanchor_outcome(clicked, box):
+    """
+    Say whether a user's re-anchor actually moved the slot onto what they clicked.
+
+    Nothing is force-assigned. `FencerTracker.reanchor` moves the slot's
+    reference point and clears its gates for one frame, then lets ordinary
+    matching resume, so a correction the matcher disagrees with leaves no trace:
+    a first real-footage attempt produced output byte-identical to its baseline.
+    That is the right failure mode, since a mis-aimed click cannot corrupt the
+    result, but silence is the wrong report. The user exported a correction and
+    re-ran a job that takes minutes, and is entitled to know it changed nothing.
+
+    Judged against the matched fencer's own apparent height rather than a fixed
+    pixel budget, because the same pixel error means different things at 360p and
+    720p. Half a fencer height is roughly a body width, so a match inside that is
+    the person who was clicked.
+
+    Returns (outcome, distance_px), distance being None when nothing matched.
+    """
+    if box is None:
+        return "no detection was assigned to this slot", None
+    cx, cy = get_box_centre(box)
+    dist = math.hypot(cx - clicked[0], cy - clicked[1])
+    h = box_height_pixels(box)
+    if h and dist <= 0.5 * h:
+        return "applied", dist
+    return "ignored: matching preferred another detection", dist
+
+
 def calibrate_fixed_scale(video_path, sample_every=15, max_frames=4500,
                           min_height_px=60):
     """
@@ -1290,6 +1319,7 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
     push_pull      = PushPullTracker(n_fencers=2)
     reanchors      = {}
     reanchors_applied = 0
+    reanchor_outcomes = []
     camera         = CameraMotionEstimator() if stabilise_camera else None
 
     if reanchor_path:
@@ -1352,12 +1382,40 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
         # is what the ordinary matching resolves from. Applying it afterwards would
         # let the tracker commit the wrong fencer for one more frame and then
         # overwrite the correction with that commit.
+        applied_here = []
         for slot, rx, ry in reanchors.get(frame_idx, ()):
             fencer_tracker.reanchor(slot, rx, ry)
             reanchors_applied += 1
+            applied_here.append((slot, rx, ry))
 
         # map detections to stable Fencer 1 / Fencer 2 slots
         slots = fencer_tracker.select(ids, xyxys, confs)
+
+        # Did the correction actually take? Nothing is force-assigned: a
+        # re-anchor moves the slot's reference point and clears its gates for one
+        # frame, then lets ordinary matching resume. If the matcher still prefers
+        # the pairing it already had, the correction leaves no trace at all - a
+        # first real-footage attempt produced output byte-identical to its
+        # baseline. That is the right failure mode, since a mis-aimed click
+        # cannot corrupt the result, but silence is the wrong report: the user
+        # exported a correction, re-ran a multi-minute job, and is entitled to
+        # know it changed nothing. So the outcome of each correction is recorded
+        # here and written out with the results.
+        for slot, rx, ry in applied_here:
+            got = slots[slot]
+            outcome, dist_px = reanchor_outcome((rx, ry),
+                                                got[0] if got else None)
+            reanchor_outcomes.append({
+                "frame": frame_idx,
+                # Computed here rather than read from `time_sec`, which is not
+                # assigned until later in the loop body and would carry the
+                # previous frame's value.
+                "time_s": round(frame_idx / fps, 3),
+                "slot": slot,
+                "clicked": [rx, ry],
+                "distance_px": None if dist_px is None else round(dist_px, 1),
+                "outcome": outcome,
+            })
 
         # estimate camera motion with the tracked fencers masked out, so
         # their movement does not bias the global estimate
@@ -1539,11 +1597,27 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
 
     if distances:
         save_plot(times, distances, methods, out_plot)
+        if reanchor_outcomes:
+            # Written next to the metrics CSV so the review interface can tell
+            # the user whether the correction they exported actually did
+            # anything. Without this the loop ends in silence: they export, they
+            # re-run a job that takes minutes, and nothing reports back.
+            out_reanchor = os.path.join(output_dir, f"{base}_reanchor_outcomes.json")
+            with open(out_reanchor, "w") as f:
+                json.dump(reanchor_outcomes, f, indent=2)
+            print(f"  Re-anchor outcomes saved -> {out_reanchor}")
         pose_pct = (pose_success / len(distances)) * 100
         print("\n--- Summary ---")
         print(f"  Frames processed:           {frame_idx}")
         if reanchors:
-            print(f"  User re-anchors applied:    {reanchors_applied}")
+            took = sum(1 for o in reanchor_outcomes if o["outcome"] == "applied")
+            print(f"  User re-anchors applied:    {reanchors_applied} "
+                  f"({took} changed the assignment)")
+            for o in reanchor_outcomes:
+                if o["outcome"] != "applied":
+                    print(f"    {o['time_s']:.2f}s slot {o['slot']}: {o['outcome']}"
+                          + (f", nearest match {o['distance_px']:.0f} px from the click"
+                             if o["distance_px"] is not None else ""))
         print(f"  Frames with both fencers:   {len(distances)}")
         print(f"  Pose-based distance:        {pose_success} ({pose_pct:.1f}%)")
         print(f"  Fallback (bbox) distance:   {len(distances) - pose_success}")

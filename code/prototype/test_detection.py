@@ -53,6 +53,7 @@ from run_detection import (
     LM_RIGHT_HIP,
     get_stance_features,
     load_reanchors,
+    reanchor_outcome,
     PUSH_PULL_NOISE_FLOOR_M,
 )
 
@@ -1574,6 +1575,48 @@ class TestReanchor:
         t = FencerTracker()
         with pytest.raises(ValueError):
             t.reanchor(2, 100.0, 100.0)
+
+
+class TestReanchorOutcome:
+    """
+    Whether a correction took effect has to be reported, not assumed.
+
+    A re-anchor is not a force-assignment: it moves the slot's reference point
+    and clears its gates for one frame, then lets ordinary matching resume. On
+    real footage a correction aimed at the wrong slot produced output
+    byte-identical to its baseline, so the user re-ran a multi-minute job and was
+    told nothing at all.
+    """
+
+    def box(self, cx, cy, h=200, w=70):
+        return np.array([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2])
+
+    def test_a_match_on_the_clicked_person_counts_as_applied(self):
+        outcome, dist = reanchor_outcome((500, 300), self.box(505, 302))
+        assert outcome == "applied" and dist < 10
+
+    def test_a_match_on_somebody_else_is_reported_as_ignored(self):
+        outcome, dist = reanchor_outcome((500, 300), self.box(1040, 300))
+        assert outcome.startswith("ignored")
+        assert dist == pytest.approx(540, abs=1)
+
+    def test_nothing_matched_is_distinguished_from_the_wrong_match(self):
+        # Different problems needing different responses: one means the click was
+        # overruled, the other that the fencer was not detected at all.
+        outcome, dist = reanchor_outcome((500, 300), None)
+        assert "no detection" in outcome and dist is None
+
+    def test_the_tolerance_scales_with_the_fencer(self):
+        """
+        Judged against apparent height rather than a fixed pixel budget. The same
+        60 px error is most of a body at 360p, where clip 4's fencers are about
+        103 px tall, and a third of one at 720p where they are 250 to 330.
+        """
+        offset = 60
+        small = reanchor_outcome((500, 300), self.box(500 + offset, 300, h=103))
+        large = reanchor_outcome((500, 300), self.box(500 + offset, 300, h=330))
+        assert small[0].startswith("ignored")
+        assert large[0] == "applied"
 
 
 class TestLoadReanchors:
