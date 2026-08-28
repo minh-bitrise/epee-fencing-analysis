@@ -1596,6 +1596,41 @@ class TestLoadReanchors:
         p = self._write(tmp_path, [{"time_s": 12.999, "slot": 1, "x": 1, "y": 2}])
         assert list(load_reanchors(p, 30.0)) == [390]
 
+    def test_loading_corrections_does_not_disturb_the_frame_count(self):
+        """
+        A regression, found by running the re-anchor path on real footage for the
+        first time rather than by any test.
+
+        `run()` reads the video's frame count into `total`, and the branch that
+        loads corrections then assigned the NUMBER OF CORRECTIONS to the same
+        name. The progress line began reporting "12/3 frames processed", and the
+        machine-readable PROGRESS counter the web interface reads reported a
+        percentage of the correction count, so a re-anchored run showed a bar
+        that shot past 100 per cent and stopped. It fired only when --reanchors
+        was passed, which is why it survived a full unit suite.
+
+        Asserted over the parsed function rather than over its text: a first
+        version of this test scanned the few lines following the load call and
+        passed with the defect reintroduced, because an added comment had pushed
+        the offending line out of the window it looked at.
+        """
+        import ast
+        import inspect
+        import run_detection
+
+        tree = ast.parse(inspect.getsource(run_detection.run))
+        assigned = [node for node in ast.walk(tree)
+                    if isinstance(node, ast.Assign)
+                    for t in node.targets
+                    if isinstance(t, ast.Name) and t.id == "total"]
+        assert len(assigned) == 1, (
+            f"`total` is assigned {len(assigned)} times in run(); it is the "
+            f"video's frame count and drives both progress readouts, so a second "
+            f"assignment silently redefines what progress is a fraction of")
+        # And it is the frame count, not something else that happens to be alone.
+        source = ast.unparse(assigned[0].value)
+        assert "CAP_PROP_FRAME_COUNT" in source
+
     def test_two_corrections_on_one_frame_are_both_kept(self, tmp_path):
         """Both fencers can be wrong at once, and usually are after a clinch."""
         p = self._write(tmp_path, [

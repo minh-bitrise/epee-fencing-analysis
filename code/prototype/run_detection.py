@@ -1294,8 +1294,14 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
 
     if reanchor_path:
         reanchors = load_reanchors(reanchor_path, fps)
-        total = sum(len(v) for v in reanchors.values())
-        print(f"  {total} user re-anchor correction(s) loaded, "
+        # Counted into its own name. An earlier version assigned this to `total`,
+        # which is the video's frame count: the progress line then reported
+        # "12/3 frames processed" and the machine-readable PROGRESS counter fed
+        # the web interface a percentage of the number of corrections. It only
+        # fired when --reanchors was passed, which is why it survived until the
+        # re-anchor path was first run on real footage.
+        n_reanchors = sum(len(v) for v in reanchors.values())
+        print(f"  {n_reanchors} user re-anchor correction(s) loaded, "
               f"on {len(reanchors)} frame(s)")
 
     fixed_scale = None
