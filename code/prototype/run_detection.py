@@ -1140,8 +1140,16 @@ def _draw_panel(frame, x, y, w, h, alpha=0.55):
     cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 255, 255), 1)
 
 
+# How many recent positions to draw behind each slot. About a second at 30 fps,
+# and a second is the right span because that is roughly how long a wrong-target
+# capture takes to become visible: on clip 2 a slot slid onto the referee between
+# 171.0 s and 171.6 s, and the symptom a viewer notices arrives at 171.8 s.
+TRAIL_LENGTH = 30
+
+
 def draw_overlay(frame, slots, pose_data, dist_display_m, dist_raw_m,
-                 dist_method, push_pull, frame_idx, fps, net_scale=None):
+                 dist_method, push_pull, frame_idx, fps, net_scale=None,
+                 trails=None):
     """
     Draw bounding boxes, pose keypoints, the distance readout and per-fencer
     movement.
@@ -1157,9 +1165,34 @@ def draw_overlay(frame, slots, pose_data, dist_display_m, dist_raw_m,
     net_scale is the clip-wide fixed scale in pixels per metre. It defaults to None
     so a caller without one still gets an overlay, showing the closing share and
     marking the displacement unavailable rather than inventing it.
+
+    `trails` are the recent positions of each slot, drawn as a short tail behind
+    it. WHY THEY ARE THERE: a single frame does not say which slot went wrong.
+    Correcting a bystander capture means telling the tracker WHICH fencer it has
+    misplaced, and on clip 2's real failure both boxes sit on the same side of
+    the piste, so from one frame it is impossible to tell which slot abandoned
+    which fencer. Working that out needed the position CSV rather than the video,
+    and a user has only the video. A tail makes the answer visible: the slot that
+    jumped has a tail stretching back across the piste, and the slot that did not
+    has a short one around its own feet.
     """
 
     h, w = frame.shape[:2]
+
+    # movement trails, drawn first so boxes and labels sit on top of them
+    for slot_idx, trail in enumerate(trails or []):
+        if not trail or len(trail) < 2:
+            continue
+        colour = COLOURS[slot_idx]
+        points = list(trail)
+        for i in range(1, len(points)):
+            # Older segments are drawn thinner, so the direction of travel reads
+            # without needing an arrowhead.
+            thickness = 1 + int(2 * i / len(points))
+            cv2.line(frame,
+                     (int(points[i - 1][0]), int(points[i - 1][1])),
+                     (int(points[i][0]), int(points[i][1])),
+                     colour, thickness)
 
     # bounding boxes + pose dots
     for slot_idx, slot in enumerate(slots):
@@ -1320,6 +1353,8 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
     reanchors      = {}
     reanchors_applied = 0
     reanchor_outcomes = []
+    # A bounded history per slot, for the movement tails on the annotated render.
+    trails = [deque(maxlen=TRAIL_LENGTH), deque(maxlen=TRAIL_LENGTH)]
     camera         = CameraMotionEstimator() if stabilise_camera else None
 
     if reanchor_path:
@@ -1538,10 +1573,19 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
         if piste is not None and show_piste:
             piste.draw(frame)
 
+        # Record where each slot is before drawing, so the tail includes this
+        # frame. A slot with no detection this frame keeps its existing tail
+        # rather than having a gap inserted: the tail answers "where has this
+        # slot been", and a missing frame is not a move to somewhere else.
+        for slot_idx, slot in enumerate(slots):
+            if slot is not None:
+                trails[slot_idx].append(get_box_centre(slot[0]))
+
         frame = draw_overlay(frame, slots, pose_data,
                              dist_display_m, dist_raw_m, dist_method,
                              push_pull, frame_idx, fps,
-                             net_scale=fixed_scale if fixed_scale else None)
+                             net_scale=fixed_scale if fixed_scale else None,
+                             trails=trails)
         writer.write(frame)
 
         time_sec = frame_idx / fps

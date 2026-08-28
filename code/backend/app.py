@@ -212,6 +212,31 @@ class Reanchor(BaseModel):
 
 # --- read endpoints -----------------------------------------------------
 
+def _bout_label(bout_id):
+    """
+    A name a person can read.
+
+    Bout ids are derived from output directories, which is right for an
+    identifier and wrong for a menu: an uploaded bout is called
+    `upload_a07ab97cf679:bout_a07ab97cf679`, which says nothing about the video
+    it came from. The evaluation clips keep their ids, since those ARE the names
+    the report and RESULTS.md use and renaming them in the interface would break
+    the correspondence.
+    """
+    directory = bout_id.split(":")[0]
+    if not directory.startswith("upload_"):
+        return bout_id
+    job = job_store.load(directory[len("upload_"):])
+    if not job:
+        return bout_id
+    name = job.get("filename") or bout_id
+    if job.get("reprocess_of"):
+        # Say what it is a rerun OF, because the whole point of writing a
+        # reprocess to a new bout is comparing it against the original.
+        return f"{name} (corrected)"
+    return name
+
+
 @app.get("/api/bouts")
 def list_bouts():
     """Processed bouts available for review, with review progress for each."""
@@ -220,6 +245,7 @@ def list_bouts():
         proposed = load_proposed_touches(b.touches_csv)
         out.append({
             "bout_id": bout_id,
+            "label": _bout_label(bout_id),
             "has_touches": bool(b.touches_csv),
             "has_summary": bool(b.summary_md),
             "has_video": bool(b.video),

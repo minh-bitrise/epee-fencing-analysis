@@ -345,7 +345,8 @@ export default function ReviewView({ initialBoutId }) {
                 if (!b.has_video) tags.push('no video')
                 return (
                   <option key={b.bout_id} value={b.bout_id}>
-                    {b.bout_id}{tags.length ? `  (${tags.join(', ')})` : ''}
+                    {b.label || b.bout_id}
+                    {tags.length ? `  (${tags.join(', ')})` : ''}
                   </option>
                 )
               })}
