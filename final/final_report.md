@@ -1427,10 +1427,24 @@ configuration it requires. Reported in section 5.3.
 
 | Clip | Coverage | F1 net | F1 closing | F2 net | F2 closing |
 |---|---|---|---|---|---|
-| 1 | 92.9% | +1.29 m | 51.0% | +0.28 m | 48.3% |
-| 2 | 98.0% | +3.86 m | 50.5% | -0.16 m | 50.4% |
+| 1 | 93.5% | +1.29 m | 51.0% | +0.28 m | 48.3% |
+| 2 | 98.0% | -0.00 m | 50.1% | -0.16 m | 50.0% |
 | 3 | 97.4% | +3.43 m | 52.4% | +0.43 m | 52.0% |
-| 4 | 73.7% | +0.42 m | 47.0% | **+7.54 m** | 47.8% |
+| 4 | 79.8% | -0.05 m | 50.4% | **+7.08 m** | 52.8% |
+
+Regenerated 29 Aug 2026 after the candidate-selection change described in 5.x. The previous
+figures were 92.9% / +3.86 m / 50.5% (clip 2 F1) and 73.7% / +0.42 m / +7.54 m (clip 4).
+
+**The change is independently corroborated by the plausibility check this table was built to
+apply.** Play resets to the guard lines after every touch, so each fencer should finish within
+about a metre of where they started. Clip 2's Fencer 1 previously measured +3.86 m, which the
+report flagged as not believable; it now measures -0.00 m, which is exactly what the physical
+constraint predicts. Clip 4's Fencer 1 moves from +0.42 m to -0.05 m on the same reasoning. This
+was not the change's target, and it is stronger evidence than the coverage figures precisely
+because it is a prediction the footage itself makes rather than a metric being optimised.
+
+Clip 4's Fencer 2 remains implausible at +7.08 m, down from +7.54 m. That failure is therefore
+NOT explained by the candidate-selection defect, and stays open.
 
 **E.12 The two unsolved tracking failures.** *Wrong-target capture* is prevented by the piste polygon,
 which by construction cannot distinguish a referee standing on the piste from a fencer. On clip 4 the

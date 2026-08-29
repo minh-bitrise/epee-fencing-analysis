@@ -21,7 +21,35 @@ cite them, and several exist only to make a negative result reproducible.
 | `results_pose/` | clip 3 at `--pose-stride 1` | the stance-feature experiment in B1h, and the bout to label lunges on. Only directory with the stance columns |
 | `results_clip4_masked/` | clip 4, gallery masked | control for B1i. Removing the spectators made coverage worse |
 | `results_clip4_crop/` | clip 4, cropped to the piste | the crop B1c proposed. Also worse |
+| `results_confidence_candidates/` | the four clips under the OLD confidence-based candidate selection, kept so the draft report's figures stay reproducible. No videos |
 | `results_current/` | all four clips, one pipeline version | **the set to quote from.** First set where every clip has the raw position columns, so movement figures are comparable across clips |
+
+## Candidate selection changed on 29 Aug 2026, and `results_current` was regenerated
+
+`FencerTracker.select` used to keep the two most CONFIDENT detections each frame and discard the
+rest before any anchor was consulted. It now keeps the two NEAREST to where each slot is expected.
+`--confidence-candidates` restores the old behaviour, and `results_confidence_candidates/` holds
+the old outputs (CSVs, touch files and plots; the annotated videos were not kept, at about 1 GB).
+
+Why: across clip 2's six-second bystander capture there are always exactly three detections inside
+the piste, both fencers and the referee, who stands ON the strip so the region filter cannot remove
+him. The left fencer is detected in every sampled frame and the confidence cut discarded them in 9
+of 16, flickering between first and third place on margins around 0.01.
+
+| clip | coverage old / new | mix-ups old / new | touch F1 old / new | corrections old / new |
+|------|--------------------|-------------------|--------------------|-----------------------|
+| 1 | 92.9% / **93.5%** | 2 / **0** | 0.80 / 0.80 | 1 of 3 / 1 of 3 |
+| 2 | 98.0% / 98.0% | 15 / **0** | 0.86 / 0.86 | 1 of 4 / 1 of 4 |
+| 3 | 97.4% / 97.4% | 0 / 0 | 0.86 / 0.86 | 4 of 14 / 4 of 14 |
+| 4 | 73.7% / **79.8%** | 114 / **54** | 0.67 / **0.77** | 4 of 6 / **3 of 6** |
+
+Mix-ups are single-frame position jumps over 1.5 m, the direct signature of a slot switching person.
+**The 720p headline is unchanged**: clips 1-3 still give 6 corrections against 21 manual entries.
+Only clip 4 moves. Nothing regressed on any clip on any measure.
+
+Independent corroboration: play resets to the guard lines after every touch, so net displacement
+should be near zero. Clip 2's Fencer 1 went from an implausible +3.86 m to -0.00 m, and clip 4's
+Fencer 1 from +0.42 m to -0.05 m. That was not the target of the change.
 
 ## Flags matter, and are easy to forget
 

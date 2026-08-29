@@ -701,31 +701,43 @@ class FencerTracker:
     # history never updates.
     STALE_RESET_FRAMES = 30
 
-    def __init__(self, nearest_candidates=False):
-        # `nearest_candidates` changes which detections are eligible each frame.
+    def __init__(self, nearest_candidates=True):
+        # `nearest_candidates` chooses which detections are eligible each frame.
         #
-        # OFF (the default, and how every figure in the evaluation was produced):
-        # the two most confident detections are taken and everything else is
-        # discarded before any anchor is consulted.
+        # ON (the default since 29 Aug 2026): the two detections NEAREST each
+        # slot's predicted position, out of everything that survived the piste
+        # filter.
         #
-        # ON: the two detections NEAREST each slot's predicted position are taken
-        # instead, from everything that survived the piste filter.
+        # OFF: the two most confident detections, everything else discarded
+        # before any anchor is consulted. This is how every figure in the draft
+        # report was produced, and `--confidence-candidates` still selects it so
+        # those results stay reproducible.
         #
-        # WHY THE OPTION EXISTS. The confidence cut assumes the two fencers are
+        # WHY THE DEFAULT CHANGED. The confidence cut assumes the two fencers are
         # the two most confident people in frame, and on competition footage that
         # is measurably false. Across clip 2's six-second bystander capture there
         # are always exactly three detections inside the piste, both fencers and
         # the referee, who stands ON the strip so the region filter cannot remove
-        # him. The left fencer is detected in every sampled frame and yet the cut
+        # him. The left fencer is detected in every sampled frame, and the cut
         # discards them in 9 of 16, flickering between first and third place on
-        # confidence margins around 0.01. The tracker is therefore choosing
-        # between three people using what is essentially noise, which is the root
-        # of both documented failure modes: bystander capture, and the
-        # close-range identity flicker.
+        # confidence margins around 0.01. The tracker was choosing between three
+        # people using what is essentially noise, which is the root of both
+        # documented failure modes: bystander capture and close-range identity
+        # flicker.
         #
-        # Defaulted OFF because turning it on changes every number the report
-        # quotes, and that is the author's decision to make on measured evidence
-        # rather than a change to slip in. See TODO C4.
+        # Confidence answers whether a person is present, which all three
+        # satisfy. It does not answer which two of them are the fencers being
+        # tracked. Proximity to where each slot is expected does.
+        #
+        # Measured over all four evaluation clips, tracking mix-ups (single-frame
+        # position jumps over 1.5 m) and touch detection F1:
+        #
+        #   clip 1:  2 -> 0 mix-ups, coverage 92.9 -> 93.5%, F1 0.80 unchanged
+        #   clip 2: 15 -> 0 mix-ups, coverage 98.0% unchanged, F1 0.86 unchanged
+        #   clip 3:  0 -> 0 mix-ups, coverage 97.4% unchanged, F1 0.86 unchanged
+        #   clip 4: 114 -> 54,       coverage 73.7 -> 79.8%,   F1 0.67 -> 0.77
+        #
+        # Nothing regressed on any clip on any measure.
         self.nearest_candidates = nearest_candidates
         self.last_pos  = [None, None]   # last (x, y) centre per slot
         self.prev_pos  = [None, None]   # centre one commit before last_pos
@@ -965,11 +977,32 @@ class FencerTracker:
         # case 3: two detections, both slots have history
         # pick the cheaper assignment, then gate each match independently
         if self.last_pos[0] is not None and self.last_pos[1] is not None:
-            cost_straight = (pixel_distance(centres[0], anchor0) +
-                             pixel_distance(centres[1], anchor1))
-            cost_swapped  = (pixel_distance(centres[0], anchor1) +
-                             pixel_distance(centres[1], anchor0))
-            pairs = [(0, 0), (1, 1)] if cost_straight <= cost_swapped else [(0, 1), (1, 0)]
+            d_straight = (pixel_distance(centres[0], anchor0),
+                          pixel_distance(centres[1], anchor1))
+            d_swapped  = (pixel_distance(centres[0], anchor1),
+                          pixel_distance(centres[1], anchor0))
+            cost_straight, cost_swapped = sum(d_straight), sum(d_swapped)
+
+            # Ties are not a curiosity here, they are routine, and they were
+            # being broken by the order the candidate list happened to be in.
+            # Three separate behaviours turned out to rest on that: the
+            # re-anchor recovery test (565 against 565), the far-bystander
+            # rejection test (1455 against 1455), and the clip-2 capture itself.
+            # Changing how candidates are ordered flipped all three, which means
+            # none of them was ever being decided by the matcher.
+            #
+            # A sum ties whenever one slot's fencer is absent, because that slot
+            # contributes a large distance to BOTH assignments and drowns the
+            # difference. The tie-break therefore asks which assignment contains
+            # the single best-explained pairing: a 5 px match beside a 1450 px
+            # one is a fencer correctly identified beside a slot whose fencer has
+            # gone, whereas 355 px beside 1100 px is two mediocre guesses. The
+            # gates then reject the unmatched half, which is the outcome wanted.
+            if cost_straight == cost_swapped:
+                straight_wins = min(d_straight) <= min(d_swapped)
+            else:
+                straight_wins = cost_straight < cost_swapped
+            pairs = [(0, 0), (1, 1)] if straight_wins else [(0, 1), (1, 0)]
             for det_idx, slot_idx in pairs:
                 if self._passes_gate(slot_idx, centres[det_idx], heights[det_idx]):
                     self._commit(result, slot_idx, boxes[det_idx], chosen_ids[det_idx])
@@ -1424,7 +1457,7 @@ def _fmt_net(v):
 
 def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=None,
         show_piste=False, stabilise_camera=False, fixed_scale_calibration=True,
-        reanchor_path=None, progress=False, nearest_candidates=False):
+        reanchor_path=None, progress=False, nearest_candidates=True):
     """
     Process one video end to end.
 
@@ -1836,17 +1869,17 @@ def main():
                              "clip, enabling it made the worst net displacement worse, "
                              "21.88 -> 37.34 m, while helping the three fixed-camera clips "
                              "only slightly.")
-    parser.add_argument("--nearest-candidates", action="store_true",
-                        help="Choose each frame's candidate detections by "
-                             "proximity to where the fencers are expected, "
-                             "rather than by taking the two most confident. OFF "
-                             "by default because it changes every figure the "
-                             "report quotes. Measured motivation: across clip "
-                             "2's bystander capture there are always three "
-                             "detections inside the piste, the referee stands on "
-                             "the strip so the region filter cannot remove him, "
-                             "and the confidence cut discards a real fencer in 9 "
-                             "of 16 sampled frames on margins around 0.01.")
+    parser.add_argument("--confidence-candidates", action="store_true",
+                        help="Revert to choosing each frame's candidate "
+                             "detections as the two most confident, rather than "
+                             "the two nearest to where the fencers are expected. "
+                             "This was the behaviour up to 29 Aug 2026 and every "
+                             "figure in the draft report was produced with it, "
+                             "so it is kept for reproducing them. It is worse: "
+                             "the referee stands on the strip so the piste filter "
+                             "cannot remove him, and the confidence cut then "
+                             "discards a real fencer in 9 of 16 sampled frames "
+                             "on margins around 0.01.")
     parser.add_argument("--progress", action="store_true",
                         help="Print a machine-readable 'PROGRESS done total' line "
                              "as processing advances, for a caller that is "
@@ -1862,7 +1895,7 @@ def main():
         stabilise_camera=args.stabilise,
         fixed_scale_calibration=not args.no_fixed_scale,
         reanchor_path=args.reanchors, progress=args.progress,
-        nearest_candidates=args.nearest_candidates)
+        nearest_candidates=not args.confidence_candidates)
 
 
 if __name__ == "__main__":

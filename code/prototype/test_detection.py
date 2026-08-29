@@ -1577,6 +1577,66 @@ class TestReanchor:
             t.reanchor(2, 100.0, 100.0)
 
 
+class TestAssignmentTies:
+    """
+    Cost ties in the two-detection matcher are routine, not a curiosity, and for
+    a long time they were broken by whatever order the candidate list happened to
+    be in. Three behaviours rested on that and all three flipped when the
+    ordering changed: re-anchor recovery (565 against 565), far-bystander
+    rejection (1455 against 1455), and the clip-2 capture itself.
+
+    A sum ties whenever one slot's fencer is absent, because that slot
+    contributes a large distance to both assignments and drowns the difference.
+    """
+
+    def _box(self, cx, cy, h=300.0, w=100.0):
+        return np.array([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2])
+
+    def test_a_tie_prefers_the_assignment_with_one_excellent_match(self):
+        """
+        Slot 0's fencer has gone and a bystander is far to the right. Both
+        assignments cost 1455. The right answer pairs slot 1 with the detection
+        5 px from it and leaves slot 0 unmatched, rather than giving slot 0 a
+        355 px match and slot 1 an 1100 px one.
+        """
+        t = FencerTracker()
+        t.select(np.array([5, 7]),
+                 np.array([self._box(100, 250), self._box(450, 250)]),
+                 np.array([0.9, 0.8]))
+
+        slots = t.select(np.array([9, 7]),
+                         np.array([self._box(1550, 250),   # bystander, far away
+                                   self._box(455, 250)]),  # fencer 2, 5 px away
+                         np.array([0.95, 0.85]))
+
+        assert slots[0] is None, "the bystander was allowed to steal slot 0"
+        assert slots[1] is not None
+        cx = (slots[1][0][0] + slots[1][0][2]) / 2
+        assert abs(cx - 455) < 1, f"slot 1 should hold the near fencer, got {cx}"
+
+    def test_the_outcome_does_not_depend_on_candidate_order(self):
+        """
+        The property that was missing. Presenting the same two detections in the
+        other order must give the same assignment; when it did not, the tests
+        that appeared to demonstrate the tracker's behaviour were reading the
+        list order back to themselves.
+        """
+        def run(swap):
+            t = FencerTracker()
+            t.select(np.array([5, 7]),
+                     np.array([self._box(100, 250), self._box(450, 250)]),
+                     np.array([0.9, 0.8]))
+            boxes = [self._box(1550, 250), self._box(455, 250)]
+            ids, confs = [9, 7], [0.95, 0.85]
+            if swap:
+                boxes, ids, confs = boxes[::-1], ids[::-1], confs[::-1]
+            slots = t.select(np.array(ids), np.array(boxes), np.array(confs))
+            return [None if s is None else round((s[0][0] + s[0][2]) / 2)
+                    for s in slots]
+
+        assert run(swap=False) == run(swap=True)
+
+
 class TestReanchorAgainstRealFailure:
     """
     The clip-2 failure, reconstructed from its measured numbers.
