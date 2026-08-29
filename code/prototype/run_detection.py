@@ -705,6 +705,9 @@ class FencerTracker:
         self.last_pos  = [None, None]   # last (x, y) centre per slot
         self.prev_pos  = [None, None]   # centre one commit before last_pos
         self.last_h    = [None, None]   # last accepted box height per slot
+        # A point the user clicked, held for exactly one frame so the next
+        # select() can force the detection there into the candidate set.
+        self.pending_anchor = [None, None]
         self.last_seen = [None, None]   # frame number of the last commit
         self.prev_seen = [None, None]   # frame number of the commit before that
         self.frame_no  = 0
@@ -737,6 +740,12 @@ class FencerTracker:
         self.prev_seen[slot_idx] = None
         self.last_seen[slot_idx] = self.frame_no
         self.last_h[slot_idx]    = None
+        # Remember the clicked POINT as well as the moved anchor, so the next
+        # select() can guarantee the detection there is actually a candidate.
+        # Without this the correction is silently unable to take effect whenever
+        # the clicked fencer is not among the most confident detections; see the
+        # note in select().
+        self.pending_anchor[slot_idx] = (float(x), float(y))
 
     def predicted_pos(self, slot_idx):
         """
@@ -812,7 +821,71 @@ class FencerTracker:
             return result
 
         # take the two most confident person detections this frame
-        order      = np.argsort(confs)[::-1][:max_fencers]
+        order = list(np.argsort(confs)[::-1][:max_fencers])
+
+        # A user correction names a POSITION, and the detection at that position
+        # has to survive this cut or the correction cannot possibly take effect.
+        #
+        # WHY THIS IS NOT HYPOTHETICAL. Measured on clip 2 at frame 8590, the
+        # frame where the tracker visibly loses a fencer to the referee. Three
+        # detections pass the piste filter: the referee at confidence 0.899, the
+        # far fencer at 0.896, and the fencer a user would click at 0.886. The
+        # cut above keeps the first two, so the right answer was discarded by a
+        # margin of 0.010 before any anchor was consulted. A correction placed 4
+        # px from that fencer's centre, on the correct slot, at the correct
+        # frame, changed nothing at all: the run was byte-identical to its
+        # baseline. Action 4 was implemented exactly as specified, passed its
+        # unit tests, and could not repair the failure it exists for, because a
+        # stage upstream had already thrown the answer away.
+        #
+        # Surviving the cut is necessary and not sufficient. The clicked
+        # detection must then be GIVEN to the slot that was corrected. Leaving
+        # that to the ordinary cost matching was the original design, reasoning
+        # that a click says where the fencer is rather than which box is right.
+        # That reasoning is elegant, and the consequence is that the correction
+        # does not hold: in the unit test that supposedly demonstrated recovery,
+        # the straight and swapped assignments each cost 565 px and the slot got
+        # its fencer back only because `<=` happened to break the tie that way.
+        # Reordering the candidates flips it. A mechanism the project relies on
+        # cannot rest on a tie-break.
+        #
+        # Both behaviours apply only on the frame a correction lands on, so
+        # ordinary tracking is untouched and the evaluation figures reproduce.
+        pending = list(self.pending_anchor)
+        self.pending_anchor = [None, None]
+        forced = {}
+        for slot, point in enumerate(pending):
+            if point is None:
+                continue
+            nearest = min(range(len(xyxys)),
+                          key=lambda i: pixel_distance(get_box_centre(xyxys[i]),
+                                                       point))
+            if nearest not in forced.values():
+                forced[slot] = nearest
+
+        if forced:
+            for slot, det in forced.items():
+                # Committed without gating. The gates reject candidates the
+                # tracker cannot vouch for, and the user has just vouched for
+                # this one; a correction the size gate could veto would be unable
+                # to overrule the rejection that caused the failure.
+                self._commit(result, slot, xyxys[det], int(ids[det]))
+            # Whatever is left goes to the other slot by the ordinary rules, so
+            # correcting one fencer does not disturb the other.
+            free_slot = next((i for i in (0, 1) if i not in forced), None)
+            if free_slot is not None:
+                anchor = self.predicted_pos(free_slot) or self.last_pos[free_slot]
+                remaining = [i for i in range(len(xyxys))
+                             if i not in forced.values()]
+                if remaining and anchor is not None:
+                    best = min(remaining,
+                               key=lambda i: pixel_distance(get_box_centre(xyxys[i]),
+                                                            anchor))
+                    if self._passes_gate(free_slot, get_box_centre(xyxys[best]),
+                                         box_height_pixels(xyxys[best])):
+                        self._commit(result, free_slot, xyxys[best], int(ids[best]))
+            return result
+
         boxes      = [xyxys[i]              for i in order]
         chosen_ids = [int(ids[i])           for i in order]
         centres    = [get_box_centre(b)     for b in boxes]

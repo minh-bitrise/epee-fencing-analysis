@@ -47,21 +47,25 @@ tenth frame, take the pair of detections at the same apparent depth (NOT the two
 broadcast footage the nearest person is the referee), cluster their feet-y and keep the largest
 group, then set the edges just outside it.
 
-It reproduces the hand-authored polygon exactly on clip 2, the hardest one. On clips 1 and 4 the
-distance distribution's tail changes; whether that is worse is NOT yet established, see the caveat.
+It reproduces the hand-authored polygon exactly on clip 2, the hardest one, and is worse on clips
+1 and 4, where the strip recedes from the camera so other people stand at the same apparent depth
+as its far end and no horizontal band can separate them.
 
-| clip | coverage hand / derived | >6 m rate hand / derived |
-|------|-------------------------|--------------------------|
-| 1 | 92.9% / 92.5% | 0.01% / 0.37% |
-| 2 | 98.0% / 98.0% | 2.78% / 2.78% |
-| 4 | 73.7% / 75.9% | 4.95% / 6.96% |
+Quote the TELEPORT column, not coverage. A slot that switches onto another person jumps metres of
+piste between consecutive frames and a fencer cannot, so it is a direct signature of wrong-target
+capture. Coverage is not: on clip 4 it moves the opposite way to the truth.
 
-**The 6 m threshold is a weak proxy and should not be quoted as a defect count.** Checked against
-frames: clip 4 at 86.0 s reads 7.44 m and shows two real fencers genuinely far apart during a
-reset, because the shot is wide and they were walking back to their guard lines. A raised rate can
-mean a bystander was captured OR that resets are tracked more completely, and those are opposite
-verdicts. Use single-frame position jumps over 1.5 m instead: a slot switching person teleports and
-a fencer cannot. Measured on the reference outputs, clip 1: 2, clip 2: 15, clip 4: 114.
+| clip | coverage hand / derived | teleports per 1k tracked, hand / derived |
+|------|-------------------------|------------------------------------------|
+| 1 | 92.9% / 92.5% | 0.20 / 5.21 |
+| 2 | 98.0% / 98.0% | 1.70 / 1.70 |
+| 4 | 73.7% / **75.9%** | 27.15 / **42.97** |
+
+**Do not use "readings over 6 m" as a defect count**, which an earlier version of this section did.
+Checked against frames: clip 4 at 86.0 s reads 7.44 m and shows two real fencers genuinely far
+apart during a reset, because the shot is wide and they were walking back to their guard lines. A
+raised rate there can mean a bystander was captured OR that resets are tracked more completely, and
+those are opposite verdicts.
 
 **Keep using the hand-authored configs for anything the report quotes.** The derived ones exist so
 that an uploaded video, which has no config at all, gets something measured rather than nothing,
