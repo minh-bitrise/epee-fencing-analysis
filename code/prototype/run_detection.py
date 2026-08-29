@@ -701,7 +701,32 @@ class FencerTracker:
     # history never updates.
     STALE_RESET_FRAMES = 30
 
-    def __init__(self):
+    def __init__(self, nearest_candidates=False):
+        # `nearest_candidates` changes which detections are eligible each frame.
+        #
+        # OFF (the default, and how every figure in the evaluation was produced):
+        # the two most confident detections are taken and everything else is
+        # discarded before any anchor is consulted.
+        #
+        # ON: the two detections NEAREST each slot's predicted position are taken
+        # instead, from everything that survived the piste filter.
+        #
+        # WHY THE OPTION EXISTS. The confidence cut assumes the two fencers are
+        # the two most confident people in frame, and on competition footage that
+        # is measurably false. Across clip 2's six-second bystander capture there
+        # are always exactly three detections inside the piste, both fencers and
+        # the referee, who stands ON the strip so the region filter cannot remove
+        # him. The left fencer is detected in every sampled frame and yet the cut
+        # discards them in 9 of 16, flickering between first and third place on
+        # confidence margins around 0.01. The tracker is therefore choosing
+        # between three people using what is essentially noise, which is the root
+        # of both documented failure modes: bystander capture, and the
+        # close-range identity flicker.
+        #
+        # Defaulted OFF because turning it on changes every number the report
+        # quotes, and that is the author's decision to make on measured evidence
+        # rather than a change to slip in. See TODO C4.
+        self.nearest_candidates = nearest_candidates
         self.last_pos  = [None, None]   # last (x, y) centre per slot
         self.prev_pos  = [None, None]   # centre one commit before last_pos
         self.last_h    = [None, None]   # last accepted box height per slot
@@ -822,6 +847,21 @@ class FencerTracker:
 
         # take the two most confident person detections this frame
         order = list(np.argsort(confs)[::-1][:max_fencers])
+
+        # ...or, with nearest_candidates on, the two nearest to where the slots
+        # are expected to be. Confidence says how sure the detector is that a
+        # person is there, which is not the question: every person in the piste
+        # region is a confident detection, and the question is which two of them
+        # are the fencers being tracked. Proximity to a slot's predicted position
+        # answers that; a confidence ranking separated by 0.01 does not.
+        if self.nearest_candidates:
+            anchors = [self.predicted_pos(s) or self.last_pos[s] for s in (0, 1)]
+            known = [a for a in anchors if a is not None]
+            if known:
+                order = sorted(
+                    range(len(xyxys)),
+                    key=lambda i: min(pixel_distance(get_box_centre(xyxys[i]), a)
+                                      for a in known))[:max_fencers]
 
         # A user correction names a POSITION, and the detection at that position
         # has to survive this cut or the correction cannot possibly take effect.
@@ -1384,7 +1424,7 @@ def _fmt_net(v):
 
 def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=None,
         show_piste=False, stabilise_camera=False, fixed_scale_calibration=True,
-        reanchor_path=None, progress=False):
+        reanchor_path=None, progress=False, nearest_candidates=False):
     """
     Process one video end to end.
 
@@ -1421,7 +1461,7 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(out_video, fourcc, fps, (width, height))
 
-    fencer_tracker = FencerTracker()
+    fencer_tracker = FencerTracker(nearest_candidates=nearest_candidates)
     push_pull      = PushPullTracker(n_fencers=2)
     reanchors      = {}
     reanchors_applied = 0
@@ -1796,6 +1836,17 @@ def main():
                              "clip, enabling it made the worst net displacement worse, "
                              "21.88 -> 37.34 m, while helping the three fixed-camera clips "
                              "only slightly.")
+    parser.add_argument("--nearest-candidates", action="store_true",
+                        help="Choose each frame's candidate detections by "
+                             "proximity to where the fencers are expected, "
+                             "rather than by taking the two most confident. OFF "
+                             "by default because it changes every figure the "
+                             "report quotes. Measured motivation: across clip "
+                             "2's bystander capture there are always three "
+                             "detections inside the piste, the referee stands on "
+                             "the strip so the region filter cannot remove him, "
+                             "and the confidence cut discards a real fencer in 9 "
+                             "of 16 sampled frames on margins around 0.01.")
     parser.add_argument("--progress", action="store_true",
                         help="Print a machine-readable 'PROGRESS done total' line "
                              "as processing advances, for a caller that is "
@@ -1810,7 +1861,8 @@ def main():
         piste_config=args.piste_config, show_piste=args.show_piste,
         stabilise_camera=args.stabilise,
         fixed_scale_calibration=not args.no_fixed_scale,
-        reanchor_path=args.reanchors, progress=args.progress)
+        reanchor_path=args.reanchors, progress=args.progress,
+        nearest_candidates=args.nearest_candidates)
 
 
 if __name__ == "__main__":
