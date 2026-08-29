@@ -24,6 +24,7 @@ export default function ReviewView({ initialBoutId }) {
   const [anchorOut, setAnchorOut] = useState(null)
   const [listError, setListError] = useState(null)
   const [outcomes, setOutcomes] = useState(null)
+  const [scorers, setScorers] = useState(null)
   const videoRef = useRef(null)
   // Guards against keystrokes arriving mid-request. A ref rather than state
   // because the keyboard handler has to read the current value at the moment the
@@ -73,6 +74,7 @@ export default function ReviewView({ initialBoutId }) {
     setExportOut(null)
     setAnchorOut(null)
     setOutcomes(null)
+    setScorers(null)
   }, [boutId])
 
   const jumpedRef = useRef(null)
@@ -302,6 +304,21 @@ export default function ReviewView({ initialBoutId }) {
     } catch (e) { setAnchorOut({ error: e.message }) }
   }
 
+  // Read the scoring lamps and propose who scored each confirmed touch. Which
+  // fencer the green lamp belongs to has to come from the user: nothing in the
+  // image says it, and guessing would be wrong half the time in a way that looks
+  // authoritative.
+  const proposeScorers = async (greenIs) => {
+    setScorers({ loading: true })
+    try {
+      const r = await api(`${boutPath(boutId)}/propose-scorers`,
+                          postJSON({ green_is: greenIs }))
+      setScorers(r)
+    } catch (e) {
+      setScorers({ error: e.message })
+    }
+  }
+
   const exportAnchors = async () => {
     setAnchorOut({ text: 'exporting...' })
     try {
@@ -386,7 +403,24 @@ export default function ReviewView({ initialBoutId }) {
         <div className="panel">
           <h2>Proposed touches</h2>
           <TouchTable rows={rows} selIdx={selIdx} onSelect={select}
-                      onDecide={decide} onDelete={removeAdded} />
+                      onDecide={decide} onDelete={removeAdded}
+                      scorerProposals={scorers?.proposals} />
+
+          <div className="row" style={{ marginTop: 9 }}>
+            <span className="mini">Read the lamps, green belongs to:</span>
+            <button onClick={() => proposeScorers('left')}>Fencer 1</button>
+            <button onClick={() => proposeScorers('right')}>Fencer 2</button>
+          </div>
+          {scorers?.loading && <div className="mini">reading the lamps...</div>}
+          {scorers?.error && <div className="note err">{scorers.error}</div>}
+          {scorers?.proposals && (
+            <div className="note">
+              Proposed a scorer for <b>{scorers.decided}</b> of{' '}
+              {scorers.total} confirmed touches, shown in the table as
+              suggestions. {scorers.basis}.
+              <br /><br />{scorers.note}
+            </div>
+          )}
           <form className="row" style={{ marginTop: 10 }} onSubmit={addTouchByTime}>
             <input name="time" type="number" step="0.1" placeholder="time (s)" required
                    style={{ width: 110 }} />

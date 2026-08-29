@@ -891,6 +891,92 @@ def get_reanchor_outcomes(bout_id: str):
     }
 
 
+class ScorerRequest(BaseModel):
+    """
+    Which fencer the green lamp belongs to.
+
+    Required, with no default, because nothing in the image says it and a guess
+    would be wrong half the time in a way that looks authoritative. It is one
+    confirmation per bout, which the design already asks the user for in the same
+    spirit as the piste region.
+    """
+    green_is: str = Field(..., pattern="^(left|right)$")
+
+
+@app.post("/api/bouts/{bout_id}/propose-scorers")
+def propose_scorers(bout_id: str, body: ScorerRequest):
+    """
+    Read the scoring lamps and propose who scored each confirmed touch.
+
+    WHY THIS RUNS IN THE REQUEST. It decodes a handful of frames per touch and
+    loads no models, so it costs seconds rather than the minutes a pipeline stage
+    takes. The rule that inference stays out of the request path is about the
+    models; this is colour thresholding.
+
+    WHY IT ONLY LOOKS AT TOUCHES THE USER HAS CONFIRMED. The lamps fire whenever
+    the circuit closes, which includes fencers testing weapons against the piste
+    or each other's guards, routinely just after a touch and before coming back
+    on guard. Reading them only at times a touch is already known to have
+    happened sidesteps that whole class of spurious firing, and it is why this
+    can never become a touch detector.
+
+    Proposals are returned rather than applied. The user still confirms each one,
+    which is the same contract as every other suggestion the system makes.
+    """
+    b = _get_bout(bout_id)
+    source, _ = _source_for_bout(bout_id, b)
+    if not source:
+        raise HTTPException(
+            404, "the original video for this bout could not be found, and the "
+                 "lamps cannot be read from the annotated render because it is "
+                 "re-encoded.")
+
+    proposed = load_proposed_touches(b.touches_csv)
+    confirmed = store.confirmed_touch_times(bout_id, proposed)
+    if not confirmed:
+        raise HTTPException(
+            400, "no touches confirmed yet. The lamps are read only at times a "
+                 "touch is already known to have happened, because they also "
+                 "fire when fencers test their weapons.")
+
+    from detect_scorer import classify, fit_thresholds, lamp_response
+
+    times = [c["time_s"] for c in confirmed]
+    responses = lamp_response(source, times)
+
+    # Calibrate on whatever the user has already attributed by hand. With none,
+    # fall back to fitting on the responses themselves, which is weaker and is
+    # reported as such rather than presented as the same thing.
+    labelled = [(r, c["scorer"]) for r, c in zip(responses, confirmed)
+                if c.get("scorer") in ("left", "right", "double")]
+    if labelled:
+        th = fit_thresholds([r for r, _ in labelled],
+                            [l for _, l in labelled], green_is=body.green_is)
+        basis = f"calibrated on {len(labelled)} touch(es) you already attributed"
+    else:
+        th = fit_thresholds(responses, ["unknown"] * len(responses),
+                            green_is=body.green_is)
+        basis = ("no touches attributed yet, so the thresholds are guessed from "
+                 "the lamp readings alone and are weaker than they would be "
+                 "after you attribute two or three by hand")
+
+    out = []
+    for c, r in zip(confirmed, responses):
+        pred = classify(r, th)
+        out.append({"time_s": c["time_s"], "current": c.get("scorer"),
+                    "proposed": pred["scorer"], "confidence": pred["confidence"],
+                    "red_delta": round(r["red"], 1),
+                    "green_delta": round(r["green"], 1)})
+    decided = sum(1 for o in out if o["proposed"] != "unknown")
+    return {"proposals": out, "basis": basis, "decided": decided,
+            "total": len(out),
+            "note": ("The green lamp is the reliable half. Measured across all "
+                     "four evaluation clips it identified whether one named "
+                     "fencer was involved in 27 touches out of 27; telling a "
+                     "single touch from a double needs the red lamp, which is "
+                     "contaminated by anything permanently red in shot.")}
+
+
 @app.post("/api/bouts/{bout_id}/summary/generate")
 def generate_summary_for_bout(bout_id: str, force: bool = False):
     """

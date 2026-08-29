@@ -968,6 +968,80 @@ observation, and so its reproducible production by the prototype is itself a mea
 result: the prototype can already generate metrics that distinguish bouts at a level of detail
 that manual analysis cannot match.
 
+### Attributing a touch to a fencer
+
+The detector reports when a touch happened and never who scored, so the scoring
+fencer was the one field of the design's touch record that could only originate
+with the user. `detect_scorer.py` proposes it by reading the piste-side scoring
+machine's lamps.
+
+Lamps rather than a score overlay, because a broadcast usually carries both but
+club footage carries only the machine, and the club case is the project's target
+user. Whole-frame saturated-colour counts rather than a region around the machine,
+because club footage is hand-held and follows the action, so the machine drifts
+across the frame and out of it; a fixed region is empty much of the time. A local
+baseline taken two to three seconds earlier removes what is permanently red in
+shot, which on these clips means an EXIT sign, sponsor banners and the piste.
+
+It is never permitted to propose touches, only to attribute ones already found.
+The lamps fire whenever the circuit closes, which includes fencers testing weapons
+against the piste or each other's guards, routinely just after a touch and before
+coming back on guard. Taking touch times as given removes that entire failure
+class rather than attempting to filter it.
+
+Evaluated leave-one-out against the scorer column already present in all four
+ground-truth files, so it required no additional labelling:
+
+| clip | three-way (left/right/double) | green lamp alone |
+|---|---|---|
+| 1 | 3/3 | 3/3 |
+| 2 | 2/4 | 4/4 |
+| 3 | 9/14 | 14/14 |
+| 4 | 4/6 | 6/6 |
+| **all** | **18/27 (67%)** | **27/27 (100%)** |
+
+The green lamp is reliable and the red lamp is not, and nearly every three-way
+error is a red-lamp error: red is contaminated by everything permanently red in
+frame and no local baseline removes it entirely when the camera pans. The claim
+this supports is therefore narrower than "the system says who scored". It is that
+**the system always identifies whether one named fencer was involved**, which
+fully determines the 11 touches of 27 where they were not and reduces the other 16
+from a three-way decision to a two-way one.
+
+This is classical colour thresholding and adds no fourth pre-trained model. The
+colour-to-side mapping is confirmed once per bout by the user, since nothing in
+the image indicates whether the green lamp belongs to the fencer on the left.
+
+### Lunge detection, calibrated per bout
+
+B1j established that the stance ratio is not view-invariant: an operating point
+fitted on clip 3 does not survive clip 2, reaching F1 0.22 and 0.29 while firing
+on a quarter of all windows. `detect_lunges.py` stops attempting to transfer it
+and calibrates instead from the first five lunges the user has confirmed on the
+bout being watched, which reuses the interactive-correction mechanism the design
+already depends on rather than adding a demand on the user.
+
+The magnitude of the transfer problem, stated directly: clip 3 calibrates to a
+stance ratio of 1.902 and clip 2 to 2.706, a 42 per cent difference in what
+constitutes a lunge-like posture.
+
+Calibrating on the first five confirmed lunges and testing only on those that
+follow, so no lunge informs its own proposal:
+
+| case | test lunges | precision | recall | F1 | lift over chance |
+|---|---|---|---|---|---|
+| clip 3, Fencer 2 | 25 | 0.73 | 0.76 | **0.75** | 9.3x |
+| clip 2, Fencer 2 | 2 | 0.50 | 1.00 | 0.67 | 54x |
+| cross-clip threshold (B1j) | - | 0.12 | 1.00 | **0.22** | 6.4x |
+
+Only the clip-3 row carries evidential weight; clip 2's test sets contain two and
+four lunges. Two caveats attach to every figure here. Precision is a lower bound,
+because a firing on a real but unlabelled lunge counts against it, and B1h
+measured roughly 40 wide-stance episodes per minute against about 10 labelled
+lunges. And the result rests on two clips and one labeller, so the claim is not
+that lunge detection works, but that per-bout calibration works where transfer
+does not.
+
 ### Detection coverage
 
 Coverage of 82-87% (both fencers detected and assigned to their stable slots) is well above

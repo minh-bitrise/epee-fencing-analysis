@@ -9,7 +9,13 @@ import { useEffect, useRef } from 'react'
  * proposal next to a large separation is a different thing to judge than a
  * high-confidence one, and the user cannot tell them apart otherwise.
  */
-export default function TouchTable({ rows, selIdx, onSelect, onDecide, onDelete }) {
+export default function TouchTable({ rows, selIdx, onSelect, onDecide, onDelete,
+                                     scorerProposals }) {
+  // Proposed scorers, keyed by the time they belong to. Matched on time rather
+  // than id because the proposal is made against the CONFIRMED touch list, which
+  // merges detector proposals and hand-added touches under different ids.
+  const proposedFor = (at) => scorerProposals?.find(
+    (p) => Math.abs(p.time_s - at) < 0.3)
   const selRef = useRef(null)
 
   // Keep the cursor visible during a keyboard walk. Without this the selection
@@ -64,7 +70,18 @@ export default function TouchTable({ rows, selIdx, onSelect, onDecide, onDelete 
               <td>{r.at.toFixed(1)}s</td>
               <td>{r.confidence.toFixed(2)}</td>
               <td>{r.separation_m != null ? `${r.separation_m.toFixed(2)}m` : '-'}</td>
-              <td>{r.scorer ?? '-'}</td>
+              <td>
+                {r.scorer ?? (() => {
+                  const p = proposedFor(r.at)
+                  // Shown as a suggestion, visibly distinct from a decision the
+                  // user has made. The lamp reading is evidence, not an answer.
+                  return p && p.proposed !== 'unknown'
+                    ? <span className="suggest" title={`green delta ${p.green_delta}, red delta ${p.red_delta}`}>
+                        {p.proposed}?
+                      </span>
+                    : '-'
+                })()}
+              </td>
               <td>{r.state}</td>
               <td>
                 <button onClick={(e) => { e.stopPropagation(); onDecide(r.id, 'confirmed') }}>

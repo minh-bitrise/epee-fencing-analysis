@@ -141,3 +141,7 @@ label.opt { display:flex; gap:6px; align-items:center; color:var(--muted);
 
 .md-h { font-size:12px; margin:10px 0 4px; text-transform:uppercase;
         letter-spacing:.05em; color:var(--muted); }
+
+/* A proposed scorer is a suggestion, not a decision, and must not be mistaken
+   for one the user has already made. */
+.suggest { color: var(--warn); font-style: italic; }

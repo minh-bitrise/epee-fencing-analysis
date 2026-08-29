@@ -464,3 +464,29 @@ class TestApiKeyResolution:
         monkeypatch.setattr(appmod.subprocess, "run", lambda *a, **k: Result())
         assert appmod._load_api_key_from_keychain() is None
         assert "ANTHROPIC_API_KEY" not in os.environ
+
+
+class TestScorerProposals:
+    """
+    The endpoint that turns lamp readings into proposed scorers.
+
+    It reads only at times a touch is already confirmed, which is the whole
+    reason it is safe: the lamps also fire when fencers test weapons against the
+    piste or each other's guards, routinely just after a touch.
+    """
+
+    def test_refuses_without_a_green_side(self, client):
+        # Nothing in the image says which fencer the green lamp belongs to, so a
+        # default would be wrong half the time while looking authoritative.
+        r = client.post("/api/bouts/whatever/propose-scorers", json={})
+        assert r.status_code == 422
+
+    def test_rejects_a_meaningless_side(self, client):
+        r = client.post("/api/bouts/whatever/propose-scorers",
+                        json={"green_is": "middle"})
+        assert r.status_code == 422
+
+    def test_unknown_bout_is_a_404(self, client):
+        r = client.post("/api/bouts/nope:nope/propose-scorers",
+                        json={"green_is": "right"})
+        assert r.status_code == 404
