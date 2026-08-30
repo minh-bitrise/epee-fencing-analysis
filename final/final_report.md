@@ -1419,22 +1419,88 @@ A few observations about the development process itself, worth recording while s
 
 ## 6. Conclusion
 
-*(Placeholder - to be written at the end of the project.)*
+### Against the original aims
 
----
+The project set out to orchestrate several pre-trained models into a system that helps a
+fencer analyse a bout, on the argument that unreliable computer vision becomes useful when a
+person can repair each class of error cheaply. Three models were orchestrated in a genuine
+chain rather than demonstrated side by side: YOLOv8 detections bound the region MediaPipe Pose
+works in, pose landmarks supply the ground reference the distance series is measured from,
+that series drives touch proposal, the confirmed touches scope every aggregate, and those
+aggregates are what the language model is given to interpret. Each stage consumes the previous
+one, and a defect in an early stage propagates, which section 5.4 demonstrates rather than
+assumes.
 
+The measurable outcomes are strongest where the evidence is strongest. Touch detection reaches
+F1 0.85 across the three 720p clips against hand-labelled ground truth, and confirming its
+proposals costs six corrections where labelling from scratch would cost twenty-one. Tracking
+holds both fencers in 93 to 98 per cent of frames on three of four clips. Attribution of a
+touch to a fencer, which the detector could never supply, now identifies whether one named
+fencer was involved in all twenty-seven labelled touches. These are the claims the project can
+defend.
+
+The central claim is not among them. That assisted review is faster than manual review has
+never been measured, and the corrections figures that stand in for it weight a rejection and a
+manual addition equally, which is known to be false. Section 5.9 states this rather than
+softening it, and it remains the largest gap between what the design argues and what the
+evidence supports.
+
+### What the project learned about its own method
+
+The most transferable outcome is methodological, and it recurred often enough to be treated as
+a finding rather than a series of accidents. **Five separate defects passed their tests while
+measuring the wrong thing.** A distance-band classifier used thresholds invented rather than
+derived, and inverted a clip's headline reading once corrected. A movement metric accumulated
+its own smoothing and reported twenty-four metres of travel on a fourteen-metre piste. A
+resolution ablation varied a quantity the detector never sees, so its flat result was
+guaranteed in advance. A piste polygon placed by eye raised coverage while quadrupling the
+count of physically impossible readings. And the tracker chose between three people using
+confidence margins of about 0.01, which is noise, for the whole life of the project.
+
+Each was invisible to unit testing because each was implemented exactly as specified. What
+exposed them was measurement against reality: a physical constraint the sport imposes, a
+held-back clip, a metric chosen because it could only move one way. The practical rules the
+project ended with are that a parameter should be derived from data rather than chosen, that a
+single-clip result establishes nothing until a held-back clip agrees, and that a headline
+metric improving is not evidence when a second metric can move the opposite way. Clip 4
+demonstrated that last point twice: coverage rose while wrong-target capture also rose.
+
+The corollary is uncomfortable and worth stating. Wrong-target capture was presented for most
+of the project as evidence for the assisted-annotation design, on the reasoning that computer
+vision fails this way and so a user must be able to repair it. It was a defect in candidate
+selection, and on three of four clips it no longer occurs. The design argument survives on the
+failures that remain, but a substantial amount of design effort went into accommodating a bug.
+
+### Limitations
+
+Four qualify everything above. There is **no user evaluation**, so the effort claim is
+unevidenced. **Pose does not earn its place**: it improves the distance measurement, but its
+headline application to lunge detection produced an operating point that did not survive a
+change of camera, and only per-bout calibration made it usable at all. **The sample is four
+clips and one labeller**, three of them competition footage, so figures are plausibly
+optimistic for the club setting that is the target use case. And **there is no frame-level
+tracking ground truth**, so coverage measures whether the tracker committed to a detection,
+not whether it committed to the right person.
 
 ### Future work
 
-Future work falls into four categories: (i) tracker robustness, with piste-region detection,
-a motion / velocity model, and an appearance re-ID embedding as the three candidate paths;
-(ii) event handling and the assisted-annotation UI, which is the design's answer to the
-prototype's failure modes; (iii) richer derived metrics (engagement-vs-reset distance, tempo,
-distance bands, leading-vs-trailing behaviour, per-fencer trajectories); and (iv) the
-remaining two pre-trained models needed to satisfy the project brief - notably an LLM for the
-written tactical summary. The full web-application shell (React frontend, FastAPI backend,
-database) and GPU-accelerated processing complete the path from prototype to deployable
-system. Detailed task-level breakdown is maintained in `TODO.md` Part B.
+The immediate work is evaluative rather than technical. A user study measuring review time
+against a manual baseline would settle the project's central claim, and weighting corrections
+by their true cost would repair a metric the report currently qualifies. Both need
+participants rather than code.
+
+Technically, three directions follow from measured failures rather than from ambition. An
+appearance-based re-identification embedding is the remaining lever against wrong-target
+capture, since a spatial filter cannot separate a referee standing on the piste from a fencer.
+Clip 4's Fencer 2 still reports an implausible seven metres of net displacement, which the
+candidate-selection fix did not explain and which therefore has a cause still unidentified.
+And lunge detection rests on two clips and one labeller, so more labelled footage would
+establish whether per-bout calibration generalises or merely fitted twice.
+
+Beyond that, reading the score overlay with OCR would add a fourth pre-trained model and
+recover the single-versus-double distinction the lamps cannot reliably provide, and GPU
+processing would remove the roughly two-times-real-time cost that currently shapes what a user
+will sit through. A task-level breakdown is maintained in `TODO.md`.
 
 ---
 
