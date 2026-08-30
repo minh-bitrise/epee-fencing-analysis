@@ -31,7 +31,7 @@ export default function ReviewView({ initialBoutId }) {
   // key is pressed, and a state variable captured in a closure would be stale.
   const busy = useRef(false)
 
-  const { data, metrics, error, reload } = useBout(boutId)
+  const { data, metrics, error, metricsError, reload } = useBout(boutId)
   const rows = useMemo(() => mergeRows(data), [data])
 
   // --- bout list ---------------------------------------------------------
@@ -549,7 +549,9 @@ export default function ReviewView({ initialBoutId }) {
 
         <div className="panel">
           <h2>Metrics</h2>
-          <MetricsPanel metrics={metrics} />
+          {metricsError
+            ? <div className="note">{metricsError}</div>
+            : <MetricsPanel metrics={metrics} />}
         </div>
 
         {error && <div className="panel err">{error}</div>}

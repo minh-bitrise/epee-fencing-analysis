@@ -19,4 +19,12 @@ export default defineConfig({
     emptyOutDir: true,
   },
   base: '/app/',
+  // jsdom rather than a real browser: these test the components' logic and the
+  // decisions encoded in them, not rendering. Anything that needs a real browser
+  // is verified by driving one against the running server instead.
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test-setup.js'],
+  },
 })

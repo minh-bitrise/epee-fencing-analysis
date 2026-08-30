@@ -306,7 +306,23 @@ def get_metrics(bout_id: str):
 
     b = _get_bout(bout_id)
     rows = load_rows(b.metrics_csv)
-    whole = compute_stats(rows)
+    try:
+        whole = compute_stats(rows)
+    except ValueError as e:
+        # A bout where the tracker never held both fencers at once has no
+        # distance samples, and every statistic here is derived from them. That
+        # is a real outcome rather than a broken file: an upload shot from behind
+        # the piste, or one showing a single fencer drilling, produces exactly
+        # this. Raising through as a 500 told the user only that something had
+        # gone wrong, when what they need is to know their footage did not track
+        # and why that is not a crash. Found by the end-to-end test, on a bout
+        # whose subject the detector never recognised as people at all.
+        raise HTTPException(
+            422, f"this bout has no usable measurements: {e}. The tracker never "
+                 f"held both fencers in the same frame, so there is nothing to "
+                 f"scope or aggregate. The annotated video is still viewable, "
+                 f"and the usual cause is framing: both fencers have to be in "
+                 f"shot and roughly side-on.")
 
     proposed = load_proposed_touches(b.touches_csv)
     confirmed = store.confirmed_touch_times(bout_id, proposed)

@@ -15,29 +15,38 @@ export function useBout(boutId) {
   const [data, setData] = useState(null)
   const [metrics, setMetrics] = useState(null)
   const [error, setError] = useState(null)
+  const [metricsError, setMetricsError] = useState(null)
   const [loading, setLoading] = useState(false)
 
   const reload = useCallback(async () => {
     if (!boutId) return
     setLoading(true)
-    try {
-      const [touches, m] = await Promise.all([
-        api(`${boutPath(boutId)}/touches`),
-        api(`${boutPath(boutId)}/metrics`),
-      ])
-      setData(touches)
-      setMetrics(m)
+    // Fetched INDEPENDENTLY, not with Promise.all. Metrics can legitimately be
+    // unavailable while touches are fine: a bout where the tracker never held
+    // both fencers at once has no distance samples and so no statistics, which
+    // happens on footage shot from behind the piste. Failing them together would
+    // take the whole review interface down over a panel, leaving the user unable
+    // to look at the touches or the video for a bout the system had processed
+    // perfectly well. Found when the end-to-end test hit exactly that case.
+    const [touches, m] = await Promise.allSettled([
+      api(`${boutPath(boutId)}/touches`),
+      api(`${boutPath(boutId)}/metrics`),
+    ])
+
+    if (touches.status === 'fulfilled') {
+      setData(touches.value)
       setError(null)
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
+    } else {
+      setError(touches.reason.message)
     }
+    setMetrics(m.status === 'fulfilled' ? m.value : null)
+    setMetricsError(m.status === 'rejected' ? m.reason.message : null)
+    setLoading(false)
   }, [boutId])
 
   useEffect(() => { reload() }, [reload])
 
-  return { data, metrics, error, loading, reload }
+  return { data, metrics, error, metricsError, loading, reload }
 }
 
 /**

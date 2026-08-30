@@ -42,6 +42,20 @@ For front-end development, `npm run dev` in `code/frontend` serves on port 5173 
 proxies the API to the backend, so the two restart independently and a page reload never
 interrupts a running job.
 
+### Tests
+
+```bash
+cd code/prototype && python3 -m pytest -q          # pipeline: 313
+cd code/backend   && python3 -m pytest -q -m "not slow"   # API: 142
+cd code/backend   && python3 -m pytest -q test_end_to_end.py  # slow, loads models
+cd code/frontend  && npm test                      # interface: 23
+```
+
+The end-to-end tests are marked slow and excluded from the fast run. They drive
+the real pipeline on a small synthetic video to check that the stages hand their
+outputs to each other, which is the part unit tests structurally cannot reach:
+the stages are joined by filename conventions rather than return values.
+
 ### Running the pipeline directly
 Every stage is a command-line program, and the web layer invokes exactly these commands
 rather than reimplementing them:
@@ -57,7 +71,7 @@ python3 generate_summary.py --csv results/<bout>_distance.csv --touches <touches
 ```
 code/prototype/   The AI pipeline: detection, tracking, pose, distance, touches, summary
 code/backend/     FastAPI application: upload, job runner, annotation API
-code/frontend/    React client (Vite)
+code/frontend/    React client (Vite), with its own test suite
 code/var/         Runtime data: uploads, job records, their outputs (gitignored)
 uni_modules/      Read-only university materials
 proposal/         Project proposal submission deliverables
