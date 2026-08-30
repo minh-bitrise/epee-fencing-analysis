@@ -478,3 +478,44 @@ class TestStageCommands:
 
     def test_transcode_is_skipped_when_there_is_nothing_to_convert(self, tmp_path):
         assert self.stage("transcode").build(self.job(tmp_path)) is None
+
+
+class TestJobIdIsNotAPath:
+    """
+    Job ids arrive as URL path segments and are turned into filenames.
+
+    `os.path.join` accepts `../` without complaint, so before the store
+    validated its ids a request for `/api/jobs/../../something` resolved to a
+    path outside the store, and `delete` would have handed that to os.remove.
+    Every endpoint happens to look the job up first, so an attack needed a
+    parsable JSON file waiting at the traversed path, but that was a property of
+    the callers rather than a guarantee of the store.
+    """
+
+    def test_a_traversing_id_cannot_name_a_path(self, store):
+        for probe in ("../escape", "../../etc/passwd", "a/b", "..", "/abs"):
+            with pytest.raises(ValueError):
+                store._path(probe)
+
+    def test_a_generated_id_is_accepted(self, store):
+        job = store.create(filename="x.mp4")
+        assert store._path(job["job_id"]).endswith(f"{job['job_id']}.json")
+
+    def test_loading_a_traversing_id_is_a_miss_not_a_crash(self, store):
+        # It is simply not a job that exists, which is what the caller asked.
+        # Raising would turn a probe into a 500 and a stack trace.
+        assert store.load("../../etc/passwd") is None
+        assert store.load("") is None
+
+    def test_deleting_a_traversing_id_removes_nothing(self, store, tmp_path):
+        victim = tmp_path / "important.json"
+        victim.write_text('{"job_id": "x"}')
+        # relative path from the store root back out to the victim
+        escape = os.path.relpath(str(victim)[:-5], store.root)
+        assert store.delete(escape) is False
+        assert victim.exists(), "delete escaped the store and removed a file"
+
+    def test_a_non_hex_id_is_refused(self, store):
+        # Ids are generated as hex, so anything else did not come from here.
+        with pytest.raises(ValueError):
+            store._path("zzzzzzzzzzzz")

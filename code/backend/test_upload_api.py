@@ -300,13 +300,13 @@ class TestReprocessAndSummary:
     @pytest.fixture
     def bout(self, tmp_path, monkeypatch, client):
         """An uploaded bout that has finished processing, with a source video."""
-        results = tmp_path / "results_uploads" / "upload_abc"
+        results = tmp_path / "results_uploads" / "upload_abc123def456"
         results.mkdir(parents=True)
-        (results / "bout_abc_distance.csv").write_text(
+        (results / "bout_abc123def456_distance.csv").write_text(
             "frame,time_s,distance_raw_m,distance_smooth_m,method,"
             "f1_advance_m,f1_retreat_m,f2_advance_m,f2_retreat_m\n"
             "0,0.0,2.0,2.0,pose,0,0,0,0\n1,0.5,2.0,2.0,pose,0,0,0,0\n")
-        source = tmp_path / "uploads" / "abc" / "bout_abc.mp4"
+        source = tmp_path / "uploads" / "abc123def456" / "bout_abc123def456.mp4"
         source.parent.mkdir(parents=True)
         source.write_bytes(b"not really a video, only its path is used here")
 
@@ -315,13 +315,13 @@ class TestReprocessAndSummary:
         job = client.store.create(
             state="done", source_path=str(source),
             piste={"needed": True, "polygon": [[0, 1], [2, 1], [2, 3], [0, 3]]},
-            piste_config_path=str(tmp_path / "uploads" / "abc" / "piste.json"))
+            piste_config_path=str(tmp_path / "uploads" / "abc123def456" / "piste.json"))
         # rename the record so the bout id resolves to it
         os.rename(os.path.join(client.store.root, f"{job['job_id']}.json"),
-                  os.path.join(client.store.root, "abc.json"))
-        job["job_id"] = "abc"
+                  os.path.join(client.store.root, "abc123def456.json"))
+        job["job_id"] = "abc123def456"
         client.store.save(job)
-        return "upload_abc:bout_abc"
+        return "upload_abc123def456:bout_abc123def456"
 
     def test_reprocess_queues_a_job_carrying_the_corrections(self, client, bout,
                                                              monkeypatch):
@@ -342,7 +342,7 @@ class TestReprocessAndSummary:
         job = client.store.load(r.json()["job_id"])
         # A reprocess must never destroy a previous result: the before and after
         # side by side is the only way to see whether a correction helped.
-        assert "upload_abc" not in job["output_dir"]
+        assert "upload_abc123def456" not in job["output_dir"]
 
     def test_reprocess_re_uses_the_piste_region_rather_than_re_measuring(
             self, client, bout):
@@ -354,7 +354,7 @@ class TestReprocessAndSummary:
         assert "piste" in job["stages_done"] or job["piste"] is not None
 
     def test_reprocess_refuses_when_the_source_video_is_gone(self, client, bout):
-        job = client.store.load("abc")
+        job = client.store.load("abc123def456")
         os.remove(job["source_path"])
         r = client.post(f"/api/bouts/{bout}/reprocess")
         assert r.status_code == 404
@@ -390,8 +390,8 @@ class TestReprocessAndSummary:
         claim that user correction improves the output.
         """
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-used")
-        reviewed = (tmp_path / "results_uploads" / "upload_abc" /
-                    "bout_abc_distance_touches_confirmed.csv")
+        reviewed = (tmp_path / "results_uploads" / "upload_abc123def456" /
+                    "bout_abc123def456_distance_touches_confirmed.csv")
         reviewed.write_text("time_s,scorer,annulled,notes\n5.0,left,0,confirmed\n")
         r = client.post(f"/api/bouts/{bout}/summary/generate")
         assert r.json()["touches_used"] == "the touches you confirmed"

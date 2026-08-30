@@ -46,6 +46,7 @@ the next startup rather than being left claiming to be running.
 import json
 import os
 import queue
+import re
 import shutil
 import signal
 import subprocess
@@ -91,7 +92,24 @@ class JobStore:
         os.makedirs(root, exist_ok=True)
         self._lock = threading.Lock()
 
+    # A job id is twelve hex characters, because that is what create() makes.
+    # Anything else did not come from here.
+    _ID = re.compile(r"^[0-9a-f]{6,32}$")
+
     def _path(self, job_id):
+        """
+        The record's path, refusing any id that could name something else.
+
+        Job ids arrive from URL path segments, and `os.path.join` happily accepts
+        `../`: a request for `/api/jobs/../../something` resolved to a path
+        outside the store, which `delete` would then have passed to os.remove.
+        Every endpoint does look the job up first, so an attack needed a parsable
+        JSON file at the traversed path, but that is a property of the callers
+        and not of this class. Validating the id here means no future caller can
+        reintroduce it.
+        """
+        if not isinstance(job_id, str) or not self._ID.match(job_id):
+            raise ValueError(f"not a job id: {job_id!r}")
         return os.path.join(self.root, f"{job_id}.json")
 
     def create(self, **fields):
@@ -127,7 +145,12 @@ class JobStore:
         return job
 
     def load(self, job_id):
-        path = self._path(job_id)
+        # A malformed id is simply not a job that exists, which is what the
+        # caller means to ask. Raising would turn a probe into a 500.
+        try:
+            path = self._path(job_id)
+        except ValueError:
+            return None
         if not os.path.exists(path):
             return None
         with self._lock:
@@ -154,7 +177,10 @@ class JobStore:
         return sorted(out, key=lambda j: j["created_at"], reverse=True)
 
     def delete(self, job_id):
-        path = self._path(job_id)
+        try:
+            path = self._path(job_id)
+        except ValueError:
+            return False
         if os.path.exists(path):
             os.remove(path)
             return True
