@@ -1061,6 +1061,104 @@ that drive how the full system accommodates them. It is deliberately exhaustive 
 stage; some material will be trimmed and re-balanced for the final submission, but the
 intention is that everything be recorded now while the engineering reasoning is fresh.
 
+### The candidate cut: root cause of both tracking failure modes
+
+The two failure modes described below were treated for most of this project as
+inherent limits of single-camera tracking, and as the standing justification for
+an AI-assisted rather than automatic design. Investigating why a correctly aimed
+user correction still repaired nothing showed that they shared a single cause,
+upstream of the correction and of the gates, in code that had never been
+questioned because it looked obviously right.
+
+`FencerTracker.select` narrowed each frame to the two most CONFIDENT detections
+and discarded the rest, before any anchor, gate or user correction was consulted.
+The assumption is that the two fencers are the two people the detector is most
+sure about. On competition footage that is measurably false, because the referee
+stands ON the strip and so survives the piste-region filter by construction.
+
+Measured across clip 2's six-second bystander capture, sampling every twentieth
+frame: three detections lie inside the piste region in EVERY sampled frame, and
+the fencer a user would click is detected in every one of them. The confidence cut
+nonetheless discards that fencer in 9 of the 16 samples, their rank oscillating
+between first and third on margins of about 0.01. At frame 8590, where the
+capture becomes visible, the three confidences are 0.899 for the referee, 0.896
+for the far fencer and 0.886 for the near one: the correct answer is discarded by
+0.010. The tracker was arbitrating between three people using a quantity whose
+differences are noise.
+
+This also explains why the re-anchor action could not repair the failure, which
+had until then been read as a limitation of the action. The cause is sustained
+over six seconds and the correction is momentary: with the correction reaching the
+right detection, the slot is handed the correct fencer at 171.80 s and has lost
+them again by 171.82 s, because the next frame's cut discards that detection once
+more. Teleport counts are identical with and without the correction.
+
+**The fix follows from the diagnosis.** Confidence answers whether a person is
+present, which all three detections satisfy. It does not answer which two of them
+are the fencers being tracked. Proximity to each slot's predicted position does,
+and costs nothing: the predictions already exist for the gates. Selecting the two
+nearest candidates instead of the two most confident gives, across all four clips
+with the hand-authored piste configurations:
+
+| Clip | Coverage before / after | Tracking mix-ups before / after | Touch F1 before / after |
+|---|---|---|---|
+| 1 | 92.9% / 93.5% | 2 / **0** | 0.80 / 0.80 |
+| 2 | 98.0% / 98.0% | 15 / **0** | 0.86 / 0.86 |
+| 3 | 97.4% / 97.4% | 0 / 0 | 0.86 / 0.86 |
+| 4 | 73.7% / **79.8%** | 114 / **54** | 0.67 / **0.77** |
+
+Mix-ups are single-frame position jumps exceeding 1.5 m, which is a direct
+signature of a slot switching person rather than a proxy for it: no fencer crosses
+metres of piste between consecutive frames. Nothing regressed on any clip on any
+measure, and the headline 720p result is unchanged, since clips 1 to 3 still
+require six corrections against twenty-one manual entries.
+
+**A prediction the footage makes was used to corroborate it.** Play resets to the
+guard lines after every touch, so each fencer should finish a bout within about a
+metre of where they started, and section 5.5 flagged clip 2's Fencer 1 net
+displacement of +3.86 m as not believable. Under the corrected selection it
+measures -0.00 m, and clip 4's Fencer 1 moves from +0.42 m to -0.05 m. This was
+not the target of the change and is stronger evidence than the coverage figures
+for that reason: it is a constraint imposed by the sport rather than a metric
+being optimised. Clip 4's Fencer 2 remains implausible at +7.08 m, so that failure
+has a different cause and stays open.
+
+**What this costs the argument, stated plainly.** Wrong-target capture was
+presented as evidence for the assisted-annotation design: computer vision fails in
+this way, therefore the user must be able to repair it. On three of four clips it
+now does not occur at all. It was a defect in candidate selection, not a limit of
+single-camera tracking, and the honest reading is that this project spent a long
+time designing around a bug. The design argument survives, since clip 4 still
+shows 54 mix-ups and the correction mechanism remains necessary, but it must rest
+on the failures that remain rather than on one that turned out to be fixable.
+
+### Assignment ties were being decided by list order
+
+Correcting the candidate cut exposed a second defect that had been invisible
+because it hid behind the first.
+
+With two detections and two slots the matcher compares a straight assignment
+against a swapped one and takes the cheaper, breaking equality with `<=`. Because
+the cost is a sum of distances, it ties whenever one slot's fencer is absent: that
+slot contributes a large distance to both assignments and drowns the difference.
+The tie then resolves by whichever order the candidate list happened to be in.
+
+Three behaviours were resting on that, and all three flipped when the ordering
+changed. The unit test demonstrating that a re-anchor recovers a captured slot
+scored 565 px for both assignments. The test demonstrating that a distant
+bystander cannot steal a slot scored 1455 px for both. And clip 2's real capture
+sat on the same knife edge. **The test that supposedly demonstrated the project's
+central correction mechanism had been passing on an arbitrary tie-break in a
+synthetic scenario**, which is the sharpest instance in this project of a defect
+that satisfies its specification while establishing nothing.
+
+Ties now prefer the assignment containing the single best-explained pairing: a
+5 px match beside a 1450 px one is a fencer correctly identified beside a slot
+whose fencer has left, whereas 355 px beside 1100 px is two mediocre guesses, and
+the gates then reject the unmatched half. A test asserts that presenting the same
+detections in the opposite order produces the same assignment, which is the
+property that was missing rather than any particular outcome.
+
 ### Observed failure modes
 
 Prototype evaluation on two independently sourced FIE-level bout clips reproducibly revealed
@@ -1068,6 +1166,12 @@ two specific failure modes. Both are well-known data-association problems in sin
 multi-object tracking and both are predicted in the design chapter as the reason the system
 is AI-assisted rather than fully automatic. Their presence in the prototype is therefore not
 a contradiction of the design but evidence supporting it.
+
+*Note added 29 Aug 2026: the section above supersedes part of what follows. Both
+failure modes below were traced to the candidate cut, and failure mode 1 no longer
+occurs on three of the four clips. The descriptions are kept because they are what
+the evidence supported at the time and because the diagnosis is only legible
+against them.*
 
 **Failure mode 1: wrong-target capture by background people.** The tracker maintains stable
 identity for each fencer by spatial continuity, gated by (a) a maximum allowed jump from the
