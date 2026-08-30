@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { api, boutPath, del } from '../api.js'
 
 // Scored or missed is derived, not asked for. A lunge that scored is one whose
@@ -6,6 +7,18 @@ import { api, boutPath, del } from '../api.js'
 const SCORED_WINDOW_S = 1.0
 
 export default function LungePanel({ boutId, lunges, touchTimes, onChanged }) {
+  const [proposed, setProposed] = useState(null)
+
+  const askForProposals = async (slot) => {
+    setProposed({ loading: true })
+    try {
+      const r = await api(`${boutPath(boutId)}/propose-lunges?slot=${slot}`,
+                          { method: 'POST' })
+      setProposed(r)
+    } catch (e) {
+      setProposed({ error: e.message })
+    }
+  }
   const scored = (l) => touchTimes.some(
     (t) => t >= l.time_s - 0.2 && t <= l.time_s + SCORED_WINDOW_S)
 
@@ -38,6 +51,30 @@ export default function LungePanel({ boutId, lunges, touchTimes, onChanged }) {
             no confirmed touches to compare against</>
         )}
       </div>
+      <div className="row" style={{ marginTop: 9 }}>
+        <span className="mini">Propose more for:</span>
+        <button onClick={() => askForProposals(0)}>Fencer 1</button>
+        <button onClick={() => askForProposals(1)}>Fencer 2</button>
+      </div>
+      {proposed?.loading && <div className="mini">calibrating...</div>}
+      {proposed?.error && <div className="note err">{proposed.error}</div>}
+      {proposed?.proposals && (
+        <div className="note">
+          Calibrated on {proposed.calibrated_on} of your labels for Fencer
+          {' '}{proposed.slot + 1}, threshold {proposed.threshold}.
+          {' '}<b>{proposed.proposals.length}</b> more to look at:
+          <div className="mini" style={{ marginTop: 5 }}>
+            {proposed.proposals.slice(0, 12).map((p) => (
+              <span key={p.time_s} style={{ marginRight: 9 }}>
+                {p.time_s.toFixed(1)}s ({p.margin}x)
+              </span>
+            ))}
+            {proposed.proposals.length > 12
+              && `... and ${proposed.proposals.length - 12} more`}
+          </div>
+          <br />{proposed.note}
+        </div>
+      )}
       {lunges.map((l) => (
         <div className="stat" key={l.id}>
           <span>{l.time_s.toFixed(2)}s - F{l.slot + 1} {label(l)}</span>

@@ -977,6 +977,60 @@ def propose_scorers(bout_id: str, body: ScorerRequest):
                      "contaminated by anything permanently red in shot.")}
 
 
+@app.post("/api/bouts/{bout_id}/propose-lunges")
+def propose_lunges(bout_id: str, slot: int = 0):
+    """
+    Propose lunges for one fencer, calibrated on the ones already confirmed.
+
+    WHY IT CALIBRATES INSTEAD OF TRANSFERRING. The stance ratio is not
+    view-invariant: an operating point fitted on one clip reaches F1 0.22 on
+    another while firing on a quarter of all windows. Measured, clip 3 calibrates
+    to 1.902 and clip 2 to 2.706, a 42 per cent difference in what counts as a
+    lunge-like posture. So the threshold comes from lunges the user has confirmed
+    on THIS bout, which is the correction mechanism the design already uses
+    rather than a new demand on them.
+
+    Refusing below five confirmed lunges is deliberate rather than cautious. A
+    threshold fitted on two fires on a quarter of the bout, and a user who has to
+    reject every proposal is worse off than one who was offered none.
+    """
+    b = _get_bout(bout_id)
+    from detect_lunges import (MIN_CALIBRATION_LUNGES, calibrate, propose,
+                               stance_ratio_series)
+
+    times, ratios = stance_ratio_series(b.metrics_csv, slot)
+    if len(times) == 0:
+        raise HTTPException(
+            400, "this bout has no pose stance data. It was processed before the "
+                 "stance columns existed, or pose never ran on it.")
+
+    data = store.load(bout_id)
+    confirmed = sorted(l["time_s"] for l in data["lunges"] if l["slot"] == slot)
+    threshold, used = calibrate(times, ratios, confirmed)
+    if threshold is None:
+        raise HTTPException(
+            400, f"only {used} confirmed lunge(s) for Fencer {slot + 1}; "
+                 f"{MIN_CALIBRATION_LUNGES} are needed to calibrate. Label a few "
+                 f"more with the 1 and 2 keys and try again.")
+
+    proposals = propose(times, ratios, threshold,
+                        skip_before=confirmed[MIN_CALIBRATION_LUNGES - 1] + 2.0)
+    # Anything the user has already labelled is dropped: they are being offered
+    # what to look at next, not their own work back.
+    fresh = [p for p in proposals
+             if all(abs(p["time_s"] - c) > 0.5 for c in confirmed)]
+    return {
+        "slot": slot,
+        "calibrated_on": used,
+        "threshold": round(threshold, 3),
+        "proposals": fresh,
+        "note": ("Measured on the one clip with enough labels to say anything, "
+                 "precision 0.73 and recall 0.76 on 25 held-out lunges. "
+                 "Precision is a LOWER bound: a proposal on a real lunge you had "
+                 "not labelled counts against it."),
+    }
+
+
 @app.post("/api/bouts/{bout_id}/summary/generate")
 def generate_summary_for_bout(bout_id: str, force: bool = False):
     """
