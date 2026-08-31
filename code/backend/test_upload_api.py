@@ -490,3 +490,50 @@ class TestScorerProposals:
         r = client.post("/api/bouts/nope:nope/propose-scorers",
                         json={"green_is": "right"})
         assert r.status_code == 404
+
+
+class TestBoutDiscoveryCache:
+    """
+    Discovery stats every file in every results directory and runs on any request
+    naming a bout. Caching it is only safe if a new bout invalidates the cache,
+    which is why the key is the directories' modification times rather than a
+    timer: a bout appearing changes the mtime of the directory holding it, and
+    nothing else does.
+    """
+
+    def test_a_new_bout_invalidates_the_cache(self, tmp_path, monkeypatch):
+        import time as _time
+        results = tmp_path / "results_uploads" / "upload_aaaaaaaaaaaa"
+        results.mkdir(parents=True)
+        (results / "one_distance.csv").write_text("frame,time_s\n0,0.0\n")
+        monkeypatch.setattr(appmod, "UPLOAD_RESULTS_ROOT",
+                            str(tmp_path / "results_uploads"))
+        monkeypatch.setattr(appmod, "RESULTS_DIRS", [])
+        appmod._bouts_cache["key"] = None
+
+        first = appmod._bouts()
+        assert len(first) == 1
+
+        _time.sleep(0.01)
+        (results / "two_distance.csv").write_text("frame,time_s\n0,0.0\n")
+        second = appmod._bouts()
+        assert len(second) == 2, "a new bout did not invalidate the cache"
+
+    def test_repeated_calls_return_the_same_object(self, tmp_path, monkeypatch):
+        # Proves the cache is actually used rather than merely correct.
+        results = tmp_path / "results_uploads" / "upload_bbbbbbbbbbbb"
+        results.mkdir(parents=True)
+        (results / "x_distance.csv").write_text("frame,time_s\n0,0.0\n")
+        monkeypatch.setattr(appmod, "UPLOAD_RESULTS_ROOT",
+                            str(tmp_path / "results_uploads"))
+        monkeypatch.setattr(appmod, "RESULTS_DIRS", [])
+        appmod._bouts_cache["key"] = None
+        assert appmod._bouts() is appmod._bouts()
+
+    def test_a_missing_results_directory_is_not_an_error(self, tmp_path, monkeypatch):
+        # Several configured directories legitimately do not exist on a fresh
+        # checkout, and stat-ing them must not raise.
+        monkeypatch.setattr(appmod, "RESULTS_DIRS", [str(tmp_path / "nope")])
+        monkeypatch.setattr(appmod, "UPLOAD_RESULTS_ROOT", str(tmp_path / "gone"))
+        appmod._bouts_cache["key"] = None
+        assert appmod._bouts() == {}

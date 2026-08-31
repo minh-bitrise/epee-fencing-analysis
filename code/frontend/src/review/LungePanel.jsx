@@ -79,8 +79,15 @@ export default function LungePanel({ boutId, lunges, touchTimes, onChanged }) {
         <div className="stat" key={l.id}>
           <span>{l.time_s.toFixed(2)}s - F{l.slot + 1} {label(l)}</span>
           <button onClick={async () => {
-            await api(`${boutPath(boutId)}/lunges/${l.id}`, del)
-            await onChanged()
+            // Guarded here rather than left to bubble: this is a delete, and a
+            // silent failure looks exactly like a successful one until the list
+            // fails to change.
+            try {
+              await api(`${boutPath(boutId)}/lunges/${l.id}`, del)
+              await onChanged()
+            } catch (e) {
+              setProposed({ error: e.message })
+            }
           }}>remove</button>
         </div>
       ))}

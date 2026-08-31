@@ -169,11 +169,29 @@ async def lifespan(_app):
 app = FastAPI(title="Epee Bout Analysis", version="0.2.0", lifespan=lifespan)
 
 
+# Discovery reads every results directory and stats every file in them, and it
+# runs on every request that names a bout. That is a dozen directories now and
+# grows by one per upload, so the scan is cached against the directories'
+# modification times: a new bout changes the mtime of the directory holding it,
+# which is exactly when the cache should be discarded and never otherwise.
+_bouts_cache = {"key": None, "value": None}
+
+
 def _bouts():
     # Uploaded bouts are discovered by scanning rather than from a fixed list,
     # because unlike the evaluation set their number is not known in advance.
     upload_dirs = sorted(glob.glob(os.path.join(UPLOAD_RESULTS_ROOT, "upload_*")))
-    return discover_bouts(RESULTS_DIRS + upload_dirs)
+    dirs = RESULTS_DIRS + upload_dirs
+
+    key = tuple((d, os.path.getmtime(d) if os.path.isdir(d) else None)
+                for d in dirs)
+    if _bouts_cache["key"] == key:
+        return _bouts_cache["value"]
+
+    found = discover_bouts(dirs)
+    _bouts_cache["key"] = key
+    _bouts_cache["value"] = found
+    return found
 
 
 def _get_bout(bout_id):
@@ -1481,6 +1499,21 @@ def index():
 
 @app.get("/legacy", response_class=HTMLResponse)
 def legacy_index():
+    """
+    The no-build-step interface, DELIBERATELY FROZEN at the four annotation
+    actions it was written for.
+
+    It does not have upload, job progress, the piste confirmation step, reprocess,
+    who-scored or lunge proposals, and it will not be given them. Two reasons.
+    It exists so that a checkout with Python and nothing else still has a working
+    review interface, which matters for an examiner who may never run npm, and
+    that guarantee is worth more than feature parity. And it is the comparison the
+    evaluation makes: the same four actions, the same API, one interface with a
+    build step and one without.
+
+    Keeping it current would mean maintaining every feature twice, which is how
+    the two would quietly diverge in behaviour rather than in scope.
+    """
     path = os.path.join(STATIC_DIR, "index.html")
     if not os.path.exists(path):
         return HTMLResponse("<h1>UI not built</h1>", status_code=404)

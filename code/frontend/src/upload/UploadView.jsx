@@ -160,18 +160,22 @@ export default function UploadView({ onOpenBout }) {
                 <button className="primary"
                         disabled={!storage.reclaimable_files}
                         onClick={async () => {
-                          const r = await api('/api/storage/cleanup',
-                                              { method: 'POST' })
-                          setStorage(null)
-                          setCleanup(r)
+                          try {
+                            const r = await api('/api/storage/cleanup',
+                                                { method: 'POST' })
+                            setStorage(null)
+                            setCleanup(r)
+                          } catch (e) { setStorage({ error: e.message }) }
                         }}>
                   Reclaim {storage.reclaimable_mb} MB
                 </button>
                 <button onClick={async () => {
-                  const r = await api('/api/storage/cleanup?everything=true',
-                                      { method: 'POST' })
-                  setStorage(null)
-                  setCleanup(r)
+                  try {
+                    const r = await api('/api/storage/cleanup?everything=true',
+                                        { method: 'POST' })
+                    setStorage(null)
+                    setCleanup(r)
+                  } catch (e) { setStorage({ error: e.message }) }
                 }}>Clear the whole video cache</button>
               </div>
             </>

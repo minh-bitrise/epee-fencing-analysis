@@ -902,11 +902,47 @@ the test suite needs neither a network connection nor an API key.
 ---
 
 
+### The application layer
+
+The pipeline was reachable only from a shell until late in the project: no upload, no way to
+start a run, and no way for anyone but the author to use the system. The design chapter
+describes a web application, so this was the largest distance between what the design claimed
+and what existed.
+
+Each pipeline stage runs as a SUBPROCESS supervised by a single background worker, never as a
+function call inside the API process. Three reasons, all specific to this pipeline. The heavy
+work is native code, and YOLO, OpenCV and MediaPipe can fail in ways that end the interpreter
+rather than raise something catchable; in a thread that would take the API and every queued job
+with it, whereas a subprocess failure is an exit code recorded against one job. The models cost
+hundreds of megabytes of resident memory, which a subprocess returns on exit. And the pipeline
+stays a working command line, invoked by exactly the commands used to produce the figures in
+this report, so there is no second code path that could disagree with them.
+
+Jobs queue at a concurrency of one, because detection is CPU-bound and two concurrent runs take
+appreciably more than twice as long as one while making the machine unusable. Progress is parsed
+from a machine-readable line the pipeline prints, rather than through a callback, which would
+have required importing the pipeline and undone the separation above. Every job is a JSON file
+on disk, so a restart loses nothing: jobs caught mid-run are marked interrupted rather than left
+claiming to be running, and are not retried automatically, since a video that crashes the
+pipeline would otherwise crash it on every start.
+
+Two decisions in the interface are worth recording. Summary generation costs a paid API call, so
+it is never automatic; what the application layer changed is that the user presses a button
+rather than being handed a command to type. And re-anchoring, the one annotation action that
+changes tracking rather than interpretation, can only take effect on a reprocess, so the
+interface now queues that reprocess and writes the result to a NEW bout, leaving the original
+intact for comparison.
+
 ### Testing
 
-The prototype is supported by 72 unit tests written with `pytest`: 55 covering the detection
-and metrics pipeline, and 17 covering the LLM summary stage (statistics aggregation, prompt
-construction, cache behaviour, with the API call mocked). Tests cover:
+The system is supported by 506 automated tests: 320 over the pipeline, 163 over the application
+layer and 23 over the interface, plus two end-to-end tests that drive the real pipeline on a
+synthetic video. The end-to-end pair exists for what unit tests structurally cannot reach: the
+stages are joined by filename conventions rather than by return values, and a bout identifier is
+assembled in one module and taken apart in another. It found two defects on its first run, one
+of which returned an unhandled server error for any bout the tracker never held both fencers in.
+
+The pipeline tests cover:
 
 - the geometry helpers (`get_box_centre`, `get_box_bottom_centre`, `box_height_pixels`,
   `pixel_distance`, `normalise_distance`);
@@ -1555,9 +1591,41 @@ here in Harvard style.)*
 
 ### A. Source code overview
 
-The prototype is in `code/prototype/`, with `run_detection.py` as the main pipeline and
-`test_detection.py` as the unit-test suite. Dependencies are declared in
-`code/prototype/requirements.txt`.
+Three directories: the pipeline, the application that drives it, and the interface.
+
+**`code/prototype/` - the pipeline.** Every stage is a standalone command-line program, which
+the web layer invokes rather than reimplements, so there is no second code path that could
+disagree with the figures reported here.
+
+| module | what it does |
+|---|---|
+| `run_detection.py` | detection, tracking, pose, distance and the annotated render. The main pipeline |
+| `derive_piste.py` | measures a piste region from footage, replacing a hand-authored polygon |
+| `detect_touches.py` | proposes touches from the distance series |
+| `detect_scorer.py` | attributes a touch to a fencer by reading the scoring lamps |
+| `detect_lunges.py` | proposes lunges, calibrated on lunges the user has confirmed on that bout |
+| `in_play.py` | scopes metrics to playing time using confirmed touches |
+| `tempo.py` | exchange-rate and tempo measures |
+| `generate_summary.py` | builds the statistics payload and calls the language model |
+| `evaluate_touches.py`, `evaluate_lunges.py` | scoring against hand-labelled ground truth |
+
+**`code/backend/` - the application.** FastAPI. `app.py` holds the endpoints, `jobs.py` the
+background runner that processes an upload without blocking a request, `store.py` the annotation
+store, and `storage.py` disk accounting and cleanup of derived files.
+
+**`code/frontend/` - the interface.** React, built with Vite. Upload and job progress, the piste
+confirmation step, and the review interface implementing the four annotation actions. The
+earlier no-build-step interface is retained and served at `/legacy`, deliberately frozen at those
+four actions: it guarantees that a checkout with Python alone still has a working review
+interface, and it is the comparison between an interface with a build step and one without.
+
+**Tests.** 320 in the pipeline, 163 in the backend and 23 in the interface, plus two end-to-end
+tests that drive the real pipeline on a synthetic video to exercise the joins between stages,
+which are made by filename convention rather than by return value. A GitHub Actions workflow runs
+everything that needs neither footage nor model weights.
+
+Dependencies are declared in `code/prototype/requirements.txt` and
+`code/frontend/package.json`.
 
 ### B. CSV schema
 

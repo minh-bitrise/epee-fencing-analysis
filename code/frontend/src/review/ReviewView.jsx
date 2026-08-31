@@ -131,18 +131,36 @@ export default function ReviewView({ initialBoutId }) {
     }
   }, [boutId, reload, rows, seek])
 
+  // Every action routes its failures here. Without it a rejected call became an
+  // unhandled promise rejection: the keyboard shortcuts were the worst case,
+  // because pressing "a" to add a touch or "1" to label a lunge against a
+  // failing server did nothing at all and said nothing, which is
+  // indistinguishable from the key not being bound.
+  const guard = useCallback(async (fn) => {
+    try {
+      await fn()
+      setListError(null)
+    } catch (e) {
+      setListError(e.message)
+    }
+  }, [])
+
   const addTouchAtPlayhead = useCallback(async () => {
     const v = videoRef.current
     if (!v) return
-    await api(`${boutPath(boutId)}/touches`,
-              postJSON({ time_s: +v.currentTime.toFixed(1), scorer: 'unknown' }))
-    await reload()
-  }, [boutId, reload])
+    await guard(async () => {
+      await api(`${boutPath(boutId)}/touches`,
+                postJSON({ time_s: +v.currentTime.toFixed(1), scorer: 'unknown' }))
+      await reload()
+    })
+  }, [boutId, reload, guard])
 
   const removeAdded = useCallback(async (id) => {
-    await api(`${boutPath(boutId)}/touches/${id}`, del)
-    await reload()
-  }, [boutId, reload])
+    await guard(async () => {
+      await api(`${boutPath(boutId)}/touches/${id}`, del)
+      await reload()
+    })
+  }, [boutId, reload, guard])
 
   const addSegment = useCallback(async (e) => {
     e.preventDefault()
@@ -268,17 +286,20 @@ export default function ReviewView({ initialBoutId }) {
         v.currentTime = Math.max(0, v.currentTime + (k === '.' ? FRAME_S : -FRAME_S))
       }
       else if ((k === '1' || k === '2') && v) {
-        await api(`${boutPath(boutId)}/lunges`, postJSON({
-          time_s: +v.currentTime.toFixed(3), slot: k === '1' ? 0 : 1,
-        }))
-        await reload()
+        await guard(async () => {
+          await api(`${boutPath(boutId)}/lunges`, postJSON({
+            time_s: +v.currentTime.toFixed(3), slot: k === '1' ? 0 : 1,
+          }))
+          await reload()
+        })
       }
       else return
       e.preventDefault()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [rows, selIdx, armedSlot, boutId, decide, select, addTouchAtPlayhead, reload])
+  }, [rows, selIdx, armedSlot, boutId, decide, select, addTouchAtPlayhead,
+      reload, guard])
 
   // --- exports -----------------------------------------------------------
 
@@ -374,6 +395,11 @@ export default function ReviewView({ initialBoutId }) {
               {p ? `${p.reviewed}/${p.proposed} reviewed${p.complete ? ' - complete' : ''}` : ''}
             </span>
           </div>
+          {listError && (
+            <div className="note err" onClick={() => setListError(null)}>
+              {listError} <span className="mini">(click to dismiss)</span>
+            </div>
+          )}
 
           {data?.has_video ? (
             <video ref={videoRef} controls preload="metadata"
@@ -498,10 +524,10 @@ export default function ReviewView({ initialBoutId }) {
           {data?.unreliable_segments?.map((s) => (
             <div className="stat" key={s.id}>
               <span>{s.start_s.toFixed(1)}-{s.end_s.toFixed(1)}s excluded</span>
-              <button onClick={async () => {
+              <button onClick={() => guard(async () => {
                 await api(`${boutPath(boutId)}/segments/${s.id}`, del)
                 await reload()
-              }}>remove</button>
+              })}>remove</button>
             </div>
           ))}
         </div>

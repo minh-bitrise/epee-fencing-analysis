@@ -1,0 +1,53 @@
+name: tests
+
+# Runs the suites that need no footage and no models. The end-to-end tests are
+# excluded by the "not slow" marker: they load YOLO and MediaPipe, which would
+# mean downloading model weights on every run for a check the local suite
+# already covers before anything is pushed.
+on:
+  push:
+    branches: [main, 'feature/**', 'fix/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  pipeline-and-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: Install
+        # opencv-python-headless rather than the desktop build: the runner has no
+        # display, and the GUI build fails to import without one.
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy opencv-python-headless pytest fastapi \
+                      'uvicorn[standard]' python-multipart httpx
+      - name: Pipeline tests
+        # Excludes the modules that import ultralytics or mediapipe, which are
+        # large downloads and are covered locally against real footage.
+        working-directory: code/prototype
+        run: python -m pytest -q test_summary.py test_in_play.py test_tempo.py
+      - name: Backend tests
+        working-directory: code/backend
+        run: python -m pytest -q -m "not slow"
+
+  interface:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: code/frontend/package-lock.json
+      - working-directory: code/frontend
+        run: npm ci
+      - working-directory: code/frontend
+        run: npm test
+      - name: The interface must still build
+        working-directory: code/frontend
+        run: npm run build
