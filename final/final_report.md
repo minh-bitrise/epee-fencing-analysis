@@ -1132,6 +1132,44 @@ time designing around a bug. The design argument survives, since clip 4 still
 shows 54 mix-ups and the correction mechanism remains necessary, but it must rest
 on the failures that remain rather than on one that turned out to be fixable.
 
+### Slot identity, and why one clip reported seven metres of drift
+
+Clip 4's Fencer 2 reported +7.08 m of net displacement, which is not possible: play resets to
+the guard lines after every touch, so each fencer should finish within about a metre of where
+they started. The report recorded the cause as unidentified, and camera panning had already
+been tested and ruled out because panning moves the two fencers' figures in opposite
+directions.
+
+The cause is that slot identity did not hold. Two fencers do not cross on a piste; one stays on
+the referee's left for the whole bout and the other on the right. A sign change in the
+difference between the two tracked positions is therefore not a fencing event but the tracker
+exchanging which fencer each slot follows. Counting those separates the evaluation set
+completely:
+
+| Clip | Side swaps | Slot 1 on the left | Closest measured separation | Fencer 2 net |
+|---|---|---|---|---|
+| 1 | 0 | 100% | 0.65 m | -0.28 m |
+| 2 | 0 | 100% | 0.38 m | +0.16 m |
+| 3 | 0 | 100% | 0.26 m | -0.43 m |
+| 4 | **14** | **26.9%** | **0.09 m** | **+7.08 m** |
+
+The three clips whose slots never swap all report plausible displacements; the one that swaps
+fourteen times, at a median of 2.1 seconds apart, is the one reporting seven metres. A
+first-to-last displacement assumes the slot followed one fencer throughout, and on clip 4 it did
+not, so the figure measures the swaps.
+
+This also identifies the mechanism rather than only the symptom. Clip 4's two fencers come
+within 0.09 m in the measured position against 0.26 to 0.65 m elsewhere, which is the range at
+which the matcher has nothing left to separate them by. That is the close-range identity flicker
+already named as the second failure mode, now with a number attached and a consequence traced
+through to a reported statistic.
+
+**The system now detects this rather than reporting the figure confidently.** A bout with any
+side swap at all carries a warning saying that per-slot figures are not attributable to a
+particular fencer, which is a stronger and more useful statement than observing that a number
+looks large. The check costs one pass over two columns, fires on clip 4 and stays silent on the
+other three, and needed no threshold: any swap is evidence, because fencers do not cross.
+
 ### Assignment ties were being decided by list order
 
 Correcting the candidate cut exposed a second defect that had been invisible
@@ -1687,8 +1725,8 @@ constraint predicts. Clip 4's Fencer 1 moves from +0.42 m to -0.05 m on the same
 was not the change's target, and it is stronger evidence than the coverage figures precisely
 because it is a prediction the footage itself makes rather than a metric being optimised.
 
-Clip 4's Fencer 2 remains implausible at +7.08 m, down from +7.54 m. That failure is therefore
-NOT explained by the candidate-selection defect, and stays open.
+Clip 4's Fencer 2 remains implausible at +7.08 m, down from +7.54 m, so it is not explained by
+the candidate-selection defect. It was subsequently explained by a different one, below.
 
 **E.12 The two unsolved tracking failures.** *Wrong-target capture* is prevented by the piste polygon,
 which by construction cannot distinguish a referee standing on the piste from a fencer. On clip 4 the

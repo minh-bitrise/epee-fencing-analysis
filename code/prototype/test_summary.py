@@ -274,3 +274,71 @@ class TestGenerateCaching:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         with pytest.raises(SystemExit, match="ANTHROPIC_API_KEY"):
             generate(csv_path)
+
+
+class TestSideSwapDetection:
+    """
+    Whether slot identity held, which is the check this project was missing.
+
+    Clip 4 reported +7.08 m of net displacement for one fencer and the report
+    recorded the cause as not yet identified. It is this: the slots exchanged
+    sides 14 times, so a first-to-last displacement for a slot measures the
+    swaps rather than the fencer.
+    """
+
+    def rows(self, pairs):
+        return [{"time_s": str(i * 0.1), "f1_pos_m": str(a), "f2_pos_m": str(b)}
+                for i, (a, b) in enumerate(pairs)]
+
+    def test_a_stable_pair_records_no_swaps(self):
+        from generate_summary import count_side_swaps
+        # one fencer stays left, the other right, which is what fencing is
+        swaps, left, _ = count_side_swaps(
+            self.rows([(2.0, 6.0), (2.5, 5.5), (3.0, 5.0), (2.2, 6.1)]))
+        assert swaps == 0 and left == 1.0
+
+    def test_a_crossing_pair_records_a_swap(self):
+        from generate_summary import count_side_swaps
+        swaps, left, _ = count_side_swaps(
+            self.rows([(2.0, 6.0), (3.0, 5.0), (6.0, 2.0), (6.5, 1.5)]))
+        assert swaps == 1
+        assert left == 0.5
+
+    def test_repeated_swapping_is_counted_each_time(self):
+        from generate_summary import count_side_swaps
+        swaps, _, _ = count_side_swaps(
+            self.rows([(2, 6), (6, 2), (2, 6), (6, 2), (2, 6)]))
+        assert swaps == 4
+
+    def test_reports_how_close_they_came(self):
+        # The separation at which the matcher cannot tell them apart is the
+        # mechanism, so it is reported rather than merely the count.
+        from generate_summary import count_side_swaps
+        _, _, min_sep = count_side_swaps(
+            self.rows([(2.0, 6.0), (3.9, 4.0), (2.0, 6.0)]))
+        assert min_sep == pytest.approx(0.1, abs=0.01)
+
+    def test_too_few_frames_is_not_a_swap(self):
+        from generate_summary import count_side_swaps
+        assert count_side_swaps([]) == (0, None, None)
+
+    def test_a_swap_warns_that_per_slot_figures_are_unattributable(self):
+        """
+        The warning has to say what is unusable, not merely that something is
+        wrong. A per-slot figure on a bout with swaps cannot be attributed to a
+        fencer at all, which is a stronger statement than "this looks large".
+        """
+        from generate_summary import movement_quality_warnings
+        stats = {"fencer_1": {"net_displacement_m": 0.05},
+                 "fencer_2": {"net_displacement_m": 7.08}}
+        rows = self.rows([(2, 6), (6, 2), (2, 6)])
+        warnings = movement_quality_warnings(stats, rows)
+        assert any("NOT attributable" in w.lower() or
+                   "not attributable" in w.lower() for w in warnings)
+
+    def test_a_clean_bout_with_a_small_net_warns_about_nothing(self):
+        from generate_summary import movement_quality_warnings
+        stats = {"fencer_1": {"net_displacement_m": 0.3},
+                 "fencer_2": {"net_displacement_m": -0.2}}
+        rows = self.rows([(2.0, 6.0), (2.5, 5.5), (2.1, 6.0)])
+        assert movement_quality_warnings(stats, rows) == []

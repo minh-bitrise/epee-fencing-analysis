@@ -89,7 +89,38 @@ def movement_basis(rows):
     }
 
 
-def movement_quality_warnings(stats):
+def count_side_swaps(rows):
+    """
+    How many times the two tracked slots exchange sides of the piste.
+
+    A DIRECT test of whether slot identity held, and the one this project was
+    missing. Two fencers do not cross on a piste: one stays on the referee's left
+    for the whole bout and the other on the right. So a sign change in
+    `f1_pos_m - f2_pos_m` is not a fencing event, it is the tracker exchanging
+    which fencer each slot is following.
+
+    Measured over the evaluation set, this separates the clips cleanly: clips 1,
+    2 and 3 record ZERO swaps and hold one fencer on the left in 100 per cent of
+    frames, while clip 4 records 14 swaps and holds f1 on the left in only 26.9
+    per cent. That is the explanation for clip 4's otherwise inexplicable +7.08 m
+    of net displacement, which the report had recorded as a cause not yet
+    identified: a first-to-last displacement for a slot that changed fencer
+    fourteen times measures the swaps rather than the fencer.
+
+    Returns (swaps, fraction_of_frames_with_f1_on_the_left, min_separation_m).
+    """
+    pairs = [(float(r["f1_pos_m"]), float(r["f2_pos_m"])) for r in rows
+             if r.get("f1_pos_m") and r.get("f2_pos_m")]
+    if len(pairs) < 2:
+        return 0, None, None
+    diffs = [a - b for a, b in pairs]
+    swaps = sum(1 for x, y in zip(diffs, diffs[1:])
+                if (x > 0) != (y > 0))
+    left_share = sum(1 for d in diffs if d < 0) / len(diffs)
+    return swaps, left_share, min(abs(d) for d in diffs)
+
+
+def movement_quality_warnings(stats, rows=None):
     """
     Warnings about the whole-recording movement figures, or an empty list.
 
@@ -99,22 +130,40 @@ def movement_quality_warnings(stats):
     and legitimately exceeds it, so applying the same test there would flag
     correct data as broken.
     """
+    out = []
+
+    # Identity first, because it explains the magnitude check below rather than
+    # merely accompanying it, and because it fires on evidence rather than on a
+    # threshold: any swap at all means a slot changed fencer.
+    if rows:
+        swaps, left_share, min_sep = count_side_swaps(rows)
+        if swaps:
+            out.append(
+                f"the two tracked slots exchanged sides of the piste {swaps} "
+                f"time(s), and slot 1 held the left-hand fencer in only "
+                f"{100 * left_share:.0f} per cent of frames. Fencers do not "
+                f"cross on a piste, so this is the tracker changing which fencer "
+                f"each slot follows, not a fencing event. PER-SLOT FIGURES ARE "
+                f"NOT ATTRIBUTABLE TO A PARTICULAR FENCER on this recording: "
+                f"net_displacement_m in particular is a first-to-last difference "
+                f"and measures the swaps. The two came within "
+                f"{min_sep:.2f} m in the measured position, which is where the "
+                f"matcher cannot tell them apart.")
+
     worst = max(abs(stats["fencer_1"]["net_displacement_m"]),
                 abs(stats["fencer_2"]["net_displacement_m"]))
-    if worst <= IMPLAUSIBLE_NET_M:
-        return []
-    return [
-        f"net_displacement_m is implausible on this recording (largest "
-        f"magnitude {worst:.1f} m). Play resets to the guard lines after every "
-        f"touch, so each fencer should finish within about a metre of where "
-        f"they started; a value this large means the underlying position "
-        f"measurement drifted. Do not interpret net_displacement_m as "
-        f"aggression or territorial gain on this bout. Camera panning has been "
-        f"tested and ruled out as the cause, because panning moves the two "
-        f"fencers' net figures in opposite directions, and the real cause has "
-        f"not yet been identified. closing_share_pct counts directions rather "
-        f"than magnitudes, so it is unaffected; use it instead."
-    ]
+    if worst > IMPLAUSIBLE_NET_M:
+        out.append(
+            f"net_displacement_m is implausible on this recording (largest "
+            f"magnitude {worst:.1f} m). Play resets to the guard lines after "
+            f"every touch, so each fencer should finish within about a metre of "
+            f"where they started. Do not interpret net_displacement_m as "
+            f"aggression or territorial gain on this bout. Camera panning was "
+            f"tested and ruled out, because panning moves the two fencers' net "
+            f"figures in opposite directions. closing_share_pct counts "
+            f"directions rather than magnitudes, so it is unaffected; use it "
+            f"instead.")
+    return out
 
 
 def compute_stats(rows):
@@ -202,7 +251,7 @@ def compute_stats(rows):
         "fencer_1": fencers["f1"],
         "fencer_2": fencers["f2"],
     }
-    warnings = movement_quality_warnings(stats)
+    warnings = movement_quality_warnings(stats, rows)
     if warnings:
         stats["data_quality_warnings"] = warnings
     return stats
