@@ -206,6 +206,11 @@ class AnnotationStore:
         data = self.load(bout_id)
         if scorer not in SCORERS:
             raise ValueError(f"scorer must be one of {SCORERS}")
+        # A touch before the recording starts is not a touch. It is accepted
+        # silently otherwise, sorts to the front of every list, and scopes the
+        # first in-play window to a negative span.
+        if float(time_s) < 0:
+            raise ValueError("time_s cannot be negative")
         new_id = _next_id(data["added_touches"], "u")
         data["added_touches"].append({
             "id": new_id, "time_s": float(time_s), "scorer": scorer,
@@ -229,6 +234,8 @@ class AnnotationStore:
         per-frame data, which is why this is recorded here rather than by
         deleting rows from the pipeline's CSV.
         """
+        if float(start_s) < 0:
+            raise ValueError("start_s cannot be negative")
         if float(end_s) <= float(start_s):
             raise ValueError("end_s must be greater than start_s")
         data = self.load(bout_id)

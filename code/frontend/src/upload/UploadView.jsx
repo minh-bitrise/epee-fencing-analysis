@@ -19,6 +19,8 @@ export default function UploadView({ onOpenBout }) {
   const [dragOver, setDragOver] = useState(false)
   const [uploadPct, setUploadPct] = useState(null)
   const [confirmPiste, setConfirmPiste] = useState(true)
+  const [storage, setStorage] = useState(null)
+  const [cleanup, setCleanup] = useState(null)
   const fileInput = useRef(null)
 
   const refresh = useCallback(async () => {
@@ -123,6 +125,64 @@ export default function UploadView({ onOpenBout }) {
           </div>
 
           {error && <div className="note err">{error}</div>}
+        </div>
+
+        <div className="panel">
+          <h2>Disk</h2>
+          {!storage ? (
+            <button onClick={async () => {
+              try { setStorage(await api('/api/storage')) }
+              catch (e) { setStorage({ error: e.message }) }
+            }}>Show what is using disk</button>
+          ) : storage.error ? (
+            <div className="note err">{storage.error}</div>
+          ) : (
+            <>
+              {storage.categories.map((c) => (
+                <div className="stat" key={c.name}>
+                  <span title={c.note}>
+                    {c.name}{c.reclaimable ? '' : ' (kept)'}
+                  </span>
+                  <b>{c.mb} MB</b>
+                </div>
+              ))}
+              <div className="note">
+                <b>{storage.reclaimable_mb} MB</b> in {storage.reclaimable_files}{' '}
+                cached video file(s) can go now: their source is gone, or they are
+                older than it and would be re-encoded on next view anyway.
+                {storage.old_jobs?.length > 0 && (
+                  <> {storage.old_jobs.length} job record(s) are over a month
+                     old; they are listed rather than removed, since each is the
+                     only account of how a result was produced.</>
+                )}
+              </div>
+              <div className="row">
+                <button className="primary"
+                        disabled={!storage.reclaimable_files}
+                        onClick={async () => {
+                          const r = await api('/api/storage/cleanup',
+                                              { method: 'POST' })
+                          setStorage(null)
+                          setCleanup(r)
+                        }}>
+                  Reclaim {storage.reclaimable_mb} MB
+                </button>
+                <button onClick={async () => {
+                  const r = await api('/api/storage/cleanup?everything=true',
+                                      { method: 'POST' })
+                  setStorage(null)
+                  setCleanup(r)
+                }}>Clear the whole video cache</button>
+              </div>
+            </>
+          )}
+          {cleanup && (
+            <div className="note">
+              Removed {cleanup.removed} file(s), freeing {cleanup.freed_mb} MB.
+              {!cleanup.orphans_only
+                && ' Bouts will re-encode on next view, taking a few seconds each.'}
+            </div>
+          )}
         </div>
 
         <div className="panel">

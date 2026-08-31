@@ -30,7 +30,7 @@ import subprocess
 import sys
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -994,7 +994,7 @@ def propose_scorers(bout_id: str, body: ScorerRequest):
 
 
 @app.post("/api/bouts/{bout_id}/propose-lunges")
-def propose_lunges(bout_id: str, slot: int = 0):
+def propose_lunges(bout_id: str, slot: int = Query(0, ge=0, le=1)):
     """
     Propose lunges for one fencer, calibrated on the ones already confirmed.
 
@@ -1155,7 +1155,12 @@ def _job_view(job):
 async def create_job(
     video: UploadFile = File(...),
     confirm_piste: bool = Form(True),
-    pose_stride: int = Form(0),
+    # 0 means "use the pipeline's default". The upper bound is not arbitrary
+    # politeness: pose stride changes what the numbers MEAN, since a stride of 3
+    # is what produced the 27 per cent pose-availability figure the report
+    # discusses, and a stride of several hundred would report figures derived
+    # from a handful of frames while looking like every other run.
+    pose_stride: int = Form(0, ge=0, le=30),
 ):
     """
     Accept a bout video and queue it for processing.
@@ -1391,6 +1396,52 @@ def delete_job(job_id: str):
             os.remove(path)
     job_store.delete(job_id)
     return {"ok": True}
+
+
+# --- disk ---------------------------------------------------------------
+
+def _all_results_dirs():
+    return RESULTS_DIRS + sorted(
+        glob.glob(os.path.join(UPLOAD_RESULTS_ROOT, "upload_*")))
+
+
+@app.get("/api/storage")
+def get_storage():
+    """
+    Where the disk went, and how much of it can go.
+
+    Worth an endpoint rather than a note in the README because nothing else in
+    this system reclaims anything, and the transcode cache grows every time a
+    bout is viewed. On the development machine it reached 313 MB unnoticed. The
+    point of reporting it by category is that "how much" is not the useful
+    question: the answer a user needs is which of it is derived and which is
+    their own footage.
+    """
+    from storage import stale_jobs, storage_report
+    report = storage_report(WEB_VIDEO_DIR, _all_results_dirs(),
+                            UPLOAD_ROOT, JOB_ROOT, UPLOAD_RESULTS_ROOT)
+    report["old_jobs"] = stale_jobs(job_store, older_than_days=30)
+    return report
+
+
+@app.post("/api/storage/cleanup")
+def clean_storage(everything: bool = Query(
+        False, description="also delete transcodes that are still serviceable")):
+    """
+    Delete cached video that is derived, never anything that is not.
+
+    Defaults to the two kinds that cost nothing to lose: transcodes whose source
+    video is gone, and transcodes older than the source they were made from,
+    which the serving code would re-encode over anyway. Clearing the live cache
+    as well costs a few seconds per bout on next view and has to be asked for.
+
+    Nothing here can reach the pipeline results, the annotated videos, the
+    uploaded sources or the annotations. The annotations matter most: they are 36
+    hand-marked lunges and 27 hand-labelled touches that no amount of
+    reprocessing would bring back.
+    """
+    from storage import clean
+    return clean(WEB_VIDEO_DIR, _all_results_dirs(), orphans_only=not everything)
 
 
 # --- static UI ----------------------------------------------------------
