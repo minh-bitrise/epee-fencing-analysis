@@ -348,3 +348,54 @@ class TestDetectAudioEvents:
         ev = detect_audio_events(tone_burst(sr, 20.0, [(3.0, 0.40)], 3200), sr,
                                  (2950, 3450), percentile=98.0)
         assert any(e["sustained"] for e in ev)
+
+
+class TestWindowIsTimeNotFrames:
+    """
+    The local-minimum window describes the timescale of a fencing phrase, which
+    does not change with the camera. It used to be 25 FRAMES, commented as
+    "about one second at 29 fps", and that was only true of the clip it was
+    tuned on: the evaluation set runs at 29, 30, 50 and 60 fps, so the same
+    constant meant 0.86 s on clip 3 and 0.42 s on clip 1.
+    """
+
+    def series(self, fps, duration=20.0, dip_at=10.0, dip_width=0.6):
+        """
+        A V-shaped approach and retreat, which is what a touch looks like.
+
+        Deliberately not a flat-bottomed dip: every sample in a plateau is a
+        local minimum, so the count would scale with the sampling rate and the
+        test would be measuring the frame rate rather than the window. Real
+        candidates arrive in clusters too, which is why the pipeline merges
+        anything within MERGE_GAP_S downstream.
+        """
+        import numpy as np
+        t = np.arange(0, duration, 1.0 / fps)
+        d = np.full_like(t, 3.0)
+        near = np.abs(t - dip_at) < dip_width
+        d[near] = 1.0 + 2.0 * np.abs(t[near] - dip_at) / dip_width
+        return t, d
+
+    def test_the_same_event_is_found_at_either_frame_rate(self):
+        """
+        The property that was missing. The same event, sampled at 29 and at 60
+        fps, has to be found at the same TIME; before this the window covered
+        0.86 s at one rate and 0.42 s at the other, so an event could clear the
+        prominence test at one and not the other.
+        """
+        from detect_touches import local_minima
+        slow = local_minima(*self.series(29))
+        fast = local_minima(*self.series(60))
+        assert slow and fast, "the event was missed at one of the two rates"
+        assert abs(min(t for t, _ in slow) - min(t for t, _ in fast)) < 0.1
+
+    def test_the_window_is_expressed_in_seconds(self):
+        from detect_touches import LOCAL_MIN_WIN_S
+        assert 0.5 <= LOCAL_MIN_WIN_S <= 1.5
+
+    def test_a_short_series_does_not_raise(self):
+        # Deriving the sample spacing needs at least a few points, and a bout
+        # whose tracking almost entirely failed produces very few.
+        import numpy as np
+        from detect_touches import local_minima
+        assert local_minima(np.array([0.0, 0.1]), np.array([2.0, 2.0])) == []
