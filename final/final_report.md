@@ -1200,6 +1200,20 @@ which the matcher has nothing left to separate them by. That is the close-range 
 already named as the second failure mode, now with a number attached and a consequence traced
 through to a reported statistic.
 
+**Applying the check to every earlier output settles two more questions.** Under the previous
+candidate selection clip 2 swapped 9 times and reported the +3.86 m this report flagged as not
+believable; under the current one it swaps 0 times and reports -0.00 m, so the candidate fix did
+not merely coincide with a better number, it removed the swapping that produced the bad one. And
+the two clip 4 experiments recorded in Appendix E as simply "worse", cropping to the piste and
+masking the gallery, swap 57 and 64 times against a baseline of 14: tightening the frame around
+the fencers puts them closer together in the measured space, which is exactly where the matcher
+runs out of ways to separate them.
+
+The masked variant also shows why the magnitude check was never sufficient. It reports net
+displacements of +1.00 and -0.59 m, which pass the implausibility test comfortably, while its slots
+exchange fencers 64 times. **A believable-looking number is not evidence that identity held**, and
+the two checks catch different failures.
+
 **The system now detects this rather than reporting the figure confidently.** A bout with any
 side swap at all carries a warning saying that per-slot figures are not attributable to a
 particular fencer, which is a stronger and more useful statement than observing that a number

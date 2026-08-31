@@ -51,6 +51,41 @@ Independent corroboration: play resets to the guard lines after every touch, so 
 should be near zero. Clip 2's Fencer 1 went from an implausible +3.86 m to -0.00 m, and clip 4's
 Fencer 1 from +0.42 m to -0.05 m. That was not the target of the change.
 
+## Slot identity: check side swaps, not just the size of a number
+
+`count_side_swaps` in `generate_summary.py` counts sign changes in
+`f1_pos_m - f2_pos_m`. Fencers do not cross on a piste, so any swap is the tracker
+exchanging which fencer a slot follows, and a per-slot figure on such a bout is not
+attributable to a fencer at all. Applied across every output carrying the raw position
+columns:
+
+| directory | clip | swaps | F1 net | F2 net |
+|---|---|---|---|---|
+| results_current | clip 1, 2, 3 | **0** | plausible | plausible |
+| results_current | clip 4 | 14 | +0.05 | +7.08 |
+| results_confidence_candidates | clip 2 | 9 | **+3.86** | +0.16 |
+| results_confidence_candidates | clip 4 | 17 | -0.42 | +7.54 |
+| results_pose | clip 2 | 9 | +3.86 | +0.16 |
+| results_clip4_crop | clip 4 cropped | **57** | +1.99 | -7.27 |
+| results_clip4_masked | clip 4 masked | **64** | +1.00 | -0.59 |
+
+Three things this settles.
+
+**It explains clip 2's old +3.86 m exactly.** Under the previous candidate selection clip 2 swapped
+9 times; under the current one it swaps 0 and the figure is -0.00 m. The candidate fix did not
+merely coincide with a more plausible number, it removed the swapping that produced the
+implausible one.
+
+**It explains why the clip 4 crop and mask experiments were worse.** Both were recorded as "worse"
+on coverage. The real effect is on identity: 57 and 64 swaps against a baseline of 14. Tightening
+the frame around the fencers puts them closer together in the measured space, which is precisely
+where the matcher runs out of ways to tell them apart.
+
+**A plausible-looking net displacement is NOT evidence that identity held.** `results_clip4_masked`
+reports +1.00 and -0.59 m, which pass the implausibility check comfortably, while swapping 64
+times. The magnitude check and the identity check catch different failures, and only the second
+one asks the question that matters for attributing anything to a named fencer.
+
 ## Flags matter, and are easy to forget
 
 Clips 1, 2 and 4 need their piste configuration; clip 3 does not, because it contains no other
