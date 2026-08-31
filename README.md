@@ -45,10 +45,10 @@ interrupts a running job.
 ### Tests
 
 ```bash
-cd code/prototype && python3 -m pytest -q          # pipeline: 313
-cd code/backend   && python3 -m pytest -q -m "not slow"   # API: 142
+cd code/prototype && python3 -m pytest -q          # pipeline: 320
+cd code/backend   && python3 -m pytest -q -m "not slow"   # API: 163
 cd code/backend   && python3 -m pytest -q test_end_to_end.py  # slow, loads models
-cd code/frontend  && npm test                      # interface: 23
+cd code/frontend  && npm test                      # interface: 41
 ```
 
 The end-to-end tests are marked slow and excluded from the fast run. They drive
