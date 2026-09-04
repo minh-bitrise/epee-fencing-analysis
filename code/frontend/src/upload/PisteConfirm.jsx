@@ -48,6 +48,11 @@ export default function PisteConfirm({ job, onDecided }) {
     canvas.width = frameW
     canvas.height = frameH
     const ctx = canvas.getContext('2d')
+    // Guarded rather than assumed. A browser can refuse a context under memory
+    // pressure or when too many are live, and without this the whole panel
+    // throws, taking the accept and skip buttons with it. Losing the overlay is
+    // bad; losing the ability to answer the question is worse.
+    if (!ctx) return
     ctx.clearRect(0, 0, frameW, frameH)
 
     // Everything outside the band is dimmed rather than the band being outlined.
