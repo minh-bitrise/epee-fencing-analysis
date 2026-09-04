@@ -47,11 +47,19 @@ key results, and contribution in 200-300 words.)*
 
 ### Context
 
-Video review is now a routine part of sports performance analysis at professional levels, but
-in amateur and club-level fencing it remains largely manual, informal, and inconsistent. Recorded
-bout footage often sits unreviewed, or is reviewed by watching whole clips repeatedly to extract
-qualitative impressions. Even dedicated fencing analysis tools tend to require the user to label
-every action by hand, which is a substantial time cost and discourages routine use.
+Video review is now routine in sports performance analysis, but in fencing the review itself has
+remained manual across the whole sport rather than only at its amateur end. Coaches at elite,
+FIE and Olympic level still scrub footage by hand and tag actions themselves; no automated
+pipeline is in widespread use anywhere in the sport. What differs by level is the resources
+brought to the same manual task, not the task. At club level the consequence is that recorded
+bouts often sit unreviewed altogether, or are reviewed by watching whole clips repeatedly for
+qualitative impressions, and even dedicated fencing analysis tools require the user to label
+every action by hand, which is a time cost that discourages routine use.
+
+The addressable need is therefore broader than accessibility for amateurs, although amateur
+accessibility is this project's primary user focus: a club fencer has no analyst and no budget,
+so they are the user for whom automation makes the difference between analysis happening and
+not happening.
 
 This project develops an AI-assisted web application for analysing recorded epee fencing bouts.
 The system combines multiple pre-trained AI models with a user-driven annotation workflow to
@@ -91,6 +99,45 @@ system is AI-assisted, not fully automatic. The unreliability of state-of-the-ar
 vision on real fencing footage is treated as a constraint to be accommodated by the workflow
 rather than a problem to be solved before the system can be useful.
 
+### Contributions
+
+The project delivers four things, listed here so that the chapters that follow can be read
+against them.
+
+**A working end-to-end system.** A bout video is uploaded through a browser, processed by a
+background job runner, and reviewed through an annotation interface, with no terminal involved.
+Three pre-trained models are chained rather than demonstrated separately: person detections
+bound the region pose estimation works in, pose landmarks supply the ground reference the
+distance series is measured from, that series drives touch proposal, confirmed touches scope
+every aggregate, and those aggregates are what a language model is given to interpret.
+
+**A geometric touch detector, evaluated against hand-labelled ground truth.** Twenty-seven
+touches were labelled across four independently sourced bouts, with clips held back from tuning
+so that generalisation could be tested rather than assumed. An audio-based detector was built
+first, shown to fail on held-back footage, and replaced.
+
+**Two capabilities the detector could not supply on its own.** Attribution of a touch to a
+fencer, read from the scoring machine's lamps, and lunge proposals calibrated per bout from
+lunges the user has already confirmed. Both are reported with the limits measurement established
+rather than as finished features.
+
+**A methodological result about measuring one's own system.** Repeatedly during this project a
+metric survived its own derivation and then failed a test of what it could actually detect: a
+classifier using invented rather than derived thresholds, a movement total that accumulated its
+own smoothing, an ablation that varied a quantity the models never see, a spatial filter that
+improved a headline number while making the underlying result worse, and a tracker choosing
+between candidates on differences indistinguishable from noise. The Evaluation chapter treats
+that pattern as a finding in its own right, because the diagnosis in each case came from
+measurement against an external constraint rather than from further reasoning.
+
+### Scope
+
+Deliberately out of scope: refereeing decisions and right-of-way, which epee does not require
+and which the system makes no attempt to judge; identification of individual athletes, which
+raises personal-data questions the Design chapter's ethics section addresses and which the
+system avoids by tracking anonymous slots; and multi-camera or three-dimensional reconstruction,
+which would resolve several measurement limitations and is treated as further work.
+
 ### Project template
 
 This project corresponds to the CM3020 Artificial Intelligence template "Project Idea 1:
@@ -99,14 +146,10 @@ around at least three pre-trained models applied to a clearly defined problem.
 
 ### Structure of this report
 
-The Literature Review chapter reviews related academic literature and existing systems. The
-Design chapter sets out the system design (architecture, technologies, intended user workflow),
-the work plan and evaluation plan, ethics, and the development methodology and tooling. The
-Implementation chapter is a development log: it documents the prototype as it was actually
-built, including iterations and changes of direction, and the testing that supports it. The
-Evaluation chapter reports results on real bout footage, assesses how well the work meets its
-aims, and discusses observed failure modes and known limitations. The Conclusion summarises the
-project, lays out future work, and reflects on what was learned.
+The Implementation chapter is written as a development log rather than a description of a
+finished artefact: it records what was built, in what order, and where the direction changed,
+because on this project the changes of direction carry most of the evidence. The Evaluation
+chapter reports results on real footage and judges them against the aims above.
 
 ---
 
