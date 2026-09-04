@@ -572,11 +572,11 @@ reproducible, not just the final artefacts. Each tool and convention is listed w
 rationale so that another developer (or marker) could continue the project from the same
 starting point.
 
-**Editor and workflow.** Claude Code (CLI) was used for code generation, code review and
-writing support; VS Code for visual inspection; GitHub Desktop for branch and commit
-visualisation when terminal git was inconvenient. The CLI / IDE split was practical rather
-than ideological: writing and refactoring code happened in the CLI session, reading and
-spot-checking the diffs in VS Code, and inspecting commit history in GitHub Desktop.
+**Editor and workflow.** Development was split between a terminal and an IDE for practical
+rather than ideological reasons: writing and refactoring in a shell session with the test
+suite running alongside, reading and spot-checking diffs in VS Code, and inspecting commit
+history in GitHub Desktop when a visual view of the branch graph was quicker than terminal
+git.
 
 **Language, runtime and dependencies.** All AI and video-processing code is in Python 3.13.
 The prototype uses the Ultralytics implementation of YOLOv8 with the built-in ByteTrack
@@ -620,10 +620,10 @@ Completed items in `TODO.md` are checked off but not deleted, preserving the aud
 what the project actually went through.
 
 **Documentation.** The repository's `README.md` describes the project at a high level and
-gives setup instructions for the prototype. The `CLAUDE.md` file holds short-form context
-used during development. The development log (this section's later siblings) and the
-`TODO.md` cross-references together replace what would otherwise be a separate design
-journal or wiki.
+gives setup instructions. `RESULTS.md` indexes every output directory and records which
+figures should be quoted from where, which matters because a dozen of them accumulated during
+development. The development log (this section's later siblings) and the `TODO.md`
+cross-references together replace what would otherwise be a separate design journal or wiki.
 
 **Repository hygiene.** The `.gitignore` excludes Python build artefacts (`__pycache__/`,
 `*.egg-info/`, `.venv/`, `dist/`, `build/`), Node artefacts left over from the early docx

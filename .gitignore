@@ -40,10 +40,10 @@ Thumbs.db
 *.log
 tmp/
 
-# Local editor/agent tooling. launch.json only records how to start the dev server
-# on this machine, and committing it would add an AI-tool trace that B11 then has to
-# clean up before submission.
+# Local editor and tooling configuration. Machine-specific and not part of the
+# project.
 .claude/
+CLAUDE.md
 
 # Runtime data produced by the web app: uploads, job records and their outputs.
 # Kept out of git for the same reason as the prototype results - videos are large
