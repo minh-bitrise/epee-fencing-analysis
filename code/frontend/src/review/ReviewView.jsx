@@ -94,7 +94,12 @@ export default function ReviewView({ initialBoutId }) {
     // the approach that produced it, and starting playback on the frame of
     // contact shows the aftermath instead.
     v.currentTime = Math.max(0, t - 1.5)
-    v.play().catch(() => {})
+    // play() returns a promise in modern browsers and undefined in older ones,
+    // and calling .catch on undefined throws. Guarded because the throw would
+    // happen inside a keyboard handler, killing the rest of the review loop over
+    // a autoplay rejection that is itself harmless.
+    const started = v.play()
+    if (started && typeof started.catch === 'function') started.catch(() => {})
   }, [])
 
   const select = useCallback((i) => {
