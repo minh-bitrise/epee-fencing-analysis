@@ -537,3 +537,73 @@ class TestBoutDiscoveryCache:
         monkeypatch.setattr(appmod, "UPLOAD_RESULTS_ROOT", str(tmp_path / "gone"))
         appmod._bouts_cache["key"] = None
         assert appmod._bouts() == {}
+
+
+class TestFencerProfile:
+    """
+    The profile endpoint. Its risk is presentational rather than numerical: a
+    radar looks authoritative, so the tests that matter are the ones checking it
+    declines to draw one when the tracking does not support it.
+    """
+
+    def _bout(self, tmp_path, client, f1, f2, name="prof"):
+        results = tmp_path / "results_uploads" / f"upload_{name}"
+        results.mkdir(parents=True, exist_ok=True)
+        header = ("frame,time_s,distance_raw_m,distance_smooth_m,method,"
+                  "f1_advance_m,f1_retreat_m,f2_advance_m,f2_retreat_m,"
+                  "f1_pos_m,f2_pos_m\n")
+        body = "".join(
+            f"{i},{i*0.1:.1f},2.0,2.0,pose,0,0,0,0,{f1(i):.3f},{f2(i):.3f}\n"
+            for i in range(400))
+        (results / f"b_{name}_distance.csv").write_text(header + body)
+        (results / f"b_{name}_distance_touches.csv").write_text(
+            "time_s,confidence,min_distance_m,separation_m,audio_support,signals\n"
+            "10.0,0.90,1.20,2.10,0,approach+separated\n"
+            "20.0,0.60,1.80,1.10,0,approach+separated\n")
+        return f"upload_{name}:b_{name}"
+
+    def test_profiles_a_bout_whose_tracking_held(self, client, tmp_path):
+        bout = self._bout(tmp_path, client,
+                          lambda i: 2.0 + (i % 5) * 0.1, lambda i: 6.0)
+        r = client.get(f"/api/bouts/{bout}/profile")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["available"] is True
+        assert len(body["axes"]) == 6
+
+    def test_refuses_when_the_tracker_swapped_the_fencers(self, client, tmp_path):
+        """
+        The failure this endpoint exists to guard against. Clip 4 swapped 14
+        times, and a profile computed there describes the tracker rather than
+        either fencer while looking entirely plausible.
+        """
+        bout = self._bout(tmp_path, client,
+                          lambda i: 2.0 if i < 200 else 6.0,
+                          lambda i: 6.0 if i < 200 else 2.0, name="swap")
+        body = client.get(f"/api/bouts/{bout}/profile").json()
+        assert body["available"] is False
+        assert body["swaps"] >= 1
+
+    def test_says_how_many_touches_it_rests_on(self, client, tmp_path):
+        # Three of the six axes are undefined until touches are confirmed, and a
+        # profile built on two should not be read like one built on twenty.
+        bout = self._bout(tmp_path, client,
+                          lambda i: 2.0 + (i % 5) * 0.1, lambda i: 6.0,
+                          name="count")
+        body = client.get(f"/api/bouts/{bout}/profile").json()
+        assert body["confirmed_touches"] == 0
+
+    def test_confirmed_touches_reach_the_scoring_axes(self, client, tmp_path):
+        bout = self._bout(tmp_path, client,
+                          lambda i: 2.0 + (i % 5) * 0.1, lambda i: 6.0,
+                          name="scored")
+        proposed = client.get(f"/api/bouts/{bout}/touches").json()["proposed"]
+        client.post(f"/api/bouts/{bout}/touches/{proposed[0]['id']}/decision",
+                    json={"state": "confirmed", "scorer": "left"})
+        body = client.get(f"/api/bouts/{bout}/profile").json()
+        assert body["confirmed_touches"] == 1
+        share = next(a for a in body["axes"] if a["key"] == "scoring_share_pct")
+        assert share["fencer_1"]["value"] == 100.0
+
+    def test_an_unknown_bout_is_a_404_not_a_crash(self, client):
+        assert client.get("/api/bouts/nope:nothing/profile").status_code == 404

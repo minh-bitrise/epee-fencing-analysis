@@ -1065,6 +1065,43 @@ def propose_lunges(bout_id: str, slot: int = Query(0, ge=0, le=1)):
     }
 
 
+@app.get("/api/bouts/{bout_id}/profile")
+def fencer_profile(bout_id: str):
+    """
+    A per-fencer profile of one bout, as six axes that can be drawn as a radar.
+
+    WHY THIS IS NOT THE WITHDRAWN PUSH / PULL METRIC WEARING A NEW SHAPE. That
+    metric accumulated per-frame position deltas, and a fencer re-acquired after
+    a tracking dropout contributed a one-sided step that never cancelled: clip
+    3's Fencer 2 accumulated +23.01 m against an endpoint difference of -0.94 m.
+    Every axis here is either an instantaneous reading averaged over frames or a
+    count of touches the user confirmed, so a dropout displaces a few samples out
+    of thousands instead of banking itself permanently.
+
+    WHY IT CAN REFUSE. All six axes are per-fencer and therefore assume slot
+    identity held. On clip 4 it did not, and a profile drawn there would describe
+    the tracker while looking exactly as convincing as a real one. The refusal
+    carries the swap count so the interface can say why.
+    """
+    b = _get_bout(bout_id)
+    from fencer_profile import build
+
+    proposed = load_proposed_touches(b.touches_csv)
+    confirmed = store.confirmed_touch_times(bout_id, proposed)
+    data = store.load(bout_id)
+    lunges = {}
+    for l in data["lunges"]:
+        lunges.setdefault(l["slot"] + 1, []).append(l["time_s"])
+
+    result = build(b.metrics_csv, confirmed, lunges=lunges)
+    # The profile rests on the user's confirmed touches, so how many there are is
+    # part of reading it: three axes are undefined until some touches exist, and
+    # a profile built on two touches should not be read like one built on twenty.
+    result["confirmed_touches"] = len(confirmed)
+    result["confirmed_lunges"] = {k: len(v) for k, v in lunges.items()}
+    return result
+
+
 @app.post("/api/bouts/{bout_id}/summary/generate")
 def generate_summary_for_bout(bout_id: str, force: bool = False):
     """

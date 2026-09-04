@@ -145,3 +145,39 @@ label.opt { display:flex; gap:6px; align-items:center; color:var(--muted);
 /* A proposed scorer is a suggestion, not a decision, and must not be mistaken
    for one the user has already made. */
 .suggest { color: var(--warn); font-style: italic; }
+
+  /* fencer profile: a radar comparing the two fencers in one bout.
+     Sized in the SVG's own viewBox units and scaled by CSS, so the label text
+     keeps its proportion to the shape at any panel width rather than needing a
+     breakpoint. The panel is 330 px and the labels sit outside the outer ring,
+     which is why the viewBox is wider than it is tall. */
+  .profile svg { width:100%; height:auto; display:block; overflow:visible; }
+  .profile .rings { fill:none; stroke:var(--line); }
+  .profile .spoke { stroke:var(--line); stroke-width:.6; }
+  /* An axis with no data is drawn at parity because there is nowhere honest to
+     put it, which makes it look like a measured tie. The dash is what tells the
+     two apart without reading the table underneath. */
+  .profile .spoke.absent { stroke-dasharray:2 2; }
+  .profile .axis-label { font-size:8px; fill:var(--muted); }
+  .profile .axis-label.absent { opacity:.45; }
+  /* Fill and stroke rather than fill alone: the two shapes overlap constantly
+     and a reader needs to follow one fencer's outline through the other's. */
+  .profile polygon.f1 { fill:rgba(77,163,255,.20); stroke:var(--accent);
+                        stroke-width:1.4; }
+  .profile polygon.f2 { fill:rgba(255,200,87,.16); stroke:var(--warn);
+                        stroke-width:1.4; }
+  .profile-key { display:flex; gap:14px; justify-content:center;
+                 margin:2px 0 9px; font-size:12px; color:var(--muted); }
+  .profile-key i.sw { display:inline-block; width:9px; height:9px;
+                      border-radius:2px; margin-right:5px; }
+  .profile-key i.sw.f1 { background:var(--accent); }
+  .profile-key i.sw.f2 { background:var(--warn); }
+  .profile-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .profile-table th { text-align:left; font-weight:400; color:var(--muted);
+                      padding:3px 0; }
+  .profile-table td { text-align:right; padding:3px 0 3px 8px;
+                      font-variant-numeric:tabular-nums; }
+  /* An axis with no data is dimmed rather than hidden. Hiding it would make the
+     radar look complete when it is not, which is the one reading the panel must
+     never invite. */
+  .profile-table tr.absent { color:var(--muted); opacity:.6; }

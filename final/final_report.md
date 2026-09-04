@@ -1127,6 +1127,71 @@ lunges. And the result rests on two clips and one labeller, so the claim is not
 that lunge detection works, but that per-bout calibration works where transfer
 does not.
 
+### Characterising a fencer without accumulating error
+
+The withdrawn push / pull totals are the closest this project came to answering the question
+a coach actually asks, which is not how far someone moved but what kind of fencer they were.
+Withdrawing them removed the only per-fencer characterisation the system offered. The question
+this section answers is whether any such characterisation survives the measurement failure that
+sank those totals, or whether the failure was fatal to the whole class.
+
+It was not fatal, and the reason is specific rather than general. Appendix E.2 traces the defect
+to accumulation: the totals summed per-frame position deltas, and a fencer re-acquired at a new
+position after a tracking dropout contributed a one-sided step that never cancelled. Clip 3's
+Fencer 2 accumulated +23.01 m of movement against an endpoint difference of -0.94 m, and no clamp
+threshold repairs it because the truncated steps reach 5.4 m in a single frame. What failed was
+the operation, not the underlying position series. An instantaneous reading averaged over
+thousands of frames absorbs a dropout that displaces a handful of them; a running sum banks it
+permanently and carries it to the end of the bout.
+
+`fencer_profile.py` therefore builds a six-axis profile in which no axis accumulates anything.
+Three come from the position series directly, as a mean or a quantile, and three are counts over
+the touches the user has confirmed:
+
+| Axis | Derived from | Clip 3, Fencer 1 | Clip 3, Fencer 2 |
+|---|---|---|---|
+| Territory, metres up the strip from own end | mean position | 2.40 | 3.19 |
+| Ground used, interquartile range of position | quantiles of position | 0.89 | 1.66 |
+| Scoring share, doubles counted half | confirmed touches | 58.3% | 41.7% |
+| Scoring range, mean distance when they scored | distance at those touches | 1.67 m | 1.42 m |
+| Lunges per minute | confirmed lunges | not measured | not measured |
+| Best run, consecutive touches | confirmed touches | 2 | 1 |
+
+Measured over the twelve ground-truth touches that the detector proposed, the two fencers separate
+on a reading no single number in the earlier evaluation expressed: Fencer 2 occupies nearly twice
+the ground of Fencer 1, 1.66 m of interquartile range against 0.89 m, while Fencer 1 scores at
+the longer distance, 1.67 m against 1.42 m. Whether that describes the bout is a question for
+someone who has watched it, and it is recorded as an outstanding verification rather than a
+finding.
+
+Three decisions in the axis definitions are worth stating, because each rejects an obvious
+alternative. Ground used is the interquartile range and not the full range, because one dropout
+frame at the far end of the piste would set a full-range figure entirely by itself, and that frame
+is the least trustworthy in the bout. Territory is measured from each fencer's own end of the
+observed extent rather than as a raw coordinate, or the right-hand fencer would appear dominant in
+every bout ever recorded. And the axes are scored against each other rather than against a
+population: eight fencer-bouts drawn from one club and one broadcast is not a population, and
+normalising against it would manufacture a typical epeeist out of this project's own evaluation
+set. The midpoint of each axis is parity between the two fencers in that bout, and the measured
+value is displayed beside it.
+
+The profile also introduces the first outright refusal in the system. Every axis is per-fencer, so
+all six assume slot identity held, and on clip 4 it did not: fourteen side swaps, with Fencer 1 on
+the left in only 26.9 per cent of frames. A profile computed there would describe the tracker
+rather than either fencer, and would look exactly as convincing as one that did not. Elsewhere the
+project's practice is to display a figure alongside its caveat, and that practice is sound for a
+number in a table. It is not sound for a shape: a radar with a footnote is still read as a radar.
+The interface therefore shows the swap count and the reason in place of the diagram.
+
+One defect in this feature was found by looking at the interface rather than by any test. With no
+touches confirmed, the "best run" axis reported zero for both fencers and drew at parity, which
+states that the two are evenly matched rather than that nothing has been reviewed. Every axis was
+individually correct and the picture as a whole said something false. Unmeasured axes now report
+absence explicitly, the spoke is dashed to distinguish it from a genuine tie, and both behaviours
+carry regression tests confirmed by reintroducing the defect. It is a smaller instance of the
+pattern this project has hit repeatedly, and recorded in section 9 as its central methodological
+finding: a component can satisfy every test written for it while the thing it produces is wrong.
+
 ### What closing share can actually resolve
 
 Closing share is reported here as one of the two reliable movement figures, on the
@@ -1729,6 +1794,7 @@ disagree with the figures reported here.
 | `detect_touches.py` | proposes touches from the distance series |
 | `detect_scorer.py` | attributes a touch to a fencer by reading the scoring lamps |
 | `detect_lunges.py` | proposes lunges, calibrated on lunges the user has confirmed on that bout |
+| `fencer_profile.py` | six per-fencer axes, and the refusal to compute them where slot identity failed |
 | `in_play.py` | scopes metrics to playing time using confirmed touches |
 | `tempo.py` | exchange-rate and tempo measures |
 | `generate_summary.py` | builds the statistics payload and calls the language model |
@@ -1744,7 +1810,7 @@ earlier no-build-step interface is retained and served at `/legacy`, deliberatel
 four actions: it guarantees that a checkout with Python alone still has a working review
 interface, and it is the comparison between an interface with a build step and one without.
 
-**Tests.** 320 in the pipeline, 163 in the backend and 23 in the interface, plus two end-to-end
+**Tests.** 354 in the pipeline, 168 in the backend and 70 in the interface, plus two end-to-end
 tests that drive the real pipeline on a synthetic video to exercise the joins between stages,
 which are made by filename convention rather than by return value. A GitHub Actions workflow runs
 everything that needs neither footage nor model weights.

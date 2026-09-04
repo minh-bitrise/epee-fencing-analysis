@@ -4,6 +4,7 @@ import { mergeRows, useBout } from './useBout.js'
 import Timeline from './Timeline.jsx'
 import TouchTable from './TouchTable.jsx'
 import MetricsPanel from './MetricsPanel.jsx'
+import ProfilePanel from './ProfilePanel.jsx'
 import SummaryPanel from './SummaryPanel.jsx'
 import LungePanel from './LungePanel.jsx'
 
@@ -583,6 +584,17 @@ export default function ReviewView({ initialBoutId }) {
           {metricsError
             ? <div className="note">{metricsError}</div>
             : <MetricsPanel metrics={metrics} />}
+        </div>
+
+        <div className="panel">
+          <h2>Fencer profile</h2>
+          {/* Keyed on the touch and lunge counts rather than reloaded on every
+              change: three of its six axes move only when a touch or a lunge is
+              confirmed, and refetching on each keystroke would put a request
+              behind every decision in the review loop. */}
+          <ProfilePanel boutId={boutId} boutPath={boutPath(boutId)}
+                        refreshKey={`${data?.progress?.confirmed ?? 0}`
+                                    + `:${data?.lunges?.length ?? 0}`} />
         </div>
 
         {error && <div className="panel err">{error}</div>}

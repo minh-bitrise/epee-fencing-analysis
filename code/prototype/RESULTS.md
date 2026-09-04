@@ -162,6 +162,44 @@ those are opposite verdicts.
 that an uploaded video, which has no config at all, gets something measured rather than nothing,
 with the user confirming it in the interface.
 
+## Per-fencer figures need the swap check first (4 Sep 2026)
+
+`fencer_profile.py` computes six per-fencer axes from a results directory. All six assume slot
+identity held for the bout, so it runs `count_side_swaps` first and REFUSES rather than qualifies:
+
+```
+python3 fencer_profile.py --metrics results_current/fencing_clip3_distance.csv \
+                          --touches ground_truth/fencing_clip3_touches.csv
+```
+
+| clip | swaps | profile |
+|---|---|---|
+| 1, 2, 3 | 0 | computed |
+| 4 | 14 | refused |
+
+Measured on clip 3 with all 12 matched ground-truth touches confirmed:
+
+| axis | Fencer 1 | Fencer 2 |
+|---|---|---|
+| Territory, m up the strip from own end | 2.40 | 3.19 |
+| Ground used, interquartile range of position, m | 0.89 | 1.66 |
+| Scoring share, doubles counted half | 58.3% | 41.7% |
+| Scoring range, mean distance when they scored, m | 1.67 | 1.42 |
+| Lunges per minute | not measured | not measured |
+| Best run, consecutive touches | 2 | 1 |
+
+**None of these are accumulations, and that is the point.** The withdrawn push / pull totals summed
+per-frame deltas, where a re-acquisition after a dropout banks a one-sided step permanently
+(appendix E.2: +23.01 m accumulated against -0.94 m of endpoint difference). Every axis above is
+either an instantaneous reading averaged over frames or a count of confirmed touches, so a dropout
+displaces a few samples out of thousands. **Do not add an axis that sums anything per-frame.**
+
+The interquartile range, not the full range, for "ground used": one dropout frame at the far end of
+the piste sets a full-range figure by itself, and it is the least trustworthy frame in the bout.
+
+The lunge axis reads "not measured" on every clip because nothing supplies confirmed lunges until
+someone labels them in the app. That is absence, not a measured zero, and it is reported as such.
+
 ## Reproducing any of them
 
 ```
