@@ -36,27 +36,48 @@ the piste, both fencers and the referee, who stands ON the strip so the region f
 him. The left fencer is detected in every sampled frame and the confidence cut discarded them in 9
 of 16, flickering between first and third place on margins around 0.01.
 
-| clip | coverage old / new | mix-ups old / new | touch F1 old / new | corrections old / new |
-|------|--------------------|-------------------|--------------------|-----------------------|
-| 1 | 92.9% / **93.5%** | 2 / **0** | 0.80 / 0.80 | 1 of 3 / 1 of 3 |
-| 2 | 98.0% / 98.0% | 15 / **0** | 0.86 / 0.86 | 1 of 4 / 1 of 4 |
-| 3 | 97.4% / 97.4% | 0 / 0 | 0.86 / 0.86 | 4 of 14 / 4 of 14 |
-| 4 | 73.7% / **79.8%** | 114 / **54** | 0.60 / 0.60 | 8 of 6 / 8 of 6 |
+Two changes landed close together and are easy to conflate, so they are reported separately. Every
+touch figure below is at **min confidence 0.00, clip 3's tuned operating point**, which is the only
+protocol-compliant way to read a held-back clip.
 
-**Touch figures here are all at min confidence 0.00, which is clip 3's tuned operating point, and
-that is the only protocol-compliant way to read a held-back clip.** An earlier version of this
-table gave clip 4 as 0.67 rising to 0.77 with 4 then 3 corrections. Those were read at clip 4's
-OWN best-scoring threshold of 0.80, which is choosing an operating point by looking at the
-held-back clip. At the tuned point clip 4 is 0.60 either way: the candidate change improves
-tracking, not touch detection, on that clip.
+**Change 1, candidate selection.** Tracking only. Measured with the frame-based window that was
+still in force at the time, so this isolates the tracker.
 
-Mix-ups are single-frame position jumps over 1.5 m, the direct signature of a slot switching person.
-**The 720p headline is unchanged**: clips 1-3 still give 6 corrections against 21 manual entries.
-Only clip 4 moves. Nothing regressed on any clip on any measure.
+| clip | coverage | mix-ups | touch F1 |
+|------|----------|---------|----------|
+| 1 | 92.9% -> **93.5%** | 2 -> **0** | 0.80, no change |
+| 2 | 98.0%, no change | 15 -> **0** | 0.86, no change |
+| 3 | 97.4%, no change | 0, no change | 0.86, no change |
+| 4 | 73.7% -> **79.8%** | 114 -> **54** | 0.60, no change |
 
-Independent corroboration: play resets to the guard lines after every touch, so net displacement
-should be near zero. Clip 2's Fencer 1 went from an implausible +3.86 m to -0.00 m, and clip 4's
-Fencer 1 from +0.42 m to -0.05 m. That was not the target of the change.
+Mix-ups are single-frame position jumps over 1.5 m, the direct signature of a slot switching
+person. Coverage and mix-ups improve or hold everywhere; touch F1 moves on no clip.
+
+An earlier version of this table gave clip 4's touch F1 as 0.67 rising to 0.77. Both were read at
+clip 4's OWN best threshold of 0.80, which is choosing an operating point by looking at the
+held-back clip, and the gain disappears at the tuned point. **The candidate change improves
+tracking and not touch detection.**
+
+**Change 2, the local-minimum window** from 25 frames to 0.85 seconds. Touch detection only.
+
+| clip | before | after |
+|------|--------|-------|
+| 1 | P1.00 R0.67 F1 0.80, 1 corr | no change |
+| 2 | P1.00 R0.75 F1 0.86, 1 corr | P0.67 **R1.00** F1 0.80, 2 corr |
+| 3 | P0.86 R0.86 F1 0.86, 4 corr | no change |
+| 4 | P0.43 R1.00 F1 0.60, 8 corr | no change |
+
+Clip 2 now finds all four touches where it missed one, and pays two false positives for it. F1
+falls because it weights precision and recall equally; corrections rise because that metric treats
+a rejection and a manual addition as equally expensive, which the report states is false.
+
+**Current state of `results_current`:** both changes applied, touch files regenerated 31 Aug 2026.
+Clips 1-3 need 6 corrections against 21 manual entries, unchanged from the draft. Clip 4 needs 8
+against 6.
+
+Independent corroboration of change 1: play resets to the guard lines after every touch, so net
+displacement should be near zero. Clip 2's Fencer 1 went from an implausible +3.86 m to -0.00 m,
+and clip 4's Fencer 1 from +0.42 m to -0.05 m. That was not the target of the change.
 
 ## Slot identity: check side swaps, not just the size of a number
 
