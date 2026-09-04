@@ -40,10 +40,9 @@ Thumbs.db
 *.log
 tmp/
 
-# Local editor and tooling configuration. Machine-specific and not part of the
-# project.
-.claude/
-CLAUDE.md
+# Machine-local editor and tooling configuration is excluded via
+# .git/info/exclude rather than here, since it is specific to one developer's
+# setup and not a property of the project.
 
 # Runtime data produced by the web app: uploads, job records and their outputs.
 # Kept out of git for the same reason as the prototype results - videos are large

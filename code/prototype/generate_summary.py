@@ -29,7 +29,8 @@ import json
 import os
 import statistics
 
-# The LLM to use. Claude Opus 4.8 is the current recommended default.
+# The LLM to use. This identifier is passed straight to the provider API,
+# so it has to be the provider's exact model name.
 DEFAULT_MODEL = "claude-opus-4-8"
 
 # Tactical distance bands in metres, front foot to front foot - these mirror
@@ -495,7 +496,7 @@ def cache_key(model, system_prompt, user_prompt):
 
 def call_llm(model, system_prompt, user_prompt):
     """
-    Send the prompt to Claude and return the summary text.
+    Send the prompt to the model and return the summary text.
     Imported lazily so the rest of the module (stats, prompt, cache)
     works and is testable without the anthropic package or an API key.
     """
@@ -559,7 +560,7 @@ def generate(csv_path, model=DEFAULT_MODEL, force=False, touches=None):
 def main():
     parser = argparse.ArgumentParser(description="Generate an LLM tactical summary from a metrics CSV")
     parser.add_argument("--csv", required=True, help="Path to a *_distance.csv produced by run_detection.py")
-    parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Claude model ID (default {DEFAULT_MODEL})")
+    parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Provider model ID (default {DEFAULT_MODEL})")
     parser.add_argument("--force", action="store_true", help="Regenerate even if the cached summary is current")
     parser.add_argument("--touches", default=None,
                         help="Touch times CSV (ground truth or detector output). Adds touch "
