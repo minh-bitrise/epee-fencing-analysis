@@ -1084,6 +1084,54 @@ lunges. And the result rests on two clips and one labeller, so the claim is not
 that lunge detection works, but that per-bout calibration works where transfer
 does not.
 
+### What closing share can actually resolve
+
+Closing share is reported here as one of the two reliable movement figures, on the
+reasoning that counting the direction of each movement is robust where summing
+magnitudes is not. That reasoning is sound, and it says nothing about resolution.
+Across the evaluation set all eight fencer-clip values fall between 48.3 and 52.8
+per cent, a spread of 4.5 points around 50, which is also what a metric dominated
+by noise would produce.
+
+Frames are strongly autocorrelated, because a fencer's direction of travel is
+committed for a few tenths of a second, so treating each frame as an independent
+draw gives a standard error under one point and would make every one of these
+figures look highly significant. Resampling contiguous blocks of a third of a
+second instead, converted to frames from each clip's own sample spacing:
+
+| Clip | Fencer | Closing share | 95% interval | Differs from 50%? |
+|---|---|---|---|---|
+| 1 | F1 | 51.0% | 48.3 to 54.0% | no |
+| 1 | F2 | 48.3% | 45.8 to 50.8% | no |
+| 2 | F1 | 50.1% | 47.2 to 53.0% | no |
+| 2 | F2 | 50.0% | 47.4 to 52.7% | no |
+| 3 | F1 | 52.4% | 49.5 to 55.3% | no |
+| 3 | F2 | 52.0% | 49.4 to 54.7% | no |
+| 4 | F1 | 50.4% | 47.0 to 53.9% | no |
+| 4 | F2 | 52.8% | 49.4 to 56.0% | no |
+
+**Not one of the eight is distinguishable from a coin flip.** A null result is only
+readable alongside what the method could have detected, so the same machinery was
+run against series with known biases: on three minutes of footage it detects a
+60/40 tendency in 100 per cent of trials, a 55/45 tendency in 75 per cent, and a
+52/48 tendency in 30 per cent, against a false-positive rate of 11 per cent where
+no bias exists. The intervals above are therefore mildly optimistic, and a true
+interval is somewhat wider.
+
+Every measured value sits in the 48 to 53 band, which is exactly where the method
+detects a real tendency about a third of the time. **So the measurements are
+consistent with these fencers being genuinely balanced and equally consistent with
+real tendencies too small for three minutes of footage to resolve, and this
+evidence cannot separate those.** Closing share should be reported with its
+interval, and a difference between two fencers should not be read from it unless
+the intervals separate. On this footage none do.
+
+This is the fifth measurement in this project to survive its own reasoning and
+fail a test of what it can resolve, and the pattern is now specific enough to
+state as a rule: a metric's derivation establishes what it means, never what it
+can detect, and the second question needs its own measurement. `evaluate_closing_share.py`
+reproduces both tables.
+
 ### Detection coverage
 
 Coverage of 82-87% (both fencers detected and assigned to their stable slots) is well above
