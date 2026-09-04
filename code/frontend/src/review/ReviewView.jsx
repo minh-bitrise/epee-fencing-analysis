@@ -7,6 +7,8 @@ import MetricsPanel from './MetricsPanel.jsx'
 import ProfilePanel from './ProfilePanel.jsx'
 import ReviewQueue, { formatElapsed } from './ReviewQueue.jsx'
 import EffortPanel from './EffortPanel.jsx'
+import Tabs from './Tabs.jsx'
+import Disclosure from './Disclosure.jsx'
 import SummaryPanel from './SummaryPanel.jsx'
 import LungePanel from './LungePanel.jsx'
 
@@ -512,126 +514,109 @@ export default function ReviewView({ initialBoutId }) {
 
   return (
     <main>
-      <div>
-        <div className="panel">
-          <div className="row" style={{ marginBottom: 10 }}>
-            <select value={boutId} onChange={(e) => setBoutId(e.target.value)}>
-              {bouts.map((b) => {
-                const tags = []
-                if (!b.has_touches) tags.push('no touches')
-                if (!b.has_video) tags.push('no video')
-                return (
-                  <option key={b.bout_id} value={b.bout_id}>
-                    {b.label || b.bout_id}
-                    {tags.length ? `  (${tags.join(', ')})` : ''}
-                  </option>
-                )
-              })}
-            </select>
-            <span className="mini">{currentTime.toFixed(1)}s</span>
-            <span className="spacer" style={{ flex: 1 }} />
-            <span className="mini">
-              {p ? `${p.reviewed}/${p.proposed} reviewed${p.complete ? ' - complete' : ''}` : ''}
+      {/* THE WORK COLUMN. Video, timeline, the decision loop, and the record it
+          produces. Nothing else lives here: every other panel in this interface
+          answers a question the user is not asking while they are reviewing, and
+          the previous layout put six of them at equal weight down the page. */}
+      <div className="work">
+        <div className="boutbar">
+          <select value={boutId} onChange={(e) => setBoutId(e.target.value)}>
+            {bouts.map((b) => {
+              const tags = []
+              if (!b.has_touches) tags.push('no touches')
+              if (!b.has_video) tags.push('no video')
+              return (
+                <option key={b.bout_id} value={b.bout_id}>
+                  {b.label || b.bout_id}
+                  {tags.length ? `  (${tags.join(', ')})` : ''}
+                </option>
+              )
+            })}
+          </select>
+          <span className="clock">{currentTime.toFixed(1)}s</span>
+          <span className="grow" />
+          {p && (
+            <span className="progress-inline" title="proposals reviewed">
+              <i><b style={{ width: `${reviewedPct}%` }} /></i>
+              {p.reviewed}/{p.proposed}
             </span>
-          </div>
-          {listError && (
-            <div className="note err" onClick={() => setListError(null)}>
-              {listError} <span className="mini">(click to dismiss)</span>
-            </div>
           )}
+        </div>
 
-          <div className="row modebar">
-            <button className="primary" disabled={!!queue || !!manual
-                                                  || !pendingCount}
+        {listError && (
+          <div className="note err" onClick={() => setListError(null)}>
+            {listError} <span className="mini">(click to dismiss)</span>
+          </div>
+        )}
+
+        {data?.has_video ? (
+          <video ref={videoRef} controls preload="metadata"
+                 src={`${boutPath(boutId)}/video`}
+                 onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                 onClick={placeAnchor} />
+        ) : (
+          <div className="novid">
+            No annotated video for this bout.<br />
+            <span className="mini">Run the pipeline to produce one.</span>
+          </div>
+        )}
+
+        <Timeline duration={duration} rows={visibleRows}
+                  segments={data?.unreliable_segments}
+                  selIdx={selIdx} currentTime={currentTime}
+                  onSelect={select}
+                  onSeek={(t) => { if (videoRef.current) videoRef.current.currentTime = t }} />
+
+        {queue ? (
+          <ReviewQueue items={queue.items} kind={queue.kind}
+                       startedAt={queue.startedAt}
+                       onSeek={seek} onDecide={decideQueued}
+                       onExit={exitQueue} />
+        ) : (
+          <div className="actionbar">
+            <button className="primary" disabled={!!manual || !pendingCount}
                     onClick={startTouchQueue}>
               Review {pendingCount || 'no'} proposal
-              {pendingCount === 1 ? '' : 's'} one at a time
+              {pendingCount === 1 ? '' : 's'}
             </button>
             {manual ? (
               <button className="primary" onClick={finishManual}>
                 Finish manual run
               </button>
             ) : (
-              <button disabled={!!queue} onClick={startManual}>
-                Log this bout manually
-              </button>
+              <button onClick={startManual}>Log manually</button>
             )}
-            {manual && (
-              <span className="mini manual-live">
-                Manual mode: proposals hidden, timing.
-              </span>
-            )}
+            {manual && <span className="mini manual-live">
+              proposals hidden, timing
+            </span>}
+            <span className="grow" />
+            <span className="keyhint">
+              <b>j</b><b>l</b> move <b>k</b> play <b>c</b> confirm <b>x</b> reject
+              {' '}<b>a</b> add <b>,</b><b>.</b> frame <b>1</b><b>2</b> lunge
+            </span>
           </div>
-          {sessionNote && (
-            <div className="note" onClick={() => setSessionNote(null)}>
-              {sessionNote} <span className="mini">(click to dismiss)</span>
-            </div>
-          )}
+        )}
 
-          {data?.has_video ? (
-            <video ref={videoRef} controls preload="metadata"
-                   src={`${boutPath(boutId)}/video`}
-                   onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-                   onClick={placeAnchor} />
-          ) : (
-            <div className="novid">
-              No annotated video for this bout.<br />
-              <span className="mini">Run the pipeline to produce one.</span>
-            </div>
-          )}
+        {sessionNote && (
+          <div className="note" onClick={() => setSessionNote(null)}>
+            {sessionNote} <span className="mini">(click to dismiss)</span>
+          </div>
+        )}
 
-          <Timeline duration={duration} rows={visibleRows}
-                    segments={data?.unreliable_segments}
-                    selIdx={selIdx} currentTime={currentTime}
-                    onSelect={select}
-                    onSeek={(t) => { if (videoRef.current) videoRef.current.currentTime = t }} />
-
-          {queue ? (
-            <ReviewQueue items={queue.items} kind={queue.kind}
-                         startedAt={queue.startedAt}
-                         onSeek={seek} onDecide={decideQueued}
-                         onExit={exitQueue} />
-          ) : (
-            <div className="mini" style={{ marginTop: 8 }}>
-              <b>j</b> / <b>l</b> previous and next, <b>k</b> play or pause,
-              {' '}<b>c</b> confirm, <b>x</b> reject, <b>a</b> add a touch here,
-              {' '}<b>,</b> / <b>.</b> step one frame, <b>1</b> / <b>2</b> label a lunge.
-            </div>
-          )}
-        </div>
-
-        <div className="panel">
-          <h2>{manual ? 'Touches you have logged' : 'Proposed touches'}</h2>
+        <section className="record">
+          <h2>{manual ? 'Logged by hand' : 'Touches'}</h2>
           {manual && (
             <div className="note">
-              The detector's proposals are hidden for this run. Play the bout and
-              press <code>a</code> at each touch, <code>1</code> or <code>2</code>
-              {' '}at each lunge. This exists to be the control condition for the
-              effort claim, not a better way to work.
+              Proposals are hidden for this run. Press <code>a</code> at each
+              touch and <code>1</code> or <code>2</code> at each lunge.
             </div>
           )}
           <TouchTable rows={visibleRows} selIdx={selIdx} onSelect={select}
                       onDecide={decide} onDelete={removeAdded}
                       scorerProposals={scorers?.proposals} />
-
-          <div className="row" style={{ marginTop: 9 }}>
-            <span className="mini">Read the lamps, green belongs to:</span>
-            <button onClick={() => proposeScorers('left')}>Fencer 1</button>
-            <button onClick={() => proposeScorers('right')}>Fencer 2</button>
-          </div>
-          {scorers?.loading && <div className="mini">reading the lamps...</div>}
-          {scorers?.error && <div className="note err">{scorers.error}</div>}
-          {scorers?.proposals && (
-            <div className="note">
-              Proposed a scorer for <b>{scorers.decided}</b> of{' '}
-              {scorers.total} confirmed touches, shown in the table as
-              suggestions. {scorers.basis}.
-              <br /><br />{scorers.note}
-            </div>
-          )}
-          <form className="row" style={{ marginTop: 10 }} onSubmit={addTouchByTime}>
-            <input name="time" type="number" step="0.1" placeholder="time (s)" required
-                   style={{ width: 110 }} />
+          <form className="row addrow" onSubmit={addTouchByTime}>
+            <input name="time" type="number" step="0.1" placeholder="time (s)"
+                   required style={{ width: 100 }} />
             <select name="scorer" defaultValue="unknown">
               <option value="left">left</option>
               <option value="right">right</option>
@@ -640,147 +625,178 @@ export default function ReviewView({ initialBoutId }) {
             </select>
             <button type="submit">Add a missed touch</button>
           </form>
-        </div>
-
-        <div className="panel">
-          <h2>Tracking corrections</h2>
-          <div className="row">
-            <button onClick={() => armAnchor(0)}>Re-anchor Fencer 1</button>
-            <button onClick={() => armAnchor(1)}>Re-anchor Fencer 2</button>
-            <button className="primary"
-                    disabled={!data?.reanchors?.length}
-                    onClick={reprocess}>
-              Re-run with corrections
-              {data?.reanchors?.length ? ` (${data.reanchors.length})` : ''}
-            </button>
-            <button onClick={exportAnchors}>Export to a file</button>
-          </div>
-          {outcomes?.exists && (
-            <div className="note">
-              Of the {outcomes.total} correction(s) applied to this bout,
-              {' '}<b>{outcomes.applied}</b> changed the tracker's assignment.
-              {outcomes.applied < outcomes.total && (
-                <> The rest were overruled by the ordinary matching, which is
-                   this action's designed behaviour: nothing is force-assigned,
-                   so a correction the matcher disagrees with has no effect.
-                   {outcomes.outcomes.filter(o => o.outcome !== 'applied')
-                     .map(o => (
-                       <div key={`${o.frame}-${o.slot}`} className="mini">
-                         {o.time_s.toFixed(2)}s, Fencer {o.slot + 1}: {o.outcome}
-                       </div>
-                     ))}
-                </>
-              )}
-            </div>
-          )}
-          {anchorMsg && <div className="note">{anchorMsg}</div>}
-          {anchorOut?.error && <div className="note err">{anchorOut.error}</div>}
-          {anchorOut?.text && <div className="mini">{anchorOut.text}</div>}
-          {anchorOut?.reprocess && (
-            <div className="note">
-              Re-running with <b>{anchorOut.reprocess.corrections}</b>{' '}
-              correction(s){anchorOut.reprocess.piste_config
-                ? `, carrying over ${anchorOut.reprocess.piste_config}` : ''}.
-              {' '}Watch it on the upload tab. The result arrives as a separate
-              bout, so you can open this one beside it and see whether the
-              correction helped.
-            </div>
-          )}
-          {anchorOut?.result && (
-            <div className="note">
-              Wrote <b>{anchorOut.result.corrections}</b> correction(s) to{' '}
-              <code>{anchorOut.result.path}</code>. Rerun the pipeline with them:
-              <br /><code>{anchorOut.result.next}</code>
-              <br /><br />
-              <button onClick={markApplied}>I have rerun it</button>
-            </div>
-          )}
-
-          <form className="row" style={{ marginTop: 11 }} onSubmit={addSegment}>
-            <input name="start" type="number" step="0.1" placeholder="from (s)" required
-                   style={{ width: 100 }} />
-            <input name="end" type="number" step="0.1" placeholder="to (s)" required
-                   style={{ width: 100 }} />
-            <button type="submit">Exclude range</button>
-          </form>
-          {data?.unreliable_segments?.map((s) => (
-            <div className="stat" key={s.id}>
-              <span>{s.start_s.toFixed(1)}-{s.end_s.toFixed(1)}s excluded</span>
-              <button onClick={() => guard(async () => {
-                await api(`${boutPath(boutId)}/segments/${s.id}`, del)
-                await reload()
-              })}>remove</button>
-            </div>
-          ))}
-        </div>
-
-        <div className="panel">
-          <h2>Generated summary</h2>
-          <SummaryPanel boutId={boutId} />
-        </div>
-
-        <LungePanel boutId={boutId} lunges={data?.lunges || []}
-                    onQueue={startLungeQueue}
-                    touchTimes={confirmedTimes} onChanged={reload} />
+        </section>
       </div>
 
-      <div>
-        <div className="panel">
-          <h2>Review progress</h2>
-          <div className="bar"><div style={{ width: `${reviewedPct}%` }} /></div>
-          {p && (
-            <div className="mini" style={{ marginTop: 7 }}>
-              <div className="stat"><span>confirmed</span><b>{p.confirmed}</b></div>
-              <div className="stat"><span>rejected</span><b>{p.rejected}</b></div>
-              <div className="stat"><span>added by hand</span><b>{p.user_added}</b></div>
-              <div className="stat"><span>excluded ranges</span><b>{p.unreliable_segments}</b></div>
-              <div className="stat"><span>re-anchors pending</span><b>{p.pending_reanchors}</b></div>
-            </div>
-          )}
-          <button style={{ marginTop: 9, width: '100%' }} onClick={exportTouches}>
-            Export confirmed touches
-          </button>
-          {exportOut?.text && <div className="mini">{exportOut.text}</div>}
-          {exportOut?.error && <div className="note err">{exportOut.error}</div>}
-          {exportOut?.result && (
-            <div className="note">
-              Wrote <b>{exportOut.result.touches}</b> touches to{' '}
-              <code>{exportOut.result.path}</code>
-              {!exportOut.result.review_complete && (
-                <><br /><b>Review is not finished</b>, so pending proposals are
-                  missing and the count is a lower bound.</>
-              )}
-              <br /><br />Regenerate the summary from it:
-              <br /><code>{exportOut.result.next}</code>
-            </div>
-          )}
-        </div>
+      {/* Everything the user might want to KNOW or CHANGE, grouped by the
+          question it answers and one click away rather than all at once. */}
+      <div className="side">
+        <Tabs tabs={{
+          Bout: () => (
+            <>
+              <Section title="This bout">
+                {metricsError
+                  ? <div className="mini">{metricsError}</div>
+                  : <MetricsPanel metrics={metrics} />}
+              </Section>
+              <Section title="Score">
+                <ProfilePanel boutId={boutId} boutPath={boutPath(boutId)}
+                              scoreOnly
+                              refreshKey={`${data?.progress?.confirmed ?? 0}`} />
+              </Section>
+              <Section title="Review effort">
+                <EffortPanel sessions={sessions} />
+              </Section>
+            </>
+          ),
+          Fencers: () => (
+            <Section title="Profile">
+              {/* Keyed on the touch and lunge counts rather than reloaded on
+                  every change: three of its six axes move only when a touch or
+                  a lunge is confirmed, and refetching on each keystroke would
+                  put a request behind every decision in the review loop. */}
+              <ProfilePanel boutId={boutId} boutPath={boutPath(boutId)}
+                            refreshKey={`${data?.progress?.confirmed ?? 0}`
+                                        + `:${data?.lunges?.length ?? 0}`} />
+            </Section>
+          ),
+          Notes: () => (
+            <Section title="Generated summary">
+              <SummaryPanel boutId={boutId} />
+            </Section>
+          ),
+          Tools: () => (
+            <>
+              <Section title="Who scored">
+                <div className="row">
+                  <span className="mini">green belongs to</span>
+                  <button onClick={() => proposeScorers('left')}>Fencer 1</button>
+                  <button onClick={() => proposeScorers('right')}>Fencer 2</button>
+                </div>
+                {scorers?.loading && <div className="mini">reading the lamps...</div>}
+                {scorers?.error && <div className="note err">{scorers.error}</div>}
+                {scorers?.proposals && (
+                  <div className="note">
+                    Proposed a scorer for <b>{scorers.decided}</b> of{' '}
+                    {scorers.total} confirmed touches. {scorers.basis}.
+                    <Disclosure label="How reliable is this?">
+                      {scorers.note}
+                    </Disclosure>
+                  </div>
+                )}
+              </Section>
 
-        <div className="panel">
-          <h2>Metrics</h2>
-          {metricsError
-            ? <div className="note">{metricsError}</div>
-            : <MetricsPanel metrics={metrics} />}
-        </div>
+              <Section title="Lunges">
+                <LungePanel boutId={boutId} lunges={data?.lunges || []}
+                            onQueue={startLungeQueue}
+                            touchTimes={confirmedTimes} onChanged={reload} />
+              </Section>
 
-        <div className="panel">
-          <h2>Review effort</h2>
-          <EffortPanel sessions={sessions} />
-        </div>
+              <Section title="Tracking corrections">
+                <div className="row">
+                  <button onClick={() => armAnchor(0)}>Re-anchor F1</button>
+                  <button onClick={() => armAnchor(1)}>Re-anchor F2</button>
+                </div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <button className="primary" disabled={!data?.reanchors?.length}
+                          onClick={reprocess}>
+                    Re-run with corrections
+                    {data?.reanchors?.length ? ` (${data.reanchors.length})` : ''}
+                  </button>
+                  <button onClick={exportAnchors}>Export</button>
+                </div>
+                {outcomes?.exists && (
+                  <div className="note">
+                    Of {outcomes.total} correction(s) applied,{' '}
+                    <b>{outcomes.applied}</b> changed the assignment.
+                    {outcomes.applied < outcomes.total && (
+                      <Disclosure label="Why did the rest do nothing?">
+                        Nothing is force-assigned, so a correction the matcher
+                        disagrees with has no effect. That is the action's
+                        designed behaviour.
+                        {outcomes.outcomes.filter((o) => o.outcome !== 'applied')
+                          .map((o) => (
+                            <div key={`${o.frame}-${o.slot}`} className="mini">
+                              {o.time_s.toFixed(2)}s, Fencer {o.slot + 1}:{' '}
+                              {o.outcome}
+                            </div>
+                          ))}
+                      </Disclosure>
+                    )}
+                  </div>
+                )}
+                {anchorMsg && <div className="note">{anchorMsg}</div>}
+                {anchorOut?.error && <div className="note err">{anchorOut.error}</div>}
+                {anchorOut?.text && <div className="mini">{anchorOut.text}</div>}
+                {anchorOut?.reprocess && (
+                  <div className="note">
+                    Re-running with <b>{anchorOut.reprocess.corrections}</b>{' '}
+                    correction(s). Watch it on the upload tab; the result arrives
+                    as a separate bout so you can compare.
+                  </div>
+                )}
+                {anchorOut?.result && (
+                  <div className="note">
+                    Wrote <b>{anchorOut.result.corrections}</b> correction(s) to{' '}
+                    <code>{anchorOut.result.path}</code>.
+                    <br /><code>{anchorOut.result.next}</code>
+                    <br /><button onClick={markApplied}>I have rerun it</button>
+                  </div>
+                )}
+              </Section>
 
-        <div className="panel">
-          <h2>Fencer profile</h2>
-          {/* Keyed on the touch and lunge counts rather than reloaded on every
-              change: three of its six axes move only when a touch or a lunge is
-              confirmed, and refetching on each keystroke would put a request
-              behind every decision in the review loop. */}
-          <ProfilePanel boutId={boutId} boutPath={boutPath(boutId)}
-                        refreshKey={`${data?.progress?.confirmed ?? 0}`
-                                    + `:${data?.lunges?.length ?? 0}`} />
-        </div>
+              <Section title="Excluded ranges">
+                <form className="row" onSubmit={addSegment}>
+                  <input name="start" type="number" step="0.1" placeholder="from (s)"
+                         required style={{ width: 88 }} />
+                  <input name="end" type="number" step="0.1" placeholder="to (s)"
+                         required style={{ width: 88 }} />
+                  <button type="submit">Exclude</button>
+                </form>
+                {data?.unreliable_segments?.map((sg) => (
+                  <div className="stat" key={sg.id}>
+                    <span>{sg.start_s.toFixed(1)}-{sg.end_s.toFixed(1)}s</span>
+                    <button onClick={() => guard(async () => {
+                      await api(`${boutPath(boutId)}/segments/${sg.id}`, del)
+                      await reload()
+                    })}>remove</button>
+                  </div>
+                ))}
+              </Section>
 
-        {error && <div className="panel err">{error}</div>}
+              <Section title="Export">
+                <button style={{ width: '100%' }} onClick={exportTouches}>
+                  Export confirmed touches
+                </button>
+                {exportOut?.text && <div className="mini">{exportOut.text}</div>}
+                {exportOut?.error && <div className="note err">{exportOut.error}</div>}
+                {exportOut?.result && (
+                  <div className="note">
+                    Wrote <b>{exportOut.result.touches}</b> touches to{' '}
+                    <code>{exportOut.result.path}</code>
+                    {!exportOut.result.review_complete && (
+                      <><br /><b>Review is not finished</b>, so pending proposals
+                        are missing and the count is a lower bound.</>
+                    )}
+                  </div>
+                )}
+              </Section>
+            </>
+          ),
+        }} />
+
+        {error && <div className="note err">{error}</div>}
       </div>
     </main>
+  )
+}
+
+/** A titled group inside a tab. A rule and a label, not another bordered box. */
+function Section({ title, children }) {
+  return (
+    <section className="sec">
+      <h3>{title}</h3>
+      {children}
+    </section>
   )
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
+import Disclosure from './Disclosure.jsx'
 import ScorePanel from './ScorePanel.jsx'
 
 /**
@@ -54,7 +55,14 @@ const fmt = (v, unit) => {
   return unit ? `${n}${unit === '%' ? '' : ' '}${unit}` : n
 }
 
-export default function ProfilePanel({ boutId, boutPath, refreshKey }) {
+/**
+ * `scoreOnly` renders the scoreline without the radar. The two are computed by
+ * the same request but answer different questions, and they belong in different
+ * places: the score is part of what happened in this bout, the radar is a
+ * characterisation of the two fencers.
+ */
+export default function ProfilePanel({ boutId, boutPath, refreshKey,
+                                       scoreOnly = false }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
 
@@ -70,6 +78,8 @@ export default function ProfilePanel({ boutId, boutPath, refreshKey }) {
 
   if (error) return <div className="note err">{error}</div>
   if (!data) return <div className="mini">Loading.</div>
+
+  if (scoreOnly) return <ScorePanel score={data.score} zones={data.zones} />
 
   if (!data.available) {
     return (
@@ -93,7 +103,11 @@ export default function ProfilePanel({ boutId, boutPath, refreshKey }) {
 
   return (
     <div className="profile">
-      <svg viewBox="0 0 216 192" role="img"
+      {/* The viewBox carries margin on every side rather than relying on
+          overflow, because the axis labels sit OUTSIDE the outer ring and the
+          side column clips them at its edge. Measured: "Ground used" ran off a
+          348 px panel. */}
+      <svg viewBox="-38 -8 292 212" role="img"
            aria-label="how the two fencers compare on six measures">
         {[0.25, 0.5, 0.75, 1].map((f) => (
           <polygon key={f} className="rings"
@@ -145,19 +159,19 @@ export default function ProfilePanel({ boutId, boutPath, refreshKey }) {
         </tbody>
       </table>
 
-      <ScorePanel score={data.score} zones={data.zones} />
-
-      <div className="note">
-        {data.note}
-        {' '}Scoped to {data.scoping}.
-        {data.confirmed_touches === 0 ? (
-          <> <b>No touches confirmed yet</b>, so the scoring, range and run axes
-             are undrawn. Confirm some touches and they fill in.</>
-        ) : (
-          <> Resting on {data.confirmed_touches} confirmed touch
-             {data.confirmed_touches === 1 ? '' : 'es'}.</>
-        )}
-      </div>
+      {data.confirmed_touches === 0 ? (
+        <div className="note">
+          <b>No touches confirmed yet</b>, so three axes are undrawn.
+        </div>
+      ) : (
+        <div className="mini">
+          Resting on {data.confirmed_touches} confirmed touch
+          {data.confirmed_touches === 1 ? '' : 'es'}.
+        </div>
+      )}
+      <Disclosure label="How to read this">
+        {data.note} Scoped to {data.scoping}.
+      </Disclosure>
     </div>
   )
 }

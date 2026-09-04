@@ -1,3 +1,5 @@
+import Disclosure from './Disclosure.jsx'
+
 /**
  * The scoreline: how it moved, and where on the strip the touches were scored.
  *
@@ -44,9 +46,7 @@ export default function ScorePanel({ score, zones }) {
       {score.unattributed > 0 && (
         <div className="note">
           <b>{score.unattributed}</b> touch
-          {score.unattributed === 1 ? '' : 'es'} had no scorer, so
-          {score.unattributed === 1 ? ' it advances' : ' they advance'} neither
-          score. Read the lamps or set the scorer by hand and this fills in.
+          {score.unattributed === 1 ? '' : 'es'} with no scorer, not counted.
         </div>
       )}
 
@@ -64,12 +64,12 @@ export default function ScorePanel({ score, zones }) {
                 {zones.fencer_2.map((n, i) => <td key={i}>{n}</td>)}</tr>
             </tbody>
           </table>
-          <div className="mini">
+          <Disclosure label="How are these measured?">
             Measured from each fencer's own end, so "far third" means the same
             for both. Thirds rather than five zones: the metre scale is derived
             per clip, and finer bands would be narrower than the measurement
             behind them.
-          </div>
+          </Disclosure>
         </>
       )}
     </>

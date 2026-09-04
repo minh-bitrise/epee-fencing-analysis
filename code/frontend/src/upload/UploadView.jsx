@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, uploadVideo } from '../api.js'
 import JobCard from './JobCard.jsx'
+import Disclosure from '../review/Disclosure.jsx'
 
 // How often to ask the server what the jobs are doing. Two seconds is chosen
 // against what is being watched rather than by habit: the pipeline reports
@@ -79,8 +80,8 @@ export default function UploadView({ onOpenBout }) {
   return (
     <main className="single">
       <div>
-        <div className="panel">
-          <h2>Upload a bout</h2>
+        <section className="sec">
+          <h3>Upload a bout</h3>
           <div className={`drop${dragOver ? ' over' : ''}`}
                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
                onDragLeave={() => setDragOver(false)}
@@ -115,20 +116,20 @@ export default function UploadView({ onOpenBout }) {
               Let me confirm the piste region before processing
             </label>
           </div>
-          <div className="note">
-            The piste region tells the tracker which part of the frame the strip
-            occupies, so it can ignore the referee and the spectators. It is
-            measured from the footage first and then shown for confirmation.
-            Leaving this unticked accepts whatever is measured. It matters most
-            on competition footage: rebuilding the reference results without the
-            regions dropped one clip from 98 per cent tracking coverage to 80.
-          </div>
+          <Disclosure label="What is the piste region?">
+            It tells the tracker which part of the frame the strip occupies, so
+            it can ignore the referee and the spectators. It is measured from the
+            footage first and then shown for confirmation; leaving this unticked
+            accepts whatever is measured. It matters most on competition footage:
+            rebuilding the reference results without the regions dropped one clip
+            from 98 per cent tracking coverage to 80.
+          </Disclosure>
 
           {error && <div className="note err">{error}</div>}
-        </div>
+        </section>
 
-        <div className="panel">
-          <h2>Disk</h2>
+        <section className="sec">
+          <h3>Disk</h3>
           {!storage ? (
             <button onClick={async () => {
               try { setStorage(await api('/api/storage')) }
@@ -187,17 +188,17 @@ export default function UploadView({ onOpenBout }) {
                 && ' Bouts will re-encode on next view, taking a few seconds each.'}
             </div>
           )}
-        </div>
+        </section>
 
-        <div className="panel">
-          <h2>Jobs</h2>
+        <section className="sec">
+          <h3>Jobs</h3>
           {jobs.length === 0
             ? <div className="mini">Nothing processed yet.</div>
             : jobs.map((job) => (
                 <JobCard key={job.job_id} job={job}
                          onChanged={refresh} onOpenBout={onOpenBout} />
               ))}
-        </div>
+        </section>
       </div>
     </main>
   )

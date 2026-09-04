@@ -38,9 +38,11 @@ describe('ScorePanel', () => {
   })
 
   it('flags touches with no scorer instead of scoring them as nil', () => {
-    // An unattributed touch is an unknown event, not a nil-nil one.
+    // An unattributed touch is an unknown event, not a nil-nil one, and the
+    // scoreline beside it is incomplete by exactly that many touches.
     render(<ScorePanel score={score({ unattributed: 4 })} zones={zones()} />)
-    expect(screen.getByText(/advance neither/)).toBeInTheDocument()
+    expect(screen.getByText(/not counted/)).toBeInTheDocument()
+    expect(screen.getByText('4')).toBeInTheDocument()
   })
 
   it('says the zones are measured from each fencer own end', () => {

@@ -60,10 +60,11 @@ describe('MetricsPanel', () => {
   })
 
   it('says what the in-play figures were scoped by', () => {
+    // Folded into the explanation rather than printed, but still present: the
+    // basis is what makes an in-play figure interpretable, so it must be
+    // reachable without going back to the API.
     render(<MetricsPanel metrics={metrics()} />)
-    // Matched on the full phrase: "confirmed touches" alone also appears as the
-    // label of the touch-count row above.
-    expect(screen.getByText(/Scoping basis: confirmed touches/))
+    expect(screen.getByText(/Scoped to confirmed touches/))
       .toBeInTheDocument()
   })
 

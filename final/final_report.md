@@ -997,6 +997,20 @@ so a saturated pixel anywhere always identifies a fencer or a state. The same re
 to the explanatory notes, every one of which carried the amber warning rule and so made genuine
 warnings indistinguishable from paragraphs explaining how a panel worked.
 
+The third decision, and the one that changed the most, was to stop presenting everything at
+once. The screen showed six bordered panels of equal visual weight, so nothing was more
+important than anything else and the single act the interface exists for, deciding about the
+proposal on screen, competed with five things the user was not doing. The working column now
+holds only the bout selector, the video, the timeline, the decision loop and the record it
+produces, with no borders inside it, since those parts are one continuous task rather than five
+announcements. Everything else moved into a tabbed side column grouped by the question it
+answers, with the corrective tools in particular separated out because they are used rarely and
+never during a review pass. The explanatory notes are folded behind single-line disclosures
+rather than deleted: nearly every caveat in this interface was paid for by a measurement that
+went wrong, so none can be dropped, but printed simultaneously they produced a screen that was
+mostly prose, and a caveat inside a wall of text is read no more carefully than one that is
+absent.
+
 The second is that numbers are set in a monospaced face. The application's content is a video and
 columns of measurements, and measurements are read by comparing them down a column, which
 proportional figures prevent. The rule is scoped to the places numbers appear rather than applied

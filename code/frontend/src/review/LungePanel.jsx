@@ -33,16 +33,14 @@ export default function LungePanel({ boutId, lunges, touchTimes, onChanged,
   const n = lunges.length
   const nScored = lunges.filter(scored).length
 
+  // No panel wrapper and no heading: this now sits inside a titled section in
+  // the Tools tab, and a box inside a box was most of what made the interface
+  // look like a stack of announcements.
   return (
-    <div className="panel">
-      <h2>Lunge labels</h2>
-      <div className="note">
-        For evaluating the pose model, not for correcting it. Pause on the frame
-        of maximum extension and press <code>1</code> or <code>2</code>; use
-        {' '}<code>,</code> and <code>.</code> to step a frame at a time. Whether
-        a lunge scored is worked out from the touch labels, so it does not need
-        marking. Around 30 is enough to settle whether stance carries a usable
-        signal.
+    <>
+      <div className="mini">
+        Pause on maximum extension and press <code>1</code> or <code>2</code>;
+        {' '}<code>,</code> and <code>.</code> step a frame.
       </div>
       <div className="mini">
         {n === 0 ? 'none yet' : canDerive ? (
@@ -100,6 +98,6 @@ export default function LungePanel({ boutId, lunges, touchTimes, onChanged,
           }}>remove</button>
         </div>
       ))}
-    </div>
+    </>
   )
 }

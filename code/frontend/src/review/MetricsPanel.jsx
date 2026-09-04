@@ -1,3 +1,5 @@
+import Disclosure from './Disclosure.jsx'
+
 // Signed metres, so the sign has to be shown: +1.2 m toward the opponent and
 // -1.2 m away are opposite tactical readings and "1.2 m" is neither.
 const signedM = (v) => (v > 0 ? '+' : '') + v.toFixed(1) + ' m'
@@ -57,10 +59,16 @@ export default function MetricsPanel({ metrics }) {
       {fencer('F1', w.fencer_1, i.fencer_1)}
       {fencer('F2', w.fencer_2, i.fencer_2)}
 
-      <div className="note">
-        Scoping basis: {metrics.scoping_basis}
-        <br />Movement derived from: {metrics.movement_basis.source}
-        <br /><br />
+      {/* A warning is printed; an explanation is folded. The two used to share
+          one grey block, which meant a real data-quality problem arrived at the
+          bottom of a paragraph about what "net displacement" means. */}
+      {w.data_quality_warnings && (
+        <div className="note err">
+          <b>Warning.</b> {w.data_quality_warnings.join(' ')}
+        </div>
+      )}
+
+      <Disclosure label="What these mean">
         Net displacement is where a fencer finished relative to where they
         started, positive toward the opponent, and it is the reliable figure.
         Forward movement in play sums the same motion over playing time only, so
@@ -69,10 +77,11 @@ export default function MetricsPanel({ metrics }) {
         moving frames spent reducing the distance, accurate to a few points.
         Cumulative push and pull totals are not shown because they measure the
         smoothing, not the fencer.
-        {w.data_quality_warnings && (
-          <><br /><br /><b>Warning.</b> {w.data_quality_warnings.join(' ')}</>
-        )}
-      </div>
+        <div className="mini" style={{ marginTop: 7 }}>
+          Scoped to {metrics.scoping_basis}.
+          {' '}Movement from {metrics.movement_basis.source}.
+        </div>
+      </Disclosure>
     </>
   )
 }

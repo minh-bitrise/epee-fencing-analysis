@@ -1,3 +1,5 @@
+import Disclosure from './Disclosure.jsx'
+
 /**
  * How long reviewing this bout took, assisted against manual.
  *
@@ -60,16 +62,14 @@ export default function EffortPanel({ sessions }) {
         </div>
       )}
 
-      <div className="note">
-        {sessions.strength}.
-        {sessions.speedup == null && (
-          <> Run the queue once and log the same bout manually once, and the
-             comparison fills in.</>
-        )}
-        {' '}A decision is one answered proposal in assisted mode and one entry
-        created in manual mode: the two modes do not produce the same number of
-        them, which is why the rate is per decision rather than per bout.
-      </div>
+      <div className="mini">{sessions.strength}.</div>
+      <Disclosure label="What counts as a decision">
+        One answered proposal in assisted mode, one entry created in manual
+        mode. The two modes do not produce the same number of them, which is
+        why the rate is per decision rather than per bout. Skipped items are
+        excluded: they are not decisions, and counting them would improve the
+        figure the more questions went unanswered.
+      </Disclosure>
     </>
   )
 }

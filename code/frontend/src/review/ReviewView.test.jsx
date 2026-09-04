@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ReviewView from './ReviewView.jsx'
 
@@ -84,6 +84,11 @@ function stubFetch({ failTouchDecision = false, touchesBody = null } = {}) {
 const press = (key) =>
   document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
 
+// The corrective tools moved into a tab. Opening it is now part of reaching them.
+const openTools = async () => {
+  fireEvent.click(await screen.findByRole('tab', { name: 'Tools' }))
+}
+
 beforeEach(() => { vi.restoreAllMocks() })
 afterEach(() => { delete global.fetch })
 
@@ -160,11 +165,17 @@ describe('ReviewView', () => {
 
   it('lists the keyboard shortcuts, since they are the whole workflow', async () => {
     stubFetch()
-    render(<ReviewView initialBoutId={BOUT} />)
-    // Matched on the hint line specifically: "confirm" also labels two buttons.
-    await waitFor(() =>
-      expect(screen.getByText(/step one frame/)).toBeInTheDocument())
-    expect(screen.getByText(/previous and next/)).toBeInTheDocument()
+    const { container } = render(<ReviewView initialBoutId={BOUT} />)
+    await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    // Matched on the hint strip itself rather than on words: "confirm" and
+    // "reject" also label buttons in the table, and the strip is now a row of
+    // keys with one-word glosses rather than a sentence.
+    const hint = container.querySelector('.keyhint')
+    expect(hint).not.toBeNull()
+    for (const key of ['j', 'l', 'k', 'c', 'x', 'a', '1', '2']) {
+      expect([...hint.querySelectorAll('b')].map((b) => b.textContent))
+        .toContain(key)
+    }
   })
 
   it('says a bout has no proposals rather than showing an empty table', async () => {
@@ -181,10 +192,12 @@ describe('ReviewView', () => {
 
   it('disables re-running until there is a correction to apply', async () => {
     // A reprocess with no corrections is a multi-minute job that changes
-    // nothing, so the button should not invite it.
+    // nothing, so the button should not invite it. It lives in Tools now: it is
+    // used rarely and never during a review pass.
     stubFetch()
     render(<ReviewView initialBoutId={BOUT} />)
     await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    await openTools()
     expect(screen.getByRole('button', { name: /Re-run with corrections/ }))
       .toBeDisabled()
   })
@@ -194,6 +207,31 @@ describe('ReviewView', () => {
     // so it is asked rather than guessed.
     stubFetch()
     render(<ReviewView initialBoutId={BOUT} />)
-    await waitFor(() => expect(screen.getByText(/green belongs to/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    await openTools()
+    expect(screen.getByText(/green belongs to/)).toBeInTheDocument()
+  })
+
+  it('keeps the review loop free of the tools that are not part of it', async () => {
+    /**
+     * The restructure this replaced a stack of six equal-weight panels with.
+     * Re-anchoring, exclusions and exports are used rarely and never during a
+     * review pass, so they must not sit in the working column competing with
+     * the decision on screen.
+     */
+    stubFetch()
+    render(<ReviewView initialBoutId={BOUT} />)
+    await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /Re-run with corrections/ }))
+      .toBeNull()
+    expect(screen.queryByText(/green belongs to/)).toBeNull()
+  })
+
+  it('opens the bout tab first, since that is what a reviewer wants', async () => {
+    stubFetch()
+    render(<ReviewView initialBoutId={BOUT} />)
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: 'Bout' }))
+        .toHaveAttribute('aria-selected', 'true'))
   })
 })
