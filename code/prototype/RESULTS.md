@@ -21,7 +21,98 @@ cite them, and several exist only to make a negative result reproducible.
 | `results_pose/` | clip 3 at `--pose-stride 1` | the stance-feature experiment in B1h, and the bout to label lunges on. Only directory with the stance columns |
 | `results_clip4_masked/` | clip 4, gallery masked | control for B1i. Removing the spectators made coverage worse |
 | `results_clip4_crop/` | clip 4, cropped to the piste | the crop B1c proposed. Also worse |
+| `results_confidence_candidates/` | the four clips under the OLD confidence-based candidate selection, kept so the draft report's figures stay reproducible. No videos |
 | `results_current/` | all four clips, one pipeline version | **the set to quote from.** First set where every clip has the raw position columns, so movement figures are comparable across clips |
+
+## Candidate selection changed on 29 Aug 2026, and `results_current` was regenerated
+
+`FencerTracker.select` used to keep the two most CONFIDENT detections each frame and discard the
+rest before any anchor was consulted. It now keeps the two NEAREST to where each slot is expected.
+`--confidence-candidates` restores the old behaviour, and `results_confidence_candidates/` holds
+the old outputs (CSVs, touch files and plots; the annotated videos were not kept, at about 1 GB).
+
+Why: across clip 2's six-second bystander capture there are always exactly three detections inside
+the piste, both fencers and the referee, who stands ON the strip so the region filter cannot remove
+him. The left fencer is detected in every sampled frame and the confidence cut discarded them in 9
+of 16, flickering between first and third place on margins around 0.01.
+
+Two changes landed close together and are easy to conflate, so they are reported separately. Every
+touch figure below is at **min confidence 0.00, clip 3's tuned operating point**, which is the only
+protocol-compliant way to read a held-back clip.
+
+**Change 1, candidate selection.** Tracking only. Measured with the frame-based window that was
+still in force at the time, so this isolates the tracker.
+
+| clip | coverage | mix-ups | touch F1 |
+|------|----------|---------|----------|
+| 1 | 92.9% -> **93.5%** | 2 -> **0** | 0.80, no change |
+| 2 | 98.0%, no change | 15 -> **0** | 0.86, no change |
+| 3 | 97.4%, no change | 0, no change | 0.86, no change |
+| 4 | 73.7% -> **79.8%** | 114 -> **54** | 0.60, no change |
+
+Mix-ups are single-frame position jumps over 1.5 m, the direct signature of a slot switching
+person. Coverage and mix-ups improve or hold everywhere; touch F1 moves on no clip.
+
+An earlier version of this table gave clip 4's touch F1 as 0.67 rising to 0.77. Both were read at
+clip 4's OWN best threshold of 0.80, which is choosing an operating point by looking at the
+held-back clip, and the gain disappears at the tuned point. **The candidate change improves
+tracking and not touch detection.**
+
+**Change 2, the local-minimum window** from 25 frames to 0.85 seconds. Touch detection only.
+
+| clip | before | after |
+|------|--------|-------|
+| 1 | P1.00 R0.67 F1 0.80, 1 corr | no change |
+| 2 | P1.00 R0.75 F1 0.86, 1 corr | P0.67 **R1.00** F1 0.80, 2 corr |
+| 3 | P0.86 R0.86 F1 0.86, 4 corr | no change |
+| 4 | P0.43 R1.00 F1 0.60, 8 corr | no change |
+
+Clip 2 now finds all four touches where it missed one, and pays two false positives for it. F1
+falls because it weights precision and recall equally; corrections rise because that metric treats
+a rejection and a manual addition as equally expensive, which the report states is false.
+
+**Current state of `results_current`:** both changes applied, touch files regenerated 31 Aug 2026.
+Clips 1-3 need 6 corrections against 21 manual entries, unchanged from the draft. Clip 4 needs 8
+against 6.
+
+Independent corroboration of change 1: play resets to the guard lines after every touch, so net
+displacement should be near zero. Clip 2's Fencer 1 went from an implausible +3.86 m to -0.00 m,
+and clip 4's Fencer 1 from +0.42 m to -0.05 m. That was not the target of the change.
+
+## Slot identity: check side swaps, not just the size of a number
+
+`count_side_swaps` in `generate_summary.py` counts sign changes in
+`f1_pos_m - f2_pos_m`. Fencers do not cross on a piste, so any swap is the tracker
+exchanging which fencer a slot follows, and a per-slot figure on such a bout is not
+attributable to a fencer at all. Applied across every output carrying the raw position
+columns:
+
+| directory | clip | swaps | F1 net | F2 net |
+|---|---|---|---|---|
+| results_current | clip 1, 2, 3 | **0** | plausible | plausible |
+| results_current | clip 4 | 14 | +0.05 | +7.08 |
+| results_confidence_candidates | clip 2 | 9 | **+3.86** | +0.16 |
+| results_confidence_candidates | clip 4 | 17 | -0.42 | +7.54 |
+| results_pose | clip 2 | 9 | +3.86 | +0.16 |
+| results_clip4_crop | clip 4 cropped | **57** | +1.99 | -7.27 |
+| results_clip4_masked | clip 4 masked | **64** | +1.00 | -0.59 |
+
+Three things this settles.
+
+**It explains clip 2's old +3.86 m exactly.** Under the previous candidate selection clip 2 swapped
+9 times; under the current one it swaps 0 and the figure is -0.00 m. The candidate fix did not
+merely coincide with a more plausible number, it removed the swapping that produced the
+implausible one.
+
+**It explains why the clip 4 crop and mask experiments were worse.** Both were recorded as "worse"
+on coverage. The real effect is on identity: 57 and 64 swaps against a baseline of 14. Tightening
+the frame around the fencers puts them closer together in the measured space, which is precisely
+where the matcher runs out of ways to tell them apart.
+
+**A plausible-looking net displacement is NOT evidence that identity held.** `results_clip4_masked`
+reports +1.00 and -0.59 m, which pass the implausibility check comfortably, while swapping 64
+times. The magnitude check and the identity check catch different failures, and only the second
+one asks the question that matters for attributing anything to a named fencer.
 
 ## Flags matter, and are easy to forget
 
@@ -39,6 +130,37 @@ python3 run_detection.py --video fencing_clip4.mp4 --output results_current --pi
 ```
 
 Everything else is default: pose stride 3, fixed scale on, stabilisation off.
+
+## Piste configs can now be measured instead of hand-authored
+
+`derive_piste.py` reproduces the procedure that produced the hand-authored polygons: sample every
+tenth frame, take the pair of detections at the same apparent depth (NOT the two tallest - on
+broadcast footage the nearest person is the referee), cluster their feet-y and keep the largest
+group, then set the edges just outside it.
+
+It reproduces the hand-authored polygon exactly on clip 2, the hardest one, and is worse on clips
+1 and 4, where the strip recedes from the camera so other people stand at the same apparent depth
+as its far end and no horizontal band can separate them.
+
+Quote the TELEPORT column, not coverage. A slot that switches onto another person jumps metres of
+piste between consecutive frames and a fencer cannot, so it is a direct signature of wrong-target
+capture. Coverage is not: on clip 4 it moves the opposite way to the truth.
+
+| clip | coverage hand / derived | teleports per 1k tracked, hand / derived |
+|------|-------------------------|------------------------------------------|
+| 1 | 92.9% / 92.5% | 0.20 / 5.21 |
+| 2 | 98.0% / 98.0% | 1.70 / 1.70 |
+| 4 | 73.7% / **75.9%** | 27.15 / **42.97** |
+
+**Do not use "readings over 6 m" as a defect count**, which an earlier version of this section did.
+Checked against frames: clip 4 at 86.0 s reads 7.44 m and shows two real fencers genuinely far
+apart during a reset, because the shot is wide and they were walking back to their guard lines. A
+raised rate there can mean a bystander was captured OR that resets are tracked more completely, and
+those are opposite verdicts.
+
+**Keep using the hand-authored configs for anything the report quotes.** The derived ones exist so
+that an uploaded video, which has no config at all, gets something measured rather than nothing,
+with the user confirming it in the interface.
 
 ## Reproducing any of them
 

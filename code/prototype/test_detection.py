@@ -53,6 +53,7 @@ from run_detection import (
     LM_RIGHT_HIP,
     get_stance_features,
     load_reanchors,
+    reanchor_outcome,
     PUSH_PULL_NOISE_FLOOR_M,
 )
 
@@ -1576,6 +1577,214 @@ class TestReanchor:
             t.reanchor(2, 100.0, 100.0)
 
 
+class TestAssignmentTies:
+    """
+    Cost ties in the two-detection matcher are routine, not a curiosity, and for
+    a long time they were broken by whatever order the candidate list happened to
+    be in. Three behaviours rested on that and all three flipped when the
+    ordering changed: re-anchor recovery (565 against 565), far-bystander
+    rejection (1455 against 1455), and the clip-2 capture itself.
+
+    A sum ties whenever one slot's fencer is absent, because that slot
+    contributes a large distance to both assignments and drowns the difference.
+    """
+
+    def _box(self, cx, cy, h=300.0, w=100.0):
+        return np.array([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2])
+
+    def test_a_tie_prefers_the_assignment_with_one_excellent_match(self):
+        """
+        Slot 0's fencer has gone and a bystander is far to the right. Both
+        assignments cost 1455. The right answer pairs slot 1 with the detection
+        5 px from it and leaves slot 0 unmatched, rather than giving slot 0 a
+        355 px match and slot 1 an 1100 px one.
+        """
+        t = FencerTracker()
+        t.select(np.array([5, 7]),
+                 np.array([self._box(100, 250), self._box(450, 250)]),
+                 np.array([0.9, 0.8]))
+
+        slots = t.select(np.array([9, 7]),
+                         np.array([self._box(1550, 250),   # bystander, far away
+                                   self._box(455, 250)]),  # fencer 2, 5 px away
+                         np.array([0.95, 0.85]))
+
+        assert slots[0] is None, "the bystander was allowed to steal slot 0"
+        assert slots[1] is not None
+        cx = (slots[1][0][0] + slots[1][0][2]) / 2
+        assert abs(cx - 455) < 1, f"slot 1 should hold the near fencer, got {cx}"
+
+    def test_the_outcome_does_not_depend_on_candidate_order(self):
+        """
+        The property that was missing. Presenting the same two detections in the
+        other order must give the same assignment; when it did not, the tests
+        that appeared to demonstrate the tracker's behaviour were reading the
+        list order back to themselves.
+        """
+        def run(swap):
+            t = FencerTracker()
+            t.select(np.array([5, 7]),
+                     np.array([self._box(100, 250), self._box(450, 250)]),
+                     np.array([0.9, 0.8]))
+            boxes = [self._box(1550, 250), self._box(455, 250)]
+            ids, confs = [9, 7], [0.95, 0.85]
+            if swap:
+                boxes, ids, confs = boxes[::-1], ids[::-1], confs[::-1]
+            slots = t.select(np.array(ids), np.array(boxes), np.array(confs))
+            return [None if s is None else round((s[0][0] + s[0][2]) / 2)
+                    for s in slots]
+
+        assert run(swap=False) == run(swap=True)
+
+
+class TestReanchorAgainstRealFailure:
+    """
+    The clip-2 failure, reconstructed from its measured numbers.
+
+    Every other test in TestReanchor builds its own scenario, and all of them
+    passed while the action could not repair a real bystander capture. These use
+    the values measured at clip 2 frame 8590, so the case that defeated it is
+    the case being asserted on.
+    """
+
+    def _box(self, cx, cy, h=100.0, w=40.0):
+        return [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2]
+
+    # Measured: the referee is the most confident detection, the far fencer next,
+    # and the fencer a user would click is third, behind by 0.010.
+    REFEREE, FAR_FENCER, CLICKED = (1044.0, 344.0), (946.0, 292.0), (508.0, 282.0)
+    CONFS = [0.899, 0.896, 0.886]
+
+    def _detections(self):
+        return ([1, 2, 3],
+                [self._box(*self.REFEREE, h=290),
+                 self._box(*self.FAR_FENCER, h=244),
+                 self._box(*self.CLICKED, h=285)],
+                self.CONFS)
+
+    def test_the_clicked_fencer_is_not_among_the_two_most_confident(self):
+        """
+        The precondition. If this stops holding the test below stops testing
+        anything, so it is asserted rather than assumed.
+        """
+        ids, boxes, confs = self._detections()
+        top_two = np.argsort(confs)[::-1][:2]
+        assert 2 not in top_two, "the clicked fencer is no longer the odd one out"
+
+    def test_a_correction_reaches_a_fencer_the_confidence_cut_would_discard(self):
+        """
+        The whole failure, in one case.
+
+        The tracker keeps only the two most confident detections before any
+        anchor is consulted, so on real footage the fencer the user clicked was
+        thrown away by a margin of 0.010 and the correction changed nothing: the
+        reprocessed run was byte-identical to its baseline.
+        """
+        t = FencerTracker()
+        ids, boxes, confs = self._detections()
+        # both slots end up on the wrong side of the piste, as they did at 171.80
+        for _ in range(3):
+            t.select(ids, boxes, confs)
+        assert t.last_pos[0][0] > 900 and t.last_pos[1][0] > 900
+
+        t.reanchor(0, *self.CLICKED)
+        slots = t.select(ids, boxes, confs)
+
+        assert slots[0] is not None, "the corrected slot got nothing"
+        cx = (slots[0][0][0] + slots[0][0][2]) / 2
+        assert abs(cx - self.CLICKED[0]) < 30, (
+            f"the correction did not reach the clicked fencer: got {cx:.0f}, "
+            f"expected about {self.CLICKED[0]:.0f}")
+
+    def test_correcting_one_slot_leaves_the_other_alone(self):
+        # A correction is a repair, not a reset. Disturbing the fencer who was
+        # being tracked correctly would trade one error for another.
+        t = FencerTracker()
+        ids, boxes, confs = self._detections()
+        for _ in range(3):
+            t.select(ids, boxes, confs)
+        other_before = t.last_pos[1]
+        t.reanchor(0, *self.CLICKED)
+        slots = t.select(ids, boxes, confs)
+        assert slots[1] is not None
+        assert abs(t.last_pos[1][0] - other_before[0]) < 60
+
+    def test_the_correction_is_consumed_after_one_frame(self):
+        """
+        The forcing must apply only to the frame a correction lands on. If it
+        persisted it would override the tracker indefinitely, and if it leaked
+        into runs without corrections it would change every figure in the
+        evaluation, all of which were produced without any.
+        """
+        t = FencerTracker()
+        ids, boxes, confs = self._detections()
+        for _ in range(3):
+            t.select(ids, boxes, confs)
+
+        t.reanchor(0, *self.CLICKED)
+        assert t.pending_anchor[0] is not None, "the click was not recorded"
+        t.select(ids, boxes, confs)
+        assert t.pending_anchor == [None, None], (
+            "the correction is still pending after the frame it applied to, so "
+            "it would override the tracker on every later frame too")
+
+    def test_a_tracker_that_was_never_corrected_never_forces_anything(self):
+        # The guarantee the evaluation depends on: this mechanism is inert unless
+        # a user has clicked, so existing results reproduce unchanged.
+        t = FencerTracker()
+        ids, boxes, confs = self._detections()
+        for _ in range(5):
+            t.select(ids, boxes, confs)
+            assert t.pending_anchor == [None, None]
+        # and the slots sit on the two most confident detections, as before
+        top_two = np.argsort(confs)[::-1][:2]
+        assert 2 not in top_two
+        for slot in (0, 1):
+            assert t.last_pos[slot][0] > 900
+
+
+class TestReanchorOutcome:
+    """
+    Whether a correction took effect has to be reported, not assumed.
+
+    A re-anchor is not a force-assignment: it moves the slot's reference point
+    and clears its gates for one frame, then lets ordinary matching resume. On
+    real footage a correction aimed at the wrong slot produced output
+    byte-identical to its baseline, so the user re-ran a multi-minute job and was
+    told nothing at all.
+    """
+
+    def box(self, cx, cy, h=200, w=70):
+        return np.array([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2])
+
+    def test_a_match_on_the_clicked_person_counts_as_applied(self):
+        outcome, dist = reanchor_outcome((500, 300), self.box(505, 302))
+        assert outcome == "applied" and dist < 10
+
+    def test_a_match_on_somebody_else_is_reported_as_ignored(self):
+        outcome, dist = reanchor_outcome((500, 300), self.box(1040, 300))
+        assert outcome.startswith("ignored")
+        assert dist == pytest.approx(540, abs=1)
+
+    def test_nothing_matched_is_distinguished_from_the_wrong_match(self):
+        # Different problems needing different responses: one means the click was
+        # overruled, the other that the fencer was not detected at all.
+        outcome, dist = reanchor_outcome((500, 300), None)
+        assert "no detection" in outcome and dist is None
+
+    def test_the_tolerance_scales_with_the_fencer(self):
+        """
+        Judged against apparent height rather than a fixed pixel budget. The same
+        60 px error is most of a body at 360p, where clip 4's fencers are about
+        103 px tall, and a third of one at 720p where they are 250 to 330.
+        """
+        offset = 60
+        small = reanchor_outcome((500, 300), self.box(500 + offset, 300, h=103))
+        large = reanchor_outcome((500, 300), self.box(500 + offset, 300, h=330))
+        assert small[0].startswith("ignored")
+        assert large[0] == "applied"
+
+
 class TestLoadReanchors:
     def _write(self, tmp_path, entries):
         import json
@@ -1595,6 +1804,41 @@ class TestLoadReanchors:
         """
         p = self._write(tmp_path, [{"time_s": 12.999, "slot": 1, "x": 1, "y": 2}])
         assert list(load_reanchors(p, 30.0)) == [390]
+
+    def test_loading_corrections_does_not_disturb_the_frame_count(self):
+        """
+        A regression, found by running the re-anchor path on real footage for the
+        first time rather than by any test.
+
+        `run()` reads the video's frame count into `total`, and the branch that
+        loads corrections then assigned the NUMBER OF CORRECTIONS to the same
+        name. The progress line began reporting "12/3 frames processed", and the
+        machine-readable PROGRESS counter the web interface reads reported a
+        percentage of the correction count, so a re-anchored run showed a bar
+        that shot past 100 per cent and stopped. It fired only when --reanchors
+        was passed, which is why it survived a full unit suite.
+
+        Asserted over the parsed function rather than over its text: a first
+        version of this test scanned the few lines following the load call and
+        passed with the defect reintroduced, because an added comment had pushed
+        the offending line out of the window it looked at.
+        """
+        import ast
+        import inspect
+        import run_detection
+
+        tree = ast.parse(inspect.getsource(run_detection.run))
+        assigned = [node for node in ast.walk(tree)
+                    if isinstance(node, ast.Assign)
+                    for t in node.targets
+                    if isinstance(t, ast.Name) and t.id == "total"]
+        assert len(assigned) == 1, (
+            f"`total` is assigned {len(assigned)} times in run(); it is the "
+            f"video's frame count and drives both progress readouts, so a second "
+            f"assignment silently redefines what progress is a fraction of")
+        # And it is the frame count, not something else that happens to be alone.
+        source = ast.unparse(assigned[0].value)
+        assert "CAP_PROP_FRAME_COUNT" in source
 
     def test_two_corrections_on_one_frame_are_both_kept(self, tmp_path):
         """Both fencers can be wrong at once, and usually are after a clinch."""

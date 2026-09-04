@@ -23,12 +23,16 @@ Run with:
 Then open http://localhost:8000
 """
 
+import glob
 import os
+import shutil
 import subprocess
 import sys
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 # The pipeline modules live alongside the prototype, and are imported rather
@@ -41,6 +45,11 @@ sys.path.insert(0, PROTOTYPE_DIR)
 from store import (  # noqa: E402
     AnnotationStore, SCORERS, VALID_STATES,
     discover_bouts, load_proposed_touches,
+)
+from jobs import (  # noqa: E402
+    ALLOWED_EXTENSIONS, AWAITING_PISTE, MAX_UPLOAD_BYTES, TERMINAL_STATES,
+    JobRunner, JobStore, pipeline_stages, summary_stages,
+    write_piste_config,
 )
 
 # results_fixed is listed first because it is the only output produced since the
@@ -62,12 +71,127 @@ RESULTS_DIRS = [os.path.join(PROTOTYPE_DIR, d) for d in
 ANNOTATION_ROOT = os.path.join(PROTOTYPE_DIR, "annotations")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
-app = FastAPI(title="Epee Bout Analysis", version="0.1.0")
+# Everything produced at runtime lives under one root, separate from both the
+# code and the evaluation artefacts. Bouts uploaded through the browser are kept
+# apart from the four clips the report's figures come from, so that "the results
+# directory" continues to mean the evaluation set and a user's upload cannot be
+# mistaken for one.
+VAR_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "var"))
+UPLOAD_ROOT = os.path.join(VAR_ROOT, "uploads")
+JOB_ROOT = os.path.join(VAR_ROOT, "jobs")
+UPLOAD_RESULTS_ROOT = os.path.join(VAR_ROOT, "results_uploads")
+for _d in (UPLOAD_ROOT, JOB_ROOT, UPLOAD_RESULTS_ROOT):
+    os.makedirs(_d, exist_ok=True)
+
 store = AnnotationStore(ANNOTATION_ROOT)
+job_store = JobStore(JOB_ROOT)
+
+_PROCESSING_STAGES = pipeline_stages()
+_SUMMARY_STAGES = summary_stages()
+
+
+def _stages_for(job):
+    """
+    Which pipeline a job runs.
+
+    Two kinds share one worker rather than one runner each, because a second
+    runner would mean a second worker thread and the one-job-at-a-time guarantee
+    exists precisely so two CPU-bound runs do not fight over a machine with no
+    GPU. A summary job is cheap, but it is not free and it is not worth a
+    special case that could let it start while detection is mid-run.
+    """
+    return _SUMMARY_STAGES if job.get("kind") == "summary" else _PROCESSING_STAGES
+
+
+runner = JobRunner(job_store, _stages_for, cwd=PROTOTYPE_DIR)
+
+
+# The service name the key is stored under in the macOS Keychain.
+KEYCHAIN_SERVICE = "anthropic-api-key"
+
+
+def _load_api_key_from_keychain():
+    """
+    Put the provider API key into the environment at startup, reading it from the
+    macOS Keychain when it is not already there.
+
+    WHY AT STARTUP AND NOT ON DEMAND. Starting the server is a deliberate act by
+    the person who owns the key, and macOS can prompt them for Keychain access
+    while they are still at the keyboard. Reading a secret in response to an HTTP
+    request would move that prompt to a moment nobody is watching, and would make
+    a web request the thing that reaches into the Keychain. Once here, the value
+    lives in this process's environment and is inherited by the summary
+    subprocess, which is where it is actually needed.
+
+    The key is never logged, never returned by any endpoint, and never written to
+    a job record. Only whether one was found is reported.
+
+    Failing is not an error. A machine without the key, or without `security`,
+    simply has no summary button, and the endpoint says so.
+    """
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "environment"
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password",
+             "-a", os.environ.get("USER", ""), "-s", KEYCHAIN_SERVICE, "-w"],
+            capture_output=True, text=True, timeout=15)
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    key = result.stdout.strip()
+    if result.returncode != 0 or not key:
+        return None
+    os.environ["ANTHROPIC_API_KEY"] = key
+    return "keychain"
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    # Jobs left mid-run by a previous process are reconciled before the worker
+    # starts, so a restart cannot leave a record claiming to be running with
+    # nothing behind it.
+    source = _load_api_key_from_keychain()
+    print(f"[startup] Provider API key: "
+          + (f"loaded from the {source}, summary generation is available"
+             if source else
+             f"not found in the environment or in the Keychain under "
+             f"'{KEYCHAIN_SERVICE}'; everything except summary generation works"))
+    runner.reconcile()
+    runner.start()
+    yield
+    # Nothing to tear down. The worker is a daemon thread holding no state that
+    # is not already on disk, and a job caught mid-run is recovered by the
+    # reconcile above rather than by a shutdown handler that a hard kill would
+    # skip anyway.
+
+
+app = FastAPI(title="Epee Bout Analysis", version="0.2.0", lifespan=lifespan)
+
+
+# Discovery reads every results directory and stats every file in them, and it
+# runs on every request that names a bout. That is a dozen directories now and
+# grows by one per upload, so the scan is cached against the directories'
+# modification times: a new bout changes the mtime of the directory holding it,
+# which is exactly when the cache should be discarded and never otherwise.
+_bouts_cache = {"key": None, "value": None}
 
 
 def _bouts():
-    return discover_bouts(RESULTS_DIRS)
+    # Uploaded bouts are discovered by scanning rather than from a fixed list,
+    # because unlike the evaluation set their number is not known in advance.
+    upload_dirs = sorted(glob.glob(os.path.join(UPLOAD_RESULTS_ROOT, "upload_*")))
+    dirs = RESULTS_DIRS + upload_dirs
+
+    key = tuple((d, os.path.getmtime(d) if os.path.isdir(d) else None)
+                for d in dirs)
+    if _bouts_cache["key"] == key:
+        return _bouts_cache["value"]
+
+    found = discover_bouts(dirs)
+    _bouts_cache["key"] = key
+    _bouts_cache["value"] = found
+    return found
 
 
 def _get_bout(bout_id):
@@ -106,6 +230,31 @@ class Reanchor(BaseModel):
 
 # --- read endpoints -----------------------------------------------------
 
+def _bout_label(bout_id):
+    """
+    A name a person can read.
+
+    Bout ids are derived from output directories, which is right for an
+    identifier and wrong for a menu: an uploaded bout is called
+    `upload_a07ab97cf679:bout_a07ab97cf679`, which says nothing about the video
+    it came from. The evaluation clips keep their ids, since those ARE the names
+    the report and RESULTS.md use and renaming them in the interface would break
+    the correspondence.
+    """
+    directory = bout_id.split(":")[0]
+    if not directory.startswith("upload_"):
+        return bout_id
+    job = job_store.load(directory[len("upload_"):])
+    if not job:
+        return bout_id
+    name = job.get("filename") or bout_id
+    if job.get("reprocess_of"):
+        # Say what it is a rerun OF, because the whole point of writing a
+        # reprocess to a new bout is comparing it against the original.
+        return f"{name} (corrected)"
+    return name
+
+
 @app.get("/api/bouts")
 def list_bouts():
     """Processed bouts available for review, with review progress for each."""
@@ -114,6 +263,7 @@ def list_bouts():
         proposed = load_proposed_touches(b.touches_csv)
         out.append({
             "bout_id": bout_id,
+            "label": _bout_label(bout_id),
             "has_touches": bool(b.touches_csv),
             "has_summary": bool(b.summary_md),
             "has_video": bool(b.video),
@@ -174,7 +324,23 @@ def get_metrics(bout_id: str):
 
     b = _get_bout(bout_id)
     rows = load_rows(b.metrics_csv)
-    whole = compute_stats(rows)
+    try:
+        whole = compute_stats(rows)
+    except ValueError as e:
+        # A bout where the tracker never held both fencers at once has no
+        # distance samples, and every statistic here is derived from them. That
+        # is a real outcome rather than a broken file: an upload shot from behind
+        # the piste, or one showing a single fencer drilling, produces exactly
+        # this. Raising through as a 500 told the user only that something had
+        # gone wrong, when what they need is to know their footage did not track
+        # and why that is not a crash. Found by the end-to-end test, on a bout
+        # whose subject the detector never recognised as people at all.
+        raise HTTPException(
+            422, f"this bout has no usable measurements: {e}. The tracker never "
+                 f"held both fencers in the same frame, so there is nothing to "
+                 f"scope or aggregate. The annotated video is still viewable, "
+                 f"and the usual cause is framing: both fencers have to be in "
+                 f"shot and roughly side-on.")
 
     proposed = load_proposed_touches(b.touches_csv)
     confirmed = store.confirmed_touch_times(bout_id, proposed)
@@ -600,10 +766,754 @@ def add_reanchor(bout_id: str, body: Reanchor):
             "note": "recorded as pending; re-run the detection pipeline to apply it"}
 
 
+def _source_for_bout(bout_id, b):
+    """
+    The ORIGINAL video a bout was produced from, and the piste config used.
+
+    Needed by any reprocess, and the two kinds of bout keep it in different
+    places: an uploaded bout's source is recorded on its job, while an evaluation
+    bout's sits in the prototype directory under the clip's stem.
+
+    The distinction that matters is that this must never return the ANNOTATED
+    render. That file has boxes, labels and a distance readout burnt into it, so
+    re-running detection over it would be detecting on top of the overlay.
+
+    Returns (source_path or None, piste_config_path or None).
+    """
+    directory = bout_id.split(":")[0]
+    if directory.startswith("upload_"):
+        job = job_store.load(directory[len("upload_"):])
+        if job:
+            piste = job.get("piste") or {}
+            config = job.get("piste_config_path")
+            source = job.get("source_path")
+            # Existence is checked here as well as on the evaluation branch. The
+            # job record says where the source WAS, and an upload whose files
+            # have since been deleted would otherwise queue a job that fails
+            # several minutes later instead of being refused immediately.
+            return (source if source and os.path.exists(source) else None,
+                    config if piste.get("polygon") and config
+                    and os.path.exists(config) else None)
+        return None, None
+
+    base = os.path.splitext(b.metrics_csv)[0]
+    stem = os.path.basename(base).replace("_distance", "")
+    source = os.path.join(PROTOTYPE_DIR, f"{stem}.mp4")
+    # The piste config has to come with it, or a rerun changes two things at
+    # once. Omitting it cost 18 points of coverage on clip 2 and looked exactly
+    # like a code regression.
+    config = None
+    for candidate in (f"piste_{stem}.json",
+                      f"piste_{stem.replace('fencing_clip', 'clip')}.json",
+                      f"piste_clip{stem.replace('fencing_clip', '') or '1'}.json"):
+        path = os.path.join(PROTOTYPE_DIR, candidate)
+        if os.path.exists(path):
+            config = path
+            break
+    return (source if os.path.exists(source) else None), config
+
+
+@app.post("/api/bouts/{bout_id}/reprocess")
+def reprocess_bout(bout_id: str):
+    """
+    Re-run the pipeline on this bout's source video, applying the user's
+    re-anchor corrections.
+
+    WHY THIS EXISTS. Action 4 changes tracking rather than interpretation, so it
+    can only take effect on a reprocess. Until now the interface's answer to "I
+    have corrected the tracking" was a command line for the user to go and type
+    in a terminal, which is precisely the arrangement this whole application
+    layer exists to remove. The corrections were recorded, exported, and then
+    depended on the user being someone who could run the pipeline by hand.
+
+    The result is a NEW bout rather than an overwrite. That is the same guarantee
+    the annotation store makes: a reprocess must never destroy a previous result,
+    and here it also means the before and after can be opened side by side, which
+    is the only way to see whether a correction helped.
+    """
+    b = _get_bout(bout_id)
+    source, piste_config = _source_for_bout(bout_id, b)
+    if not source:
+        raise HTTPException(
+            404, "the original video for this bout could not be found, so it "
+                 "cannot be reprocessed. Only the annotated render is on disk, "
+                 "and re-running detection over that would be detecting on top "
+                 "of the overlay.")
+
+    data = store.load(bout_id)
+    reanchors = data["reanchors"]
+
+    job = job_store.create(
+        kind="processing",
+        filename=f"reprocess of {bout_id}",
+        reprocess_of=bout_id,
+        confirm_piste=False,
+        source_path=source,
+        # The piste region is carried over rather than re-measured, so the rerun
+        # changes exactly one thing: the corrections.
+        piste=({"needed": True, "polygon": True,
+                "decision": "carried over from the original run"}
+               if piste_config else {"needed": False, "polygon": None}),
+        piste_config_path=piste_config or "",
+        piste_result_path="",
+    )
+    job_id = job["job_id"]
+    output_dir = os.path.join(UPLOAD_RESULTS_ROOT, f"upload_{job_id}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    reanchor_path = ""
+    if reanchors:
+        # Corrections already marked applied are included rather than filtered
+        # out. A reprocess starts from the original video every time, so every
+        # correction is needed on every run; excluding the applied ones would
+        # silently undo them.
+        import json as _json
+        reanchor_path = os.path.join(JOB_ROOT, f"{job_id}_reanchors.json")
+        with open(reanchor_path, "w") as f:
+            _json.dump([{"time_s": a["time_s"], "slot": a["slot"],
+                         "x": a["x"], "y": a["y"]} for a in reanchors], f, indent=2)
+
+    stem = os.path.splitext(os.path.basename(source))[0]
+    job_store.update(
+        job_id,
+        output_dir=output_dir,
+        reanchor_path=reanchor_path,
+        log_path=os.path.join(JOB_ROOT, f"{job_id}.log"),
+        web_video_path=os.path.join(
+            WEB_VIDEO_DIR, f"upload_{job_id}__{stem}_annotated.h264.mp4"),
+        video_info=_probe_video(source),
+    )
+    os.makedirs(WEB_VIDEO_DIR, exist_ok=True)
+    runner.submit(job_id)
+    return {
+        "job_id": job_id,
+        "corrections": len(reanchors),
+        "piste_config": os.path.basename(piste_config) if piste_config else None,
+        "note": ("re-running with your corrections; the result arrives as a new "
+                 "bout so you can compare it against this one"
+                 if reanchors else
+                 "no re-anchor corrections recorded, so this is a plain re-run"),
+    }
+
+
+@app.get("/api/bouts/{bout_id}/reanchor-outcomes")
+def get_reanchor_outcomes(bout_id: str):
+    """
+    Whether the corrections applied to this bout actually changed anything.
+
+    A re-anchor is not a force-assignment: it moves the slot's reference point
+    and clears its gates for one frame, then lets ordinary matching resume. A
+    correction the matcher disagrees with leaves no trace at all, which was
+    confirmed on real footage when a mis-aimed correction produced output
+    byte-identical to its baseline. Without this the user re-runs a job that
+    takes minutes and is told nothing, and cannot tell "my correction was wrong"
+    from "my correction was right and did not help".
+    """
+    b = _get_bout(bout_id)
+    base = os.path.splitext(b.metrics_csv)[0]
+    path = f"{base}_reanchor_outcomes.json"
+    if not os.path.exists(path):
+        return {"exists": False, "outcomes": []}
+    import json as _json
+    with open(path) as f:
+        outcomes = _json.load(f)
+    return {
+        "exists": True,
+        "outcomes": outcomes,
+        "applied": sum(1 for o in outcomes if o["outcome"] == "applied"),
+        "total": len(outcomes),
+    }
+
+
+class ScorerRequest(BaseModel):
+    """
+    Which fencer the green lamp belongs to.
+
+    Required, with no default, because nothing in the image says it and a guess
+    would be wrong half the time in a way that looks authoritative. It is one
+    confirmation per bout, which the design already asks the user for in the same
+    spirit as the piste region.
+    """
+    green_is: str = Field(..., pattern="^(left|right)$")
+
+
+@app.post("/api/bouts/{bout_id}/propose-scorers")
+def propose_scorers(bout_id: str, body: ScorerRequest):
+    """
+    Read the scoring lamps and propose who scored each confirmed touch.
+
+    WHY THIS RUNS IN THE REQUEST. It decodes a handful of frames per touch and
+    loads no models, so it costs seconds rather than the minutes a pipeline stage
+    takes. The rule that inference stays out of the request path is about the
+    models; this is colour thresholding.
+
+    WHY IT ONLY LOOKS AT TOUCHES THE USER HAS CONFIRMED. The lamps fire whenever
+    the circuit closes, which includes fencers testing weapons against the piste
+    or each other's guards, routinely just after a touch and before coming back
+    on guard. Reading them only at times a touch is already known to have
+    happened sidesteps that whole class of spurious firing, and it is why this
+    can never become a touch detector.
+
+    Proposals are returned rather than applied. The user still confirms each one,
+    which is the same contract as every other suggestion the system makes.
+    """
+    b = _get_bout(bout_id)
+    source, _ = _source_for_bout(bout_id, b)
+    if not source:
+        raise HTTPException(
+            404, "the original video for this bout could not be found, and the "
+                 "lamps cannot be read from the annotated render because it is "
+                 "re-encoded.")
+
+    proposed = load_proposed_touches(b.touches_csv)
+    confirmed = store.confirmed_touch_times(bout_id, proposed)
+    if not confirmed:
+        raise HTTPException(
+            400, "no touches confirmed yet. The lamps are read only at times a "
+                 "touch is already known to have happened, because they also "
+                 "fire when fencers test their weapons.")
+
+    from detect_scorer import classify, fit_thresholds, lamp_response
+
+    times = [c["time_s"] for c in confirmed]
+    responses = lamp_response(source, times)
+
+    # Calibrate on whatever the user has already attributed by hand. With none,
+    # fall back to fitting on the responses themselves, which is weaker and is
+    # reported as such rather than presented as the same thing.
+    labelled = [(r, c["scorer"]) for r, c in zip(responses, confirmed)
+                if c.get("scorer") in ("left", "right", "double")]
+    if labelled:
+        th = fit_thresholds([r for r, _ in labelled],
+                            [l for _, l in labelled], green_is=body.green_is)
+        basis = f"calibrated on {len(labelled)} touch(es) you already attributed"
+    else:
+        th = fit_thresholds(responses, ["unknown"] * len(responses),
+                            green_is=body.green_is)
+        basis = ("no touches attributed yet, so the thresholds are guessed from "
+                 "the lamp readings alone and are weaker than they would be "
+                 "after you attribute two or three by hand")
+
+    out = []
+    for c, r in zip(confirmed, responses):
+        pred = classify(r, th)
+        out.append({"time_s": c["time_s"], "current": c.get("scorer"),
+                    "proposed": pred["scorer"], "confidence": pred["confidence"],
+                    "red_delta": round(r["red"], 1),
+                    "green_delta": round(r["green"], 1)})
+    decided = sum(1 for o in out if o["proposed"] != "unknown")
+    return {"proposals": out, "basis": basis, "decided": decided,
+            "total": len(out),
+            "note": ("The green lamp is the reliable half. Measured across all "
+                     "four evaluation clips it identified whether one named "
+                     "fencer was involved in 27 touches out of 27; telling a "
+                     "single touch from a double needs the red lamp, which is "
+                     "contaminated by anything permanently red in shot.")}
+
+
+@app.post("/api/bouts/{bout_id}/propose-lunges")
+def propose_lunges(bout_id: str, slot: int = Query(0, ge=0, le=1)):
+    """
+    Propose lunges for one fencer, calibrated on the ones already confirmed.
+
+    WHY IT CALIBRATES INSTEAD OF TRANSFERRING. The stance ratio is not
+    view-invariant: an operating point fitted on one clip reaches F1 0.22 on
+    another while firing on a quarter of all windows. Measured, clip 3 calibrates
+    to 1.902 and clip 2 to 2.706, a 42 per cent difference in what counts as a
+    lunge-like posture. So the threshold comes from lunges the user has confirmed
+    on THIS bout, which is the correction mechanism the design already uses
+    rather than a new demand on them.
+
+    Refusing below five confirmed lunges is deliberate rather than cautious. A
+    threshold fitted on two fires on a quarter of the bout, and a user who has to
+    reject every proposal is worse off than one who was offered none.
+    """
+    b = _get_bout(bout_id)
+    from detect_lunges import (MIN_CALIBRATION_LUNGES, calibrate, propose,
+                               stance_ratio_series)
+
+    times, ratios = stance_ratio_series(b.metrics_csv, slot)
+    if len(times) == 0:
+        raise HTTPException(
+            400, "this bout has no pose stance data. It was processed before the "
+                 "stance columns existed, or pose never ran on it.")
+
+    data = store.load(bout_id)
+    confirmed = sorted(l["time_s"] for l in data["lunges"] if l["slot"] == slot)
+    threshold, used = calibrate(times, ratios, confirmed)
+    if threshold is None:
+        raise HTTPException(
+            400, f"only {used} confirmed lunge(s) for Fencer {slot + 1}; "
+                 f"{MIN_CALIBRATION_LUNGES} are needed to calibrate. Label a few "
+                 f"more with the 1 and 2 keys and try again.")
+
+    proposals = propose(times, ratios, threshold,
+                        skip_before=confirmed[MIN_CALIBRATION_LUNGES - 1] + 2.0)
+    # Anything the user has already labelled is dropped: they are being offered
+    # what to look at next, not their own work back.
+    fresh = [p for p in proposals
+             if all(abs(p["time_s"] - c) > 0.5 for c in confirmed)]
+    return {
+        "slot": slot,
+        "calibrated_on": used,
+        "threshold": round(threshold, 3),
+        "proposals": fresh,
+        "note": ("Measured on the one clip with enough labels to say anything, "
+                 "precision 0.73 and recall 0.76 on 25 held-out lunges. "
+                 "Precision is a LOWER bound: a proposal on a real lunge you had "
+                 "not labelled counts against it."),
+    }
+
+
+@app.post("/api/bouts/{bout_id}/summary/generate")
+def generate_summary_for_bout(bout_id: str, force: bool = False):
+    """
+    Generate the written summary for this bout, as a background job.
+
+    Deliberately never automatic. It costs a paid API call per run, and a job
+    that quietly spent money on every upload would reverse a decision the
+    annotation API took on purpose. What has changed is only that the user
+    presses a button rather than being handed a command to type: the decision is
+    still theirs, the terminal is no longer required.
+
+    The touch file is the reviewed export where one exists, so the summary
+    describes the record the user confirmed rather than the detector's first
+    guess. That was the point of the export, and without preferring it here the
+    prose a reader sees would still come from unreviewed output.
+    """
+    b = _get_bout(bout_id)
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(
+            400, f"No provider API key is available, so the summary cannot be "
+                 f"generated. The server looks in ANTHROPIC_API_KEY and then in "
+                 f"the macOS Keychain under the service '{KEYCHAIN_SERVICE}', "
+                 f"once, at startup. Add the key there and restart the server.")
+
+    base = os.path.splitext(b.metrics_csv)[0]
+    reviewed = f"{base}_touches_confirmed.csv"
+    touches = reviewed if os.path.exists(reviewed) else b.touches_csv
+
+    job = job_store.create(
+        kind="summary",
+        filename=f"summary for {bout_id}",
+        summary_of=bout_id,
+        metrics_csv=b.metrics_csv,
+        touches_csv=touches,
+        force=force,
+        source_path=b.metrics_csv,
+        output_dir=os.path.dirname(b.metrics_csv),
+    )
+    job_store.update(job["job_id"],
+                     log_path=os.path.join(JOB_ROOT, f"{job['job_id']}.log"))
+    runner.submit(job["job_id"])
+    return {
+        "job_id": job["job_id"],
+        "touches_used": ("the touches you confirmed" if touches == reviewed
+                         else "the detector's proposals, unreviewed"),
+    }
+
+
+# --- processing jobs ----------------------------------------------------
+#
+# The endpoints below are what turn the pipeline from a command line into an
+# application. Everything above this point reads artefacts that someone had
+# already produced in a terminal.
+
+def _probe_video(path):
+    """
+    Confirm the upload is a video this pipeline can open, and measure it.
+
+    Done in the request, deliberately, because it is the one check that must
+    happen before a job is accepted: OpenCV opening the file is the same test
+    the pipeline itself will apply, so failing it here turns a job that would
+    die two stages later into an immediate, explainable rejection. It costs one
+    file open and one frame read, and loads no models.
+    """
+    import cv2
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        cap.release()
+        return None
+    fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+    frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    ok, _ = cap.read()
+    cap.release()
+    if not ok or width == 0 or height == 0:
+        return None
+    return {"width": width, "height": height, "fps": round(fps, 2),
+            "frames": frames,
+            "duration_s": round(frames / fps, 1) if fps else None}
+
+
+def _job_view(job):
+    """
+    The job as the client sees it.
+
+    Adds the things that are derived rather than stored: queue position, elapsed
+    time, and the bout id, which only means anything once there is an output
+    directory for it to point at.
+    """
+    import time as _time
+    view = dict(job)
+    view.pop("log_tail", None)
+    view["queue_position"] = runner.queue_position(job["job_id"])
+    started, finished = job.get("started_at"), job.get("finished_at")
+    view["elapsed_s"] = round((finished or _time.time()) - started, 1) if started else None
+    if job["state"] == "done":
+        stem = os.path.splitext(os.path.basename(job["source_path"]))[0]
+        view["bout_id"] = f"{os.path.basename(job['output_dir'])}:{stem}"
+    if job["state"] in ("failed", "interrupted"):
+        view["log_tail"] = job.get("log_tail", [])
+    return view
+
+
+@app.post("/api/jobs")
+async def create_job(
+    video: UploadFile = File(...),
+    confirm_piste: bool = Form(True),
+    # 0 means "use the pipeline's default". The upper bound is not arbitrary
+    # politeness: pose stride changes what the numbers MEAN, since a stride of 3
+    # is what produced the 27 per cent pose-availability figure the report
+    # discusses, and a stride of several hundred would report figures derived
+    # from a handful of frames while looking like every other run.
+    pose_stride: int = Form(0, ge=0, le=30),
+):
+    """
+    Accept a bout video and queue it for processing.
+
+    The request writes the file to disk, checks it opens, and returns. It does
+    not process anything, which is the separation the architecture requires and
+    the reason this layer exists at all: a three minute clip takes minutes to
+    process, and a request that waited for it would time out in the proxy, the
+    browser, or both, while holding a worker for the duration.
+
+    The upload is streamed in chunks rather than read whole. A 500 MB file read
+    into memory to be written straight back out is 500 MB of resident memory
+    spent for nothing, on the same machine that is about to load three models.
+    """
+    filename = os.path.basename(video.filename or "bout.mp4")
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            400, f"unsupported file type '{ext}'. Accepted: "
+                 f"{', '.join(ALLOWED_EXTENSIONS)}")
+
+    job = job_store.create(
+        filename=filename,
+        confirm_piste=confirm_piste,
+        pose_stride=pose_stride or None,
+        source_path="", output_dir="", log_path="",
+        piste_result_path="", piste_config_path="", web_video_path="",
+    )
+    job_id = job["job_id"]
+
+    upload_dir = os.path.join(UPLOAD_ROOT, job_id)
+    os.makedirs(upload_dir, exist_ok=True)
+    # The stored name comes from the job, not from the upload. A filename
+    # arriving over the wire is user input, and it also becomes the bout id and
+    # the stem of every output file, so a name with a space or a slash in it
+    # would propagate into paths the whole pipeline then has to quote correctly.
+    source_path = os.path.join(upload_dir, f"bout_{job_id}{ext}")
+
+    written = 0
+    try:
+        with open(source_path, "wb") as f:
+            while chunk := await video.read(1024 * 1024):
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        413, f"file exceeds the {MAX_UPLOAD_BYTES // (1024*1024)} MB limit")
+                f.write(chunk)
+    except HTTPException:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        job_store.delete(job_id)
+        raise
+
+    info = _probe_video(source_path)
+    if info is None:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        job_store.delete(job_id)
+        raise HTTPException(
+            400, "the file could not be opened as a video. It may be corrupt, or "
+                 "in a container this build of OpenCV cannot read.")
+
+    output_dir = os.path.join(UPLOAD_RESULTS_ROOT, f"upload_{job_id}")
+    os.makedirs(output_dir, exist_ok=True)
+    stem = f"bout_{job_id}"
+    job_store.update(
+        job_id,
+        source_path=source_path,
+        output_dir=output_dir,
+        size_bytes=written,
+        video_info=info,
+        log_path=os.path.join(JOB_ROOT, f"{job_id}.log"),
+        piste_result_path=os.path.join(upload_dir, "piste_measurement.json"),
+        piste_config_path=os.path.join(upload_dir, "piste.json"),
+        # Written where the existing video endpoint already looks for a
+        # browser-playable copy, so transcoding during the job removes the
+        # on-demand ffmpeg run rather than duplicating it.
+        web_video_path=os.path.join(
+            WEB_VIDEO_DIR, f"upload_{job_id}__{stem}_annotated.h264.mp4"),
+    )
+    os.makedirs(WEB_VIDEO_DIR, exist_ok=True)
+    runner.submit(job_id)
+    return _job_view(job_store.load(job_id))
+
+
+@app.get("/api/jobs")
+def list_jobs():
+    return {"jobs": [_job_view(j) for j in job_store.list()]}
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job(job_id: str):
+    job = job_store.load(job_id)
+    if job is None:
+        raise HTTPException(404, f"unknown job: {job_id}")
+    return _job_view(job)
+
+
+@app.get("/api/jobs/{job_id}/log", response_class=PlainTextResponse)
+def get_job_log(job_id: str):
+    """The full pipeline output for a job, for when the summary is not enough."""
+    job = job_store.load(job_id)
+    if job is None:
+        raise HTTPException(404, f"unknown job: {job_id}")
+    path = job.get("log_path")
+    if not path or not os.path.exists(path):
+        return PlainTextResponse("no output recorded yet")
+    with open(path) as f:
+        return PlainTextResponse(f.read())
+
+
+@app.get("/api/jobs/{job_id}/frame")
+def get_job_frame(job_id: str):
+    """
+    A still from the uploaded video, for drawing the piste region over.
+
+    Taken from a quarter of the way in rather than from frame one. Broadcast
+    footage routinely opens on a title card or a crowd shot, and a first frame
+    with no fencers in it is exactly the wrong picture to ask someone to confirm
+    a fencer-detection boundary against.
+    """
+    import cv2
+    job = job_store.load(job_id)
+    if job is None:
+        raise HTTPException(404, f"unknown job: {job_id}")
+    src = job.get("source_path")
+    if not src or not os.path.exists(src):
+        raise HTTPException(404, "no source video for this job")
+
+    out = os.path.join(os.path.dirname(src), "frame.jpg")
+    if not os.path.exists(out):
+        cap = cv2.VideoCapture(src)
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, total // 4)
+        ok, frame = cap.read()
+        cap.release()
+        if not ok:
+            raise HTTPException(500, "could not read a frame from the video")
+        cv2.imwrite(out, frame)
+    return FileResponse(out, media_type="image/jpeg")
+
+
+class PisteDecision(BaseModel):
+    """
+    What the user decided about the measured piste region.
+
+    `polygon` overrides the measurement; omitting it accepts what was measured.
+    `skip` runs with no region at all, which is the right answer for footage
+    containing nobody but the two fencers and the wrong one for a competition.
+    """
+    polygon: list[list[float]] | None = None
+    skip: bool = False
+
+
+@app.post("/api/jobs/{job_id}/piste")
+def confirm_piste(job_id: str, body: PisteDecision):
+    """
+    Accept, adjust or skip the measured piste region, and let the job continue.
+
+    WHY THE JOB PAUSES HERE. The region decides which detections the tracker is
+    allowed to see, and getting it wrong is not a small error: rebuilding the
+    reference results without the regions dropped the broadcast clip from 98.0
+    per cent coverage to 80.1. It is also the one decision in the pipeline that
+    a person can make far better than the system, because they can see at a
+    glance whether the band drawn on the frame contains the fencers and excludes
+    the referee.
+
+    WHAT THE USER IS BEING ASKED. To confirm a measurement, not to produce a
+    guess. The distinction is the whole reason the region is measured first: a
+    polygon placed by eye on this project once admitted the adjacent piste and
+    raised the count of physically impossible distance readings from 53 to 252,
+    while the headline coverage figure went up. The interface therefore shows
+    what was measured and offers agreement, not an empty canvas.
+    """
+    job = job_store.load(job_id)
+    if job is None:
+        raise HTTPException(404, f"unknown job: {job_id}")
+    if job["state"] != AWAITING_PISTE:
+        raise HTTPException(
+            409, f"job is {job['state']}, not waiting on a piste decision")
+
+    piste = dict(job.get("piste") or {})
+    if body.skip:
+        piste["polygon"] = None
+        piste["needed"] = False
+        piste["decision"] = "skipped by the user"
+    elif body.polygon:
+        if len(body.polygon) < 3:
+            raise HTTPException(400, "a polygon needs at least three vertices")
+        piste["polygon"] = body.polygon
+        piste["decision"] = "adjusted by the user"
+        write_piste_config(piste, job["piste_config_path"])
+    else:
+        piste["decision"] = "accepted as measured"
+
+    job_store.update(job_id, piste=piste, state="queued")
+    runner.submit(job_id)
+    return _job_view(job_store.load(job_id))
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str):
+    job = job_store.load(job_id)
+    if job is None:
+        raise HTTPException(404, f"unknown job: {job_id}")
+    if not runner.cancel(job_id):
+        raise HTTPException(409, f"job is already {job['state']}")
+    return _job_view(job_store.load(job_id))
+
+
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str):
+    """
+    Remove a job and everything it produced.
+
+    Needed rather than tidy. Each bout keeps its source, an annotated render, a
+    browser copy of that render, a metrics CSV and a plot, which is several
+    times the size of the upload, and nothing else in this system ever deletes
+    anything. Without this the only way to reclaim the disk is to know the
+    layout and use a terminal, which is the situation this whole layer exists to
+    remove.
+    """
+    job = job_store.load(job_id)
+    if job is None:
+        raise HTTPException(404, f"unknown job: {job_id}")
+    if job["state"] not in TERMINAL_STATES and job["state"] != AWAITING_PISTE:
+        raise HTTPException(
+            409, f"job is {job['state']}; cancel it before deleting")
+    for path in (os.path.join(UPLOAD_ROOT, job_id), job.get("output_dir")):
+        if path and os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+    for path in (job.get("log_path"), job.get("web_video_path")):
+        if path and os.path.exists(path):
+            os.remove(path)
+    job_store.delete(job_id)
+    return {"ok": True}
+
+
+# --- disk ---------------------------------------------------------------
+
+def _all_results_dirs():
+    return RESULTS_DIRS + sorted(
+        glob.glob(os.path.join(UPLOAD_RESULTS_ROOT, "upload_*")))
+
+
+@app.get("/api/storage")
+def get_storage():
+    """
+    Where the disk went, and how much of it can go.
+
+    Worth an endpoint rather than a note in the README because nothing else in
+    this system reclaims anything, and the transcode cache grows every time a
+    bout is viewed. On the development machine it reached 313 MB unnoticed. The
+    point of reporting it by category is that "how much" is not the useful
+    question: the answer a user needs is which of it is derived and which is
+    their own footage.
+    """
+    from storage import stale_jobs, storage_report
+    report = storage_report(WEB_VIDEO_DIR, _all_results_dirs(),
+                            UPLOAD_ROOT, JOB_ROOT, UPLOAD_RESULTS_ROOT)
+    report["old_jobs"] = stale_jobs(job_store, older_than_days=30)
+    return report
+
+
+@app.post("/api/storage/cleanup")
+def clean_storage(everything: bool = Query(
+        False, description="also delete transcodes that are still serviceable")):
+    """
+    Delete cached video that is derived, never anything that is not.
+
+    Defaults to the two kinds that cost nothing to lose: transcodes whose source
+    video is gone, and transcodes older than the source they were made from,
+    which the serving code would re-encode over anyway. Clearing the live cache
+    as well costs a few seconds per bout on next view and has to be asked for.
+
+    Nothing here can reach the pipeline results, the annotated videos, the
+    uploaded sources or the annotations. The annotations matter most: they are 36
+    hand-marked lunges and 27 hand-labelled touches that no amount of
+    reprocessing would bring back.
+    """
+    from storage import clean
+    return clean(WEB_VIDEO_DIR, _all_results_dirs(), orphans_only=not everything)
+
+
 # --- static UI ----------------------------------------------------------
+#
+# Two interfaces are served, and both are kept deliberately.
+#
+# `/` is the React application: upload, job progress and review in one place.
+# `/legacy` is the original no-build-step page, which reviews already-processed
+# bouts and needs nothing but Python to run. It stays because it is the fallback
+# when the React build is absent, and because the two are directly comparable:
+# the same workflow, the same API, one with a build step and one without.
+
+REACT_DIR = os.path.join(STATIC_DIR, "app")
+
+if os.path.isdir(REACT_DIR):
+    # Mounted rather than routed one file at a time, because a Vite build emits
+    # hashed asset names that are not known here.
+    app.mount("/app", StaticFiles(directory=REACT_DIR, html=True), name="app")
+
 
 @app.get("/", response_class=HTMLResponse)
 def index():
+    built = os.path.join(REACT_DIR, "index.html")
+    if os.path.exists(built):
+        return FileResponse(built)
+    # Falling back rather than failing. A checkout without `npm run build` still
+    # has a working interface, which matters for a project whose examiner may
+    # never run npm at all.
+    legacy = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(legacy):
+        return FileResponse(legacy)
+    return HTMLResponse(
+        "<h1>No interface built</h1><p>Run <code>npm install &amp;&amp; npm run "
+        "build</code> in <code>code/frontend</code>, or use the legacy page.</p>",
+        status_code=404)
+
+
+@app.get("/legacy", response_class=HTMLResponse)
+def legacy_index():
+    """
+    The no-build-step interface, DELIBERATELY FROZEN at the four annotation
+    actions it was written for.
+
+    It does not have upload, job progress, the piste confirmation step, reprocess,
+    who-scored or lunge proposals, and it will not be given them. Two reasons.
+    It exists so that a checkout with Python and nothing else still has a working
+    review interface, which matters for an examiner who may never run npm, and
+    that guarantee is worth more than feature parity. And it is the comparison the
+    evaluation makes: the same four actions, the same API, one interface with a
+    build step and one without.
+
+    Keeping it current would mean maintaining every feature twice, which is how
+    the two would quietly diverge in behaviour rather than in scope.
+    """
     path = os.path.join(STATIC_DIR, "index.html")
     if not os.path.exists(path):
         return HTMLResponse("<h1>UI not built</h1>", status_code=404)

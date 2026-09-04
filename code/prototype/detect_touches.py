@@ -85,9 +85,17 @@ from scipy.signal import butter, sosfiltfilt, stft
 # blade play, which do not represent an attempt to reach the target.
 MIN_PROMINENCE_M = 0.4
 
-# Half-width of the window used to establish a local minimum, in frames. About
-# one second at 29 fps, which is the timescale of a fencing phrase.
-LOCAL_MIN_WIN_FRAMES = 25
+# Half-width of the window used to establish a local minimum, IN SECONDS.
+#
+# Expressed in seconds because the quantity that matters is the timescale of a
+# fencing phrase, which does not change with the camera. It was previously 25
+# FRAMES, described in this comment as "about one second at 29 fps", and that
+# description was only true of the clip it was tuned on: the evaluation set runs
+# at 29, 30, 50 and 60 fps, so the same 25 frames was 0.86 s on clip 3 and 0.42 s
+# on clip 1. The generalisation test that held clip 2 back was therefore run with
+# a window half the intended length, which is the sort of thing that makes a
+# transfer result mean less than it appears to.
+LOCAL_MIN_WIN_S = 0.85
 
 # Required separation after the event: mean distance in the window after minus
 # mean distance just before. This is the strongest single feature. Measured on
@@ -157,16 +165,30 @@ def min_distance_near(t, d, ts, win=1.0):
     return float(seg.min()) if len(seg) else None
 
 
-def local_minima(t, d, prominence=MIN_PROMINENCE_M, win=LOCAL_MIN_WIN_FRAMES):
+def local_minima(t, d, prominence=MIN_PROMINENCE_M, win_s=LOCAL_MIN_WIN_S):
     """
     Times at which inter-fencer distance is a prominent local minimum.
 
     Prominence is required against the maximum on each side rather than the
     mean, so a candidate has to be a genuine approach out of and back into
     wider distance, not a dip inside continuous close play.
+
+    The window is given in SECONDS and converted here using the sample spacing of
+    the series it was handed, so it describes the same span of play whatever the
+    camera recorded at. Taking it in frames made it mean half as much on a 60 fps
+    clip as on a 29 fps one.
     """
     ok = ~np.isnan(d)
     tt, dd = t[ok], d[ok]
+
+    # Sample spacing from the data rather than from a frame-rate argument: the
+    # caller has the series and may have subsampled it, so the series is the
+    # authority on its own spacing.
+    if len(tt) < 3:
+        return []
+    dt = float(np.median(np.diff(tt)))
+    win = max(1, int(round(win_s / dt))) if dt > 0 else 1
+
     out = []
     for i in range(win, len(dd) - win):
         left = dd[i - win:i].max()

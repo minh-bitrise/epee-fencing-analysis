@@ -7,3 +7,6 @@ anthropic>=0.92.0
 # backend (assisted-annotation API)
 fastapi
 uvicorn[standard]
+# Multipart form parsing, needed by the upload endpoint. FastAPI does not
+# pull it in itself, and without it an upload fails at request-parse time.
+python-multipart

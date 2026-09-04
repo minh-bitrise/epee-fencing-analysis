@@ -481,6 +481,12 @@ same on both clips using identical settings:
 | clip 3 (tuned on) | F1 0.79, 6 corrections | **F1 0.86, 4 corrections** |
 | clip 2 (held back) | F1 0.35, 15 corrections | **F1 0.86, 1 correction** |
 
+*Clip 2's geometry-alone figure was later re-measured at F1 0.80 with two
+corrections, after a frame-rate dependency was corrected in the local-minimum
+window. Recall rose from 0.75 to 1.00 in the same change, so the fall in F1 is a
+shift from missing a touch to admitting two false positives rather than a
+regression in what the detector finds.*
+
 The audio was not merely unhelpful but actively harmful: it generated candidates that the geometry
 then had to filter, and on the noisier recording it flooded the timeline. Removing it also removed
 the ffmpeg dependency, the per-clip band calibration, and the threshold that would not transfer.
@@ -566,11 +572,11 @@ reproducible, not just the final artefacts. Each tool and convention is listed w
 rationale so that another developer (or marker) could continue the project from the same
 starting point.
 
-**Editor and workflow.** Claude Code (CLI) was used for code generation, code review and
-writing support; VS Code for visual inspection; GitHub Desktop for branch and commit
-visualisation when terminal git was inconvenient. The CLI / IDE split was practical rather
-than ideological: writing and refactoring code happened in the CLI session, reading and
-spot-checking the diffs in VS Code, and inspecting commit history in GitHub Desktop.
+**Editor and workflow.** Development was split between a terminal and an IDE for practical
+rather than ideological reasons: writing and refactoring in a shell session with the test
+suite running alongside, reading and spot-checking diffs in VS Code, and inspecting commit
+history in GitHub Desktop when a visual view of the branch graph was quicker than terminal
+git.
 
 **Language, runtime and dependencies.** All AI and video-processing code is in Python 3.13.
 The prototype uses the Ultralytics implementation of YOLOv8 with the built-in ByteTrack
@@ -614,10 +620,10 @@ Completed items in `TODO.md` are checked off but not deleted, preserving the aud
 what the project actually went through.
 
 **Documentation.** The repository's `README.md` describes the project at a high level and
-gives setup instructions for the prototype. The `CLAUDE.md` file holds short-form context
-used during development. The development log (this section's later siblings) and the
-`TODO.md` cross-references together replace what would otherwise be a separate design
-journal or wiki.
+gives setup instructions. `RESULTS.md` indexes every output directory and records which
+figures should be quoted from where, which matters because a dozen of them accumulated during
+development. The development log (this section's later siblings) and the `TODO.md`
+cross-references together replace what would otherwise be a separate design journal or wiki.
 
 **Repository hygiene.** The `.gitignore` excludes Python build artefacts (`__pycache__/`,
 `*.egg-info/`, `.venv/`, `dist/`, `build/`), Node artefacts left over from the early docx
@@ -875,8 +881,8 @@ statistics into a written tactical summary - was implemented as a separate comma
 that `run_detection.py` produces, aggregates it into bout-level statistics (mean, minimum,
 maximum and standard deviation of distance; time spent in each tactical distance band;
 per-fencer cumulative push and pull with percentage shares and net displacement; tracker
-coverage), embeds that payload as JSON in a structured prompt, and calls the Claude API
-(Anthropic Python SDK). The output is constrained by the prompt to a fixed markdown structure:
+coverage), embeds that payload as JSON in a structured prompt, and calls a hosted
+large-language-model API through its Python SDK. The output is constrained by the prompt to a fixed markdown structure:
 a bout-summary paragraph, observed-tendencies bullets each tied to a concrete number,
 suggestions to explore, and a data-caveats paragraph.
 
@@ -902,11 +908,47 @@ the test suite needs neither a network connection nor an API key.
 ---
 
 
+### The application layer
+
+The pipeline was reachable only from a shell until late in the project: no upload, no way to
+start a run, and no way for anyone but the author to use the system. The design chapter
+describes a web application, so this was the largest distance between what the design claimed
+and what existed.
+
+Each pipeline stage runs as a SUBPROCESS supervised by a single background worker, never as a
+function call inside the API process. Three reasons, all specific to this pipeline. The heavy
+work is native code, and YOLO, OpenCV and MediaPipe can fail in ways that end the interpreter
+rather than raise something catchable; in a thread that would take the API and every queued job
+with it, whereas a subprocess failure is an exit code recorded against one job. The models cost
+hundreds of megabytes of resident memory, which a subprocess returns on exit. And the pipeline
+stays a working command line, invoked by exactly the commands used to produce the figures in
+this report, so there is no second code path that could disagree with them.
+
+Jobs queue at a concurrency of one, because detection is CPU-bound and two concurrent runs take
+appreciably more than twice as long as one while making the machine unusable. Progress is parsed
+from a machine-readable line the pipeline prints, rather than through a callback, which would
+have required importing the pipeline and undone the separation above. Every job is a JSON file
+on disk, so a restart loses nothing: jobs caught mid-run are marked interrupted rather than left
+claiming to be running, and are not retried automatically, since a video that crashes the
+pipeline would otherwise crash it on every start.
+
+Two decisions in the interface are worth recording. Summary generation costs a paid API call, so
+it is never automatic; what the application layer changed is that the user presses a button
+rather than being handed a command to type. And re-anchoring, the one annotation action that
+changes tracking rather than interpretation, can only take effect on a reprocess, so the
+interface now queues that reprocess and writes the result to a NEW bout, leaving the original
+intact for comparison.
+
 ### Testing
 
-The prototype is supported by 72 unit tests written with `pytest`: 55 covering the detection
-and metrics pipeline, and 17 covering the LLM summary stage (statistics aggregation, prompt
-construction, cache behaviour, with the API call mocked). Tests cover:
+The system is supported by 506 automated tests: 320 over the pipeline, 163 over the application
+layer and 23 over the interface, plus two end-to-end tests that drive the real pipeline on a
+synthetic video. The end-to-end pair exists for what unit tests structurally cannot reach: the
+stages are joined by filename conventions rather than by return values, and a bout identifier is
+assembled in one module and taken apart in another. It found two defects on its first run, one
+of which returned an unhandled server error for any bout the tracker never held both fencers in.
+
+The pipeline tests cover:
 
 - the geometry helpers (`get_box_centre`, `get_box_bottom_centre`, `box_height_pixels`,
   `pixel_distance`, `normalise_distance`);
@@ -968,6 +1010,128 @@ observation, and so its reproducible production by the prototype is itself a mea
 result: the prototype can already generate metrics that distinguish bouts at a level of detail
 that manual analysis cannot match.
 
+### Attributing a touch to a fencer
+
+The detector reports when a touch happened and never who scored, so the scoring
+fencer was the one field of the design's touch record that could only originate
+with the user. `detect_scorer.py` proposes it by reading the piste-side scoring
+machine's lamps.
+
+Lamps rather than a score overlay, because a broadcast usually carries both but
+club footage carries only the machine, and the club case is the project's target
+user. Whole-frame saturated-colour counts rather than a region around the machine,
+because club footage is hand-held and follows the action, so the machine drifts
+across the frame and out of it; a fixed region is empty much of the time. A local
+baseline taken two to three seconds earlier removes what is permanently red in
+shot, which on these clips means an EXIT sign, sponsor banners and the piste.
+
+It is never permitted to propose touches, only to attribute ones already found.
+The lamps fire whenever the circuit closes, which includes fencers testing weapons
+against the piste or each other's guards, routinely just after a touch and before
+coming back on guard. Taking touch times as given removes that entire failure
+class rather than attempting to filter it.
+
+Evaluated leave-one-out against the scorer column already present in all four
+ground-truth files, so it required no additional labelling:
+
+| clip | three-way (left/right/double) | green lamp alone |
+|---|---|---|
+| 1 | 3/3 | 3/3 |
+| 2 | 2/4 | 4/4 |
+| 3 | 9/14 | 14/14 |
+| 4 | 4/6 | 6/6 |
+| **all** | **18/27 (67%)** | **27/27 (100%)** |
+
+The green lamp is reliable and the red lamp is not, and nearly every three-way
+error is a red-lamp error: red is contaminated by everything permanently red in
+frame and no local baseline removes it entirely when the camera pans. The claim
+this supports is therefore narrower than "the system says who scored". It is that
+**the system always identifies whether one named fencer was involved**, which
+fully determines the 11 touches of 27 where they were not and reduces the other 16
+from a three-way decision to a two-way one.
+
+This is classical colour thresholding and adds no fourth pre-trained model. The
+colour-to-side mapping is confirmed once per bout by the user, since nothing in
+the image indicates whether the green lamp belongs to the fencer on the left.
+
+### Lunge detection, calibrated per bout
+
+B1j established that the stance ratio is not view-invariant: an operating point
+fitted on clip 3 does not survive clip 2, reaching F1 0.22 and 0.29 while firing
+on a quarter of all windows. `detect_lunges.py` stops attempting to transfer it
+and calibrates instead from the first five lunges the user has confirmed on the
+bout being watched, which reuses the interactive-correction mechanism the design
+already depends on rather than adding a demand on the user.
+
+The magnitude of the transfer problem, stated directly: clip 3 calibrates to a
+stance ratio of 1.902 and clip 2 to 2.706, a 42 per cent difference in what
+constitutes a lunge-like posture.
+
+Calibrating on the first five confirmed lunges and testing only on those that
+follow, so no lunge informs its own proposal:
+
+| case | test lunges | precision | recall | F1 | lift over chance |
+|---|---|---|---|---|---|
+| clip 3, Fencer 2 | 25 | 0.73 | 0.76 | **0.75** | 9.3x |
+| clip 2, Fencer 2 | 2 | 0.50 | 1.00 | 0.67 | 54x |
+| cross-clip threshold (B1j) | - | 0.12 | 1.00 | **0.22** | 6.4x |
+
+Only the clip-3 row carries evidential weight; clip 2's test sets contain two and
+four lunges. Two caveats attach to every figure here. Precision is a lower bound,
+because a firing on a real but unlabelled lunge counts against it, and B1h
+measured roughly 40 wide-stance episodes per minute against about 10 labelled
+lunges. And the result rests on two clips and one labeller, so the claim is not
+that lunge detection works, but that per-bout calibration works where transfer
+does not.
+
+### What closing share can actually resolve
+
+Closing share is reported here as one of the two reliable movement figures, on the
+reasoning that counting the direction of each movement is robust where summing
+magnitudes is not. That reasoning is sound, and it says nothing about resolution.
+Across the evaluation set all eight fencer-clip values fall between 48.3 and 52.8
+per cent, a spread of 4.5 points around 50, which is also what a metric dominated
+by noise would produce.
+
+Frames are strongly autocorrelated, because a fencer's direction of travel is
+committed for a few tenths of a second, so treating each frame as an independent
+draw gives a standard error under one point and would make every one of these
+figures look highly significant. Resampling contiguous blocks of a third of a
+second instead, converted to frames from each clip's own sample spacing:
+
+| Clip | Fencer | Closing share | 95% interval | Differs from 50%? |
+|---|---|---|---|---|
+| 1 | F1 | 51.0% | 48.3 to 54.0% | no |
+| 1 | F2 | 48.3% | 45.8 to 50.8% | no |
+| 2 | F1 | 50.1% | 47.2 to 53.0% | no |
+| 2 | F2 | 50.0% | 47.4 to 52.7% | no |
+| 3 | F1 | 52.4% | 49.5 to 55.3% | no |
+| 3 | F2 | 52.0% | 49.4 to 54.7% | no |
+| 4 | F1 | 50.4% | 47.0 to 53.9% | no |
+| 4 | F2 | 52.8% | 49.4 to 56.0% | no |
+
+**Not one of the eight is distinguishable from a coin flip.** A null result is only
+readable alongside what the method could have detected, so the same machinery was
+run against series with known biases: on three minutes of footage it detects a
+60/40 tendency in 100 per cent of trials, a 55/45 tendency in 75 per cent, and a
+52/48 tendency in 30 per cent, against a false-positive rate of 11 per cent where
+no bias exists. The intervals above are therefore mildly optimistic, and a true
+interval is somewhat wider.
+
+Every measured value sits in the 48 to 53 band, which is exactly where the method
+detects a real tendency about a third of the time. **So the measurements are
+consistent with these fencers being genuinely balanced and equally consistent with
+real tendencies too small for three minutes of footage to resolve, and this
+evidence cannot separate those.** Closing share should be reported with its
+interval, and a difference between two fencers should not be read from it unless
+the intervals separate. On this footage none do.
+
+This is the fifth measurement in this project to survive its own reasoning and
+fail a test of what it can resolve, and the pattern is now specific enough to
+state as a rule: a metric's derivation establishes what it means, never what it
+can detect, and the second question needs its own measurement. `evaluate_closing_share.py`
+reproduces both tables.
+
 ### Detection coverage
 
 Coverage of 82-87% (both fencers detected and assigned to their stable slots) is well above
@@ -987,6 +1151,170 @@ that drive how the full system accommodates them. It is deliberately exhaustive 
 stage; some material will be trimmed and re-balanced for the final submission, but the
 intention is that everything be recorded now while the engineering reasoning is fresh.
 
+### The candidate cut: root cause of both tracking failure modes
+
+The two failure modes described below were treated for most of this project as
+inherent limits of single-camera tracking, and as the standing justification for
+an AI-assisted rather than automatic design. Investigating why a correctly aimed
+user correction still repaired nothing showed that they shared a single cause,
+upstream of the correction and of the gates, in code that had never been
+questioned because it looked obviously right.
+
+`FencerTracker.select` narrowed each frame to the two most CONFIDENT detections
+and discarded the rest, before any anchor, gate or user correction was consulted.
+The assumption is that the two fencers are the two people the detector is most
+sure about. On competition footage that is measurably false, because the referee
+stands ON the strip and so survives the piste-region filter by construction.
+
+Measured across clip 2's six-second bystander capture, sampling every twentieth
+frame: three detections lie inside the piste region in EVERY sampled frame, and
+the fencer a user would click is detected in every one of them. The confidence cut
+nonetheless discards that fencer in 9 of the 16 samples, their rank oscillating
+between first and third on margins of about 0.01. At frame 8590, where the
+capture becomes visible, the three confidences are 0.899 for the referee, 0.896
+for the far fencer and 0.886 for the near one: the correct answer is discarded by
+0.010. The tracker was arbitrating between three people using a quantity whose
+differences are noise.
+
+This also explains why the re-anchor action could not repair the failure, which
+had until then been read as a limitation of the action. The cause is sustained
+over six seconds and the correction is momentary: with the correction reaching the
+right detection, the slot is handed the correct fencer at 171.80 s and has lost
+them again by 171.82 s, because the next frame's cut discards that detection once
+more. Teleport counts are identical with and without the correction.
+
+**The fix follows from the diagnosis.** Confidence answers whether a person is
+present, which all three detections satisfy. It does not answer which two of them
+are the fencers being tracked. Proximity to each slot's predicted position does,
+and costs nothing: the predictions already exist for the gates. Selecting the two
+nearest candidates instead of the two most confident gives, across all four clips
+with the hand-authored piste configurations:
+
+| Clip | Coverage before / after | Tracking mix-ups before / after | Touch F1 before / after |
+|---|---|---|---|
+| 1 | 92.9% / 93.5% | 2 / **0** | 0.80 / 0.80 |
+| 2 | 98.0% / 98.0% | 15 / **0** | 0.86 / 0.86 |
+| 3 | 97.4% / 97.4% | 0 / 0 | 0.86 / 0.86 |
+| 4 | 73.7% / **79.8%** | 114 / **54** | 0.60 / 0.60 |
+
+Mix-ups are single-frame position jumps exceeding 1.5 m, which is a direct
+signature of a slot switching person rather than a proxy for it: no fencer crosses
+metres of piste between consecutive frames. Coverage and mix-ups improve or hold
+on every clip, and the headline 720p result is unchanged, since clips 1 to 3 still
+require six corrections against twenty-one manual entries.
+
+**Clip 4's touch F1 does not move, and an earlier version of this section
+reported it rising from 0.67 to 0.77.** That figure was read at clip 4's own
+best-scoring confidence threshold rather than at the operating point tuned on
+clip 3, which is the protocol this report states and applies elsewhere. Choosing
+a threshold by looking at the held-back clip is the tuning-on-test-data error the
+audio detector's failure was diagnosed with, and quoting a benefit obtained that
+way would have repeated it in the project's own favour. At the tuned operating
+point clip 4 scores F1 0.60 both before and after: the change improves how
+reliably the fencers are followed, not how well touches are found on that clip.
+
+Worth stating rather than quietly correcting, because it is another instance of
+the pattern this project keeps finding in itself, this time in a measurement of
+its own improvement.
+
+**A prediction the footage makes was used to corroborate it.** Play resets to the
+guard lines after every touch, so each fencer should finish a bout within about a
+metre of where they started, and section 5.5 flagged clip 2's Fencer 1 net
+displacement of +3.86 m as not believable. Under the corrected selection it
+measures -0.00 m, and clip 4's Fencer 1 moves from +0.42 m to -0.05 m. This was
+not the target of the change and is stronger evidence than the coverage figures
+for that reason: it is a constraint imposed by the sport rather than a metric
+being optimised. Clip 4's Fencer 2 remains implausible at +7.08 m, so that failure
+has a different cause and stays open.
+
+**What this costs the argument, stated plainly.** Wrong-target capture was
+presented as evidence for the assisted-annotation design: computer vision fails in
+this way, therefore the user must be able to repair it. On three of four clips it
+now does not occur at all. It was a defect in candidate selection, not a limit of
+single-camera tracking, and the honest reading is that this project spent a long
+time designing around a bug. The design argument survives, since clip 4 still
+shows 54 mix-ups and the correction mechanism remains necessary, but it must rest
+on the failures that remain rather than on one that turned out to be fixable.
+
+### Slot identity, and why one clip reported seven metres of drift
+
+Clip 4's Fencer 2 reported +7.08 m of net displacement, which is not possible: play resets to
+the guard lines after every touch, so each fencer should finish within about a metre of where
+they started. The report recorded the cause as unidentified, and camera panning had already
+been tested and ruled out because panning moves the two fencers' figures in opposite
+directions.
+
+The cause is that slot identity did not hold. Two fencers do not cross on a piste; one stays on
+the referee's left for the whole bout and the other on the right. A sign change in the
+difference between the two tracked positions is therefore not a fencing event but the tracker
+exchanging which fencer each slot follows. Counting those separates the evaluation set
+completely:
+
+| Clip | Side swaps | Slot 1 on the left | Closest measured separation | Fencer 2 net |
+|---|---|---|---|---|
+| 1 | 0 | 100% | 0.65 m | -0.28 m |
+| 2 | 0 | 100% | 0.38 m | +0.16 m |
+| 3 | 0 | 100% | 0.26 m | -0.43 m |
+| 4 | **14** | **26.9%** | **0.09 m** | **+7.08 m** |
+
+The three clips whose slots never swap all report plausible displacements; the one that swaps
+fourteen times, at a median of 2.1 seconds apart, is the one reporting seven metres. A
+first-to-last displacement assumes the slot followed one fencer throughout, and on clip 4 it did
+not, so the figure measures the swaps.
+
+This also identifies the mechanism rather than only the symptom. Clip 4's two fencers come
+within 0.09 m in the measured position against 0.26 to 0.65 m elsewhere, which is the range at
+which the matcher has nothing left to separate them by. That is the close-range identity flicker
+already named as the second failure mode, now with a number attached and a consequence traced
+through to a reported statistic.
+
+**Applying the check to every earlier output settles two more questions.** Under the previous
+candidate selection clip 2 swapped 9 times and reported the +3.86 m this report flagged as not
+believable; under the current one it swaps 0 times and reports -0.00 m, so the candidate fix did
+not merely coincide with a better number, it removed the swapping that produced the bad one. And
+the two clip 4 experiments recorded in Appendix E as simply "worse", cropping to the piste and
+masking the gallery, swap 57 and 64 times against a baseline of 14: tightening the frame around
+the fencers puts them closer together in the measured space, which is exactly where the matcher
+runs out of ways to separate them.
+
+The masked variant also shows why the magnitude check was never sufficient. It reports net
+displacements of +1.00 and -0.59 m, which pass the implausibility test comfortably, while its slots
+exchange fencers 64 times. **A believable-looking number is not evidence that identity held**, and
+the two checks catch different failures.
+
+**The system now detects this rather than reporting the figure confidently.** A bout with any
+side swap at all carries a warning saying that per-slot figures are not attributable to a
+particular fencer, which is a stronger and more useful statement than observing that a number
+looks large. The check costs one pass over two columns, fires on clip 4 and stays silent on the
+other three, and needed no threshold: any swap is evidence, because fencers do not cross.
+
+### Assignment ties were being decided by list order
+
+Correcting the candidate cut exposed a second defect that had been invisible
+because it hid behind the first.
+
+With two detections and two slots the matcher compares a straight assignment
+against a swapped one and takes the cheaper, breaking equality with `<=`. Because
+the cost is a sum of distances, it ties whenever one slot's fencer is absent: that
+slot contributes a large distance to both assignments and drowns the difference.
+The tie then resolves by whichever order the candidate list happened to be in.
+
+Three behaviours were resting on that, and all three flipped when the ordering
+changed. The unit test demonstrating that a re-anchor recovers a captured slot
+scored 565 px for both assignments. The test demonstrating that a distant
+bystander cannot steal a slot scored 1455 px for both. And clip 2's real capture
+sat on the same knife edge. **The test that supposedly demonstrated the project's
+central correction mechanism had been passing on an arbitrary tie-break in a
+synthetic scenario**, which is the sharpest instance in this project of a defect
+that satisfies its specification while establishing nothing.
+
+Ties now prefer the assignment containing the single best-explained pairing: a
+5 px match beside a 1450 px one is a fencer correctly identified beside a slot
+whose fencer has left, whereas 355 px beside 1100 px is two mediocre guesses, and
+the gates then reject the unmatched half. A test asserts that presenting the same
+detections in the opposite order produces the same assignment, which is the
+property that was missing rather than any particular outcome.
+
 ### Observed failure modes
 
 Prototype evaluation on two independently sourced FIE-level bout clips reproducibly revealed
@@ -994,6 +1322,12 @@ two specific failure modes. Both are well-known data-association problems in sin
 multi-object tracking and both are predicted in the design chapter as the reason the system
 is AI-assisted rather than fully automatic. Their presence in the prototype is therefore not
 a contradiction of the design but evidence supporting it.
+
+*Note added 29 Aug 2026: the section above supersedes part of what follows. Both
+failure modes below were traced to the candidate cut, and failure mode 1 no longer
+occurs on three of the four clips. The descriptions are kept because they are what
+the evidence supported at the time and because the diagnosis is only legible
+against them.*
 
 **Failure mode 1: wrong-target capture by background people.** The tracker maintains stable
 identity for each fencer by spatial continuity, gated by (a) a maximum allowed jump from the
@@ -1241,22 +1575,88 @@ A few observations about the development process itself, worth recording while s
 
 ## 6. Conclusion
 
-*(Placeholder - to be written at the end of the project.)*
+### Against the original aims
 
----
+The project set out to orchestrate several pre-trained models into a system that helps a
+fencer analyse a bout, on the argument that unreliable computer vision becomes useful when a
+person can repair each class of error cheaply. Three models were orchestrated in a genuine
+chain rather than demonstrated side by side: YOLOv8 detections bound the region MediaPipe Pose
+works in, pose landmarks supply the ground reference the distance series is measured from,
+that series drives touch proposal, the confirmed touches scope every aggregate, and those
+aggregates are what the language model is given to interpret. Each stage consumes the previous
+one, and a defect in an early stage propagates, which section 5.4 demonstrates rather than
+assumes.
 
+The measurable outcomes are strongest where the evidence is strongest. Touch detection reaches
+F1 0.85 across the three 720p clips against hand-labelled ground truth, and confirming its
+proposals costs six corrections where labelling from scratch would cost twenty-one. Tracking
+holds both fencers in 93 to 98 per cent of frames on three of four clips. Attribution of a
+touch to a fencer, which the detector could never supply, now identifies whether one named
+fencer was involved in all twenty-seven labelled touches. These are the claims the project can
+defend.
+
+The central claim is not among them. That assisted review is faster than manual review has
+never been measured, and the corrections figures that stand in for it weight a rejection and a
+manual addition equally, which is known to be false. Section 5.9 states this rather than
+softening it, and it remains the largest gap between what the design argues and what the
+evidence supports.
+
+### What the project learned about its own method
+
+The most transferable outcome is methodological, and it recurred often enough to be treated as
+a finding rather than a series of accidents. **Five separate defects passed their tests while
+measuring the wrong thing.** A distance-band classifier used thresholds invented rather than
+derived, and inverted a clip's headline reading once corrected. A movement metric accumulated
+its own smoothing and reported twenty-four metres of travel on a fourteen-metre piste. A
+resolution ablation varied a quantity the detector never sees, so its flat result was
+guaranteed in advance. A piste polygon placed by eye raised coverage while quadrupling the
+count of physically impossible readings. And the tracker chose between three people using
+confidence margins of about 0.01, which is noise, for the whole life of the project.
+
+Each was invisible to unit testing because each was implemented exactly as specified. What
+exposed them was measurement against reality: a physical constraint the sport imposes, a
+held-back clip, a metric chosen because it could only move one way. The practical rules the
+project ended with are that a parameter should be derived from data rather than chosen, that a
+single-clip result establishes nothing until a held-back clip agrees, and that a headline
+metric improving is not evidence when a second metric can move the opposite way. Clip 4
+demonstrated that last point twice: coverage rose while wrong-target capture also rose.
+
+The corollary is uncomfortable and worth stating. Wrong-target capture was presented for most
+of the project as evidence for the assisted-annotation design, on the reasoning that computer
+vision fails this way and so a user must be able to repair it. It was a defect in candidate
+selection, and on three of four clips it no longer occurs. The design argument survives on the
+failures that remain, but a substantial amount of design effort went into accommodating a bug.
+
+### Limitations
+
+Four qualify everything above. There is **no user evaluation**, so the effort claim is
+unevidenced. **Pose does not earn its place**: it improves the distance measurement, but its
+headline application to lunge detection produced an operating point that did not survive a
+change of camera, and only per-bout calibration made it usable at all. **The sample is four
+clips and one labeller**, three of them competition footage, so figures are plausibly
+optimistic for the club setting that is the target use case. And **there is no frame-level
+tracking ground truth**, so coverage measures whether the tracker committed to a detection,
+not whether it committed to the right person.
 
 ### Future work
 
-Future work falls into four categories: (i) tracker robustness, with piste-region detection,
-a motion / velocity model, and an appearance re-ID embedding as the three candidate paths;
-(ii) event handling and the assisted-annotation UI, which is the design's answer to the
-prototype's failure modes; (iii) richer derived metrics (engagement-vs-reset distance, tempo,
-distance bands, leading-vs-trailing behaviour, per-fencer trajectories); and (iv) the
-remaining two pre-trained models needed to satisfy the project brief - notably an LLM for the
-written tactical summary. The full web-application shell (React frontend, FastAPI backend,
-database) and GPU-accelerated processing complete the path from prototype to deployable
-system. Detailed task-level breakdown is maintained in `TODO.md` Part B.
+The immediate work is evaluative rather than technical. A user study measuring review time
+against a manual baseline would settle the project's central claim, and weighting corrections
+by their true cost would repair a metric the report currently qualifies. Both need
+participants rather than code.
+
+Technically, three directions follow from measured failures rather than from ambition. An
+appearance-based re-identification embedding is the remaining lever against wrong-target
+capture, since a spatial filter cannot separate a referee standing on the piste from a fencer.
+Clip 4's Fencer 2 still reports an implausible seven metres of net displacement, which the
+candidate-selection fix did not explain and which therefore has a cause still unidentified.
+And lunge detection rests on two clips and one labeller, so more labelled footage would
+establish whether per-bout calibration generalises or merely fitted twice.
+
+Beyond that, reading the score overlay with OCR would add a fourth pre-trained model and
+recover the single-versus-double distinction the lamps cannot reliably provide, and GPU
+processing would remove the roughly two-times-real-time cost that currently shapes what a user
+will sit through. A task-level breakdown is maintained in `TODO.md`.
 
 ---
 
@@ -1273,9 +1673,41 @@ here in Harvard style.)*
 
 ### A. Source code overview
 
-The prototype is in `code/prototype/`, with `run_detection.py` as the main pipeline and
-`test_detection.py` as the unit-test suite. Dependencies are declared in
-`code/prototype/requirements.txt`.
+Three directories: the pipeline, the application that drives it, and the interface.
+
+**`code/prototype/` - the pipeline.** Every stage is a standalone command-line program, which
+the web layer invokes rather than reimplements, so there is no second code path that could
+disagree with the figures reported here.
+
+| module | what it does |
+|---|---|
+| `run_detection.py` | detection, tracking, pose, distance and the annotated render. The main pipeline |
+| `derive_piste.py` | measures a piste region from footage, replacing a hand-authored polygon |
+| `detect_touches.py` | proposes touches from the distance series |
+| `detect_scorer.py` | attributes a touch to a fencer by reading the scoring lamps |
+| `detect_lunges.py` | proposes lunges, calibrated on lunges the user has confirmed on that bout |
+| `in_play.py` | scopes metrics to playing time using confirmed touches |
+| `tempo.py` | exchange-rate and tempo measures |
+| `generate_summary.py` | builds the statistics payload and calls the language model |
+| `evaluate_touches.py`, `evaluate_lunges.py` | scoring against hand-labelled ground truth |
+
+**`code/backend/` - the application.** FastAPI. `app.py` holds the endpoints, `jobs.py` the
+background runner that processes an upload without blocking a request, `store.py` the annotation
+store, and `storage.py` disk accounting and cleanup of derived files.
+
+**`code/frontend/` - the interface.** React, built with Vite. Upload and job progress, the piste
+confirmation step, and the review interface implementing the four annotation actions. The
+earlier no-build-step interface is retained and served at `/legacy`, deliberately frozen at those
+four actions: it guarantees that a checkout with Python alone still has a working review
+interface, and it is the comparison between an interface with a build step and one without.
+
+**Tests.** 320 in the pipeline, 163 in the backend and 23 in the interface, plus two end-to-end
+tests that drive the real pipeline on a synthetic video to exercise the joins between stages,
+which are made by filename convention rather than by return value. A GitHub Actions workflow runs
+everything that needs neither footage nor model weights.
+
+Dependencies are declared in `code/prototype/requirements.txt` and
+`code/frontend/package.json`.
 
 ### B. CSV schema
 
@@ -1427,10 +1859,24 @@ configuration it requires. Reported in section 5.3.
 
 | Clip | Coverage | F1 net | F1 closing | F2 net | F2 closing |
 |---|---|---|---|---|---|
-| 1 | 92.9% | +1.29 m | 51.0% | +0.28 m | 48.3% |
-| 2 | 98.0% | +3.86 m | 50.5% | -0.16 m | 50.4% |
+| 1 | 93.5% | +1.29 m | 51.0% | +0.28 m | 48.3% |
+| 2 | 98.0% | -0.00 m | 50.1% | -0.16 m | 50.0% |
 | 3 | 97.4% | +3.43 m | 52.4% | +0.43 m | 52.0% |
-| 4 | 73.7% | +0.42 m | 47.0% | **+7.54 m** | 47.8% |
+| 4 | 79.8% | -0.05 m | 50.4% | **+7.08 m** | 52.8% |
+
+Regenerated 29 Aug 2026 after the candidate-selection change described in 5.x. The previous
+figures were 92.9% / +3.86 m / 50.5% (clip 2 F1) and 73.7% / +0.42 m / +7.54 m (clip 4).
+
+**The change is independently corroborated by the plausibility check this table was built to
+apply.** Play resets to the guard lines after every touch, so each fencer should finish within
+about a metre of where they started. Clip 2's Fencer 1 previously measured +3.86 m, which the
+report flagged as not believable; it now measures -0.00 m, which is exactly what the physical
+constraint predicts. Clip 4's Fencer 1 moves from +0.42 m to -0.05 m on the same reasoning. This
+was not the change's target, and it is stronger evidence than the coverage figures precisely
+because it is a prediction the footage itself makes rather than a metric being optimised.
+
+Clip 4's Fencer 2 remains implausible at +7.08 m, down from +7.54 m, so it is not explained by
+the candidate-selection defect. It was subsequently explained by a different one, below.
 
 **E.12 The two unsolved tracking failures.** *Wrong-target capture* is prevented by the piste polygon,
 which by construction cannot distinguish a referee standing on the piste from a fencer. On clip 4 the

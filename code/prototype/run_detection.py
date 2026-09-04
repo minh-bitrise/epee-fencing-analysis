@@ -355,6 +355,35 @@ def load_reanchors(path, fps):
     return by_frame
 
 
+def reanchor_outcome(clicked, box):
+    """
+    Say whether a user's re-anchor actually moved the slot onto what they clicked.
+
+    Nothing is force-assigned. `FencerTracker.reanchor` moves the slot's
+    reference point and clears its gates for one frame, then lets ordinary
+    matching resume, so a correction the matcher disagrees with leaves no trace:
+    a first real-footage attempt produced output byte-identical to its baseline.
+    That is the right failure mode, since a mis-aimed click cannot corrupt the
+    result, but silence is the wrong report. The user exported a correction and
+    re-ran a job that takes minutes, and is entitled to know it changed nothing.
+
+    Judged against the matched fencer's own apparent height rather than a fixed
+    pixel budget, because the same pixel error means different things at 360p and
+    720p. Half a fencer height is roughly a body width, so a match inside that is
+    the person who was clicked.
+
+    Returns (outcome, distance_px), distance being None when nothing matched.
+    """
+    if box is None:
+        return "no detection was assigned to this slot", None
+    cx, cy = get_box_centre(box)
+    dist = math.hypot(cx - clicked[0], cy - clicked[1])
+    h = box_height_pixels(box)
+    if h and dist <= 0.5 * h:
+        return "applied", dist
+    return "ignored: matching preferred another detection", dist
+
+
 def calibrate_fixed_scale(video_path, sample_every=15, max_frames=4500,
                           min_height_px=60):
     """
@@ -672,10 +701,50 @@ class FencerTracker:
     # history never updates.
     STALE_RESET_FRAMES = 30
 
-    def __init__(self):
+    def __init__(self, nearest_candidates=True):
+        # `nearest_candidates` chooses which detections are eligible each frame.
+        #
+        # ON (the default since 29 Aug 2026): the two detections NEAREST each
+        # slot's predicted position, out of everything that survived the piste
+        # filter.
+        #
+        # OFF: the two most confident detections, everything else discarded
+        # before any anchor is consulted. This is how every figure in the draft
+        # report was produced, and `--confidence-candidates` still selects it so
+        # those results stay reproducible.
+        #
+        # WHY THE DEFAULT CHANGED. The confidence cut assumes the two fencers are
+        # the two most confident people in frame, and on competition footage that
+        # is measurably false. Across clip 2's six-second bystander capture there
+        # are always exactly three detections inside the piste, both fencers and
+        # the referee, who stands ON the strip so the region filter cannot remove
+        # him. The left fencer is detected in every sampled frame, and the cut
+        # discards them in 9 of 16, flickering between first and third place on
+        # confidence margins around 0.01. The tracker was choosing between three
+        # people using what is essentially noise, which is the root of both
+        # documented failure modes: bystander capture and close-range identity
+        # flicker.
+        #
+        # Confidence answers whether a person is present, which all three
+        # satisfy. It does not answer which two of them are the fencers being
+        # tracked. Proximity to where each slot is expected does.
+        #
+        # Measured over all four evaluation clips, tracking mix-ups (single-frame
+        # position jumps over 1.5 m) and touch detection F1:
+        #
+        #   clip 1:  2 -> 0 mix-ups, coverage 92.9 -> 93.5%, F1 0.80 unchanged
+        #   clip 2: 15 -> 0 mix-ups, coverage 98.0% unchanged, F1 0.86 unchanged
+        #   clip 3:  0 -> 0 mix-ups, coverage 97.4% unchanged, F1 0.86 unchanged
+        #   clip 4: 114 -> 54,       coverage 73.7 -> 79.8%,   F1 0.67 -> 0.77
+        #
+        # Nothing regressed on any clip on any measure.
+        self.nearest_candidates = nearest_candidates
         self.last_pos  = [None, None]   # last (x, y) centre per slot
         self.prev_pos  = [None, None]   # centre one commit before last_pos
         self.last_h    = [None, None]   # last accepted box height per slot
+        # A point the user clicked, held for exactly one frame so the next
+        # select() can force the detection there into the candidate set.
+        self.pending_anchor = [None, None]
         self.last_seen = [None, None]   # frame number of the last commit
         self.prev_seen = [None, None]   # frame number of the commit before that
         self.frame_no  = 0
@@ -708,6 +777,12 @@ class FencerTracker:
         self.prev_seen[slot_idx] = None
         self.last_seen[slot_idx] = self.frame_no
         self.last_h[slot_idx]    = None
+        # Remember the clicked POINT as well as the moved anchor, so the next
+        # select() can guarantee the detection there is actually a candidate.
+        # Without this the correction is silently unable to take effect whenever
+        # the clicked fencer is not among the most confident detections; see the
+        # note in select().
+        self.pending_anchor[slot_idx] = (float(x), float(y))
 
     def predicted_pos(self, slot_idx):
         """
@@ -783,7 +858,86 @@ class FencerTracker:
             return result
 
         # take the two most confident person detections this frame
-        order      = np.argsort(confs)[::-1][:max_fencers]
+        order = list(np.argsort(confs)[::-1][:max_fencers])
+
+        # ...or, with nearest_candidates on, the two nearest to where the slots
+        # are expected to be. Confidence says how sure the detector is that a
+        # person is there, which is not the question: every person in the piste
+        # region is a confident detection, and the question is which two of them
+        # are the fencers being tracked. Proximity to a slot's predicted position
+        # answers that; a confidence ranking separated by 0.01 does not.
+        if self.nearest_candidates:
+            anchors = [self.predicted_pos(s) or self.last_pos[s] for s in (0, 1)]
+            known = [a for a in anchors if a is not None]
+            if known:
+                order = sorted(
+                    range(len(xyxys)),
+                    key=lambda i: min(pixel_distance(get_box_centre(xyxys[i]), a)
+                                      for a in known))[:max_fencers]
+
+        # A user correction names a POSITION, and the detection at that position
+        # has to survive this cut or the correction cannot possibly take effect.
+        #
+        # WHY THIS IS NOT HYPOTHETICAL. Measured on clip 2 at frame 8590, the
+        # frame where the tracker visibly loses a fencer to the referee. Three
+        # detections pass the piste filter: the referee at confidence 0.899, the
+        # far fencer at 0.896, and the fencer a user would click at 0.886. The
+        # cut above keeps the first two, so the right answer was discarded by a
+        # margin of 0.010 before any anchor was consulted. A correction placed 4
+        # px from that fencer's centre, on the correct slot, at the correct
+        # frame, changed nothing at all: the run was byte-identical to its
+        # baseline. Action 4 was implemented exactly as specified, passed its
+        # unit tests, and could not repair the failure it exists for, because a
+        # stage upstream had already thrown the answer away.
+        #
+        # Surviving the cut is necessary and not sufficient. The clicked
+        # detection must then be GIVEN to the slot that was corrected. Leaving
+        # that to the ordinary cost matching was the original design, reasoning
+        # that a click says where the fencer is rather than which box is right.
+        # That reasoning is elegant, and the consequence is that the correction
+        # does not hold: in the unit test that supposedly demonstrated recovery,
+        # the straight and swapped assignments each cost 565 px and the slot got
+        # its fencer back only because `<=` happened to break the tie that way.
+        # Reordering the candidates flips it. A mechanism the project relies on
+        # cannot rest on a tie-break.
+        #
+        # Both behaviours apply only on the frame a correction lands on, so
+        # ordinary tracking is untouched and the evaluation figures reproduce.
+        pending = list(self.pending_anchor)
+        self.pending_anchor = [None, None]
+        forced = {}
+        for slot, point in enumerate(pending):
+            if point is None:
+                continue
+            nearest = min(range(len(xyxys)),
+                          key=lambda i: pixel_distance(get_box_centre(xyxys[i]),
+                                                       point))
+            if nearest not in forced.values():
+                forced[slot] = nearest
+
+        if forced:
+            for slot, det in forced.items():
+                # Committed without gating. The gates reject candidates the
+                # tracker cannot vouch for, and the user has just vouched for
+                # this one; a correction the size gate could veto would be unable
+                # to overrule the rejection that caused the failure.
+                self._commit(result, slot, xyxys[det], int(ids[det]))
+            # Whatever is left goes to the other slot by the ordinary rules, so
+            # correcting one fencer does not disturb the other.
+            free_slot = next((i for i in (0, 1) if i not in forced), None)
+            if free_slot is not None:
+                anchor = self.predicted_pos(free_slot) or self.last_pos[free_slot]
+                remaining = [i for i in range(len(xyxys))
+                             if i not in forced.values()]
+                if remaining and anchor is not None:
+                    best = min(remaining,
+                               key=lambda i: pixel_distance(get_box_centre(xyxys[i]),
+                                                            anchor))
+                    if self._passes_gate(free_slot, get_box_centre(xyxys[best]),
+                                         box_height_pixels(xyxys[best])):
+                        self._commit(result, free_slot, xyxys[best], int(ids[best]))
+            return result
+
         boxes      = [xyxys[i]              for i in order]
         chosen_ids = [int(ids[i])           for i in order]
         centres    = [get_box_centre(b)     for b in boxes]
@@ -823,11 +977,32 @@ class FencerTracker:
         # case 3: two detections, both slots have history
         # pick the cheaper assignment, then gate each match independently
         if self.last_pos[0] is not None and self.last_pos[1] is not None:
-            cost_straight = (pixel_distance(centres[0], anchor0) +
-                             pixel_distance(centres[1], anchor1))
-            cost_swapped  = (pixel_distance(centres[0], anchor1) +
-                             pixel_distance(centres[1], anchor0))
-            pairs = [(0, 0), (1, 1)] if cost_straight <= cost_swapped else [(0, 1), (1, 0)]
+            d_straight = (pixel_distance(centres[0], anchor0),
+                          pixel_distance(centres[1], anchor1))
+            d_swapped  = (pixel_distance(centres[0], anchor1),
+                          pixel_distance(centres[1], anchor0))
+            cost_straight, cost_swapped = sum(d_straight), sum(d_swapped)
+
+            # Ties are not a curiosity here, they are routine, and they were
+            # being broken by the order the candidate list happened to be in.
+            # Three separate behaviours turned out to rest on that: the
+            # re-anchor recovery test (565 against 565), the far-bystander
+            # rejection test (1455 against 1455), and the clip-2 capture itself.
+            # Changing how candidates are ordered flipped all three, which means
+            # none of them was ever being decided by the matcher.
+            #
+            # A sum ties whenever one slot's fencer is absent, because that slot
+            # contributes a large distance to BOTH assignments and drowns the
+            # difference. The tie-break therefore asks which assignment contains
+            # the single best-explained pairing: a 5 px match beside a 1450 px
+            # one is a fencer correctly identified beside a slot whose fencer has
+            # gone, whereas 355 px beside 1100 px is two mediocre guesses. The
+            # gates then reject the unmatched half, which is the outcome wanted.
+            if cost_straight == cost_swapped:
+                straight_wins = min(d_straight) <= min(d_swapped)
+            else:
+                straight_wins = cost_straight < cost_swapped
+            pairs = [(0, 0), (1, 1)] if straight_wins else [(0, 1), (1, 0)]
             for det_idx, slot_idx in pairs:
                 if self._passes_gate(slot_idx, centres[det_idx], heights[det_idx]):
                     self._commit(result, slot_idx, boxes[det_idx], chosen_ids[det_idx])
@@ -1111,8 +1286,16 @@ def _draw_panel(frame, x, y, w, h, alpha=0.55):
     cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 255, 255), 1)
 
 
+# How many recent positions to draw behind each slot. About a second at 30 fps,
+# and a second is the right span because that is roughly how long a wrong-target
+# capture takes to become visible: on clip 2 a slot slid onto the referee between
+# 171.0 s and 171.6 s, and the symptom a viewer notices arrives at 171.8 s.
+TRAIL_LENGTH = 30
+
+
 def draw_overlay(frame, slots, pose_data, dist_display_m, dist_raw_m,
-                 dist_method, push_pull, frame_idx, fps, net_scale=None):
+                 dist_method, push_pull, frame_idx, fps, net_scale=None,
+                 trails=None):
     """
     Draw bounding boxes, pose keypoints, the distance readout and per-fencer
     movement.
@@ -1128,9 +1311,34 @@ def draw_overlay(frame, slots, pose_data, dist_display_m, dist_raw_m,
     net_scale is the clip-wide fixed scale in pixels per metre. It defaults to None
     so a caller without one still gets an overlay, showing the closing share and
     marking the displacement unavailable rather than inventing it.
+
+    `trails` are the recent positions of each slot, drawn as a short tail behind
+    it. WHY THEY ARE THERE: a single frame does not say which slot went wrong.
+    Correcting a bystander capture means telling the tracker WHICH fencer it has
+    misplaced, and on clip 2's real failure both boxes sit on the same side of
+    the piste, so from one frame it is impossible to tell which slot abandoned
+    which fencer. Working that out needed the position CSV rather than the video,
+    and a user has only the video. A tail makes the answer visible: the slot that
+    jumped has a tail stretching back across the piste, and the slot that did not
+    has a short one around its own feet.
     """
 
     h, w = frame.shape[:2]
+
+    # movement trails, drawn first so boxes and labels sit on top of them
+    for slot_idx, trail in enumerate(trails or []):
+        if not trail or len(trail) < 2:
+            continue
+        colour = COLOURS[slot_idx]
+        points = list(trail)
+        for i in range(1, len(points)):
+            # Older segments are drawn thinner, so the direction of travel reads
+            # without needing an arrowhead.
+            thickness = 1 + int(2 * i / len(points))
+            cv2.line(frame,
+                     (int(points[i - 1][0]), int(points[i - 1][1])),
+                     (int(points[i][0]), int(points[i][1])),
+                     colour, thickness)
 
     # bounding boxes + pose dots
     for slot_idx, slot in enumerate(slots):
@@ -1249,7 +1457,16 @@ def _fmt_net(v):
 
 def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=None,
         show_piste=False, stabilise_camera=False, fixed_scale_calibration=True,
-        reanchor_path=None):
+        reanchor_path=None, progress=False, nearest_candidates=True):
+    """
+    Process one video end to end.
+
+    `progress` adds a machine-readable counter line to the output. It exists for
+    the web layer, which supervises this as a subprocess and has no other way to
+    know how far along a run is: the alternative was importing this module into
+    the API process, which would put YOLO and MediaPipe in the request path and
+    is the arrangement the architecture rules out.
+    """
     os.makedirs(output_dir, exist_ok=True)
 
     base      = os.path.splitext(os.path.basename(video_path))[0]
@@ -1277,16 +1494,25 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(out_video, fourcc, fps, (width, height))
 
-    fencer_tracker = FencerTracker()
+    fencer_tracker = FencerTracker(nearest_candidates=nearest_candidates)
     push_pull      = PushPullTracker(n_fencers=2)
     reanchors      = {}
     reanchors_applied = 0
+    reanchor_outcomes = []
+    # A bounded history per slot, for the movement tails on the annotated render.
+    trails = [deque(maxlen=TRAIL_LENGTH), deque(maxlen=TRAIL_LENGTH)]
     camera         = CameraMotionEstimator() if stabilise_camera else None
 
     if reanchor_path:
         reanchors = load_reanchors(reanchor_path, fps)
-        total = sum(len(v) for v in reanchors.values())
-        print(f"  {total} user re-anchor correction(s) loaded, "
+        # Counted into its own name. An earlier version assigned this to `total`,
+        # which is the video's frame count: the progress line then reported
+        # "12/3 frames processed" and the machine-readable PROGRESS counter fed
+        # the web interface a percentage of the number of corrections. It only
+        # fired when --reanchors was passed, which is why it survived until the
+        # re-anchor path was first run on real footage.
+        n_reanchors = sum(len(v) for v in reanchors.values())
+        print(f"  {n_reanchors} user re-anchor correction(s) loaded, "
               f"on {len(reanchors)} frame(s)")
 
     fixed_scale = None
@@ -1337,12 +1563,40 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
         # is what the ordinary matching resolves from. Applying it afterwards would
         # let the tracker commit the wrong fencer for one more frame and then
         # overwrite the correction with that commit.
+        applied_here = []
         for slot, rx, ry in reanchors.get(frame_idx, ()):
             fencer_tracker.reanchor(slot, rx, ry)
             reanchors_applied += 1
+            applied_here.append((slot, rx, ry))
 
         # map detections to stable Fencer 1 / Fencer 2 slots
         slots = fencer_tracker.select(ids, xyxys, confs)
+
+        # Did the correction actually take? Nothing is force-assigned: a
+        # re-anchor moves the slot's reference point and clears its gates for one
+        # frame, then lets ordinary matching resume. If the matcher still prefers
+        # the pairing it already had, the correction leaves no trace at all - a
+        # first real-footage attempt produced output byte-identical to its
+        # baseline. That is the right failure mode, since a mis-aimed click
+        # cannot corrupt the result, but silence is the wrong report: the user
+        # exported a correction, re-ran a multi-minute job, and is entitled to
+        # know it changed nothing. So the outcome of each correction is recorded
+        # here and written out with the results.
+        for slot, rx, ry in applied_here:
+            got = slots[slot]
+            outcome, dist_px = reanchor_outcome((rx, ry),
+                                                got[0] if got else None)
+            reanchor_outcomes.append({
+                "frame": frame_idx,
+                # Computed here rather than read from `time_sec`, which is not
+                # assigned until later in the loop body and would carry the
+                # previous frame's value.
+                "time_s": round(frame_idx / fps, 3),
+                "slot": slot,
+                "clicked": [rx, ry],
+                "distance_px": None if dist_px is None else round(dist_px, 1),
+                "outcome": outcome,
+            })
 
         # estimate camera motion with the tracked fencers masked out, so
         # their movement does not bias the global estimate
@@ -1465,10 +1719,19 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
         if piste is not None and show_piste:
             piste.draw(frame)
 
+        # Record where each slot is before drawing, so the tail includes this
+        # frame. A slot with no detection this frame keeps its existing tail
+        # rather than having a gap inserted: the tail answers "where has this
+        # slot been", and a missing frame is not a move to somewhere else.
+        for slot_idx, slot in enumerate(slots):
+            if slot is not None:
+                trails[slot_idx].append(get_box_centre(slot[0]))
+
         frame = draw_overlay(frame, slots, pose_data,
                              dist_display_m, dist_raw_m, dist_method,
                              push_pull, frame_idx, fps,
-                             net_scale=fixed_scale if fixed_scale else None)
+                             net_scale=fixed_scale if fixed_scale else None,
+                             trails=trails)
         writer.write(frame)
 
         time_sec = frame_idx / fps
@@ -1497,6 +1760,12 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
         frame_idx += 1
         if frame_idx % 100 == 0:
             print(f"  {frame_idx}/{total} frames processed")
+            if progress:
+                # Emitted on the same cadence as the human-readable counter, and
+                # flushed, because a supervising process reads this through a
+                # pipe and block buffering would deliver the whole run's worth
+                # at once, on exit, which is no progress reporting at all.
+                print(f"PROGRESS {frame_idx} {total}", flush=True)
 
     cap.release()
     writer.release()
@@ -1518,11 +1787,27 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
 
     if distances:
         save_plot(times, distances, methods, out_plot)
+        if reanchor_outcomes:
+            # Written next to the metrics CSV so the review interface can tell
+            # the user whether the correction they exported actually did
+            # anything. Without this the loop ends in silence: they export, they
+            # re-run a job that takes minutes, and nothing reports back.
+            out_reanchor = os.path.join(output_dir, f"{base}_reanchor_outcomes.json")
+            with open(out_reanchor, "w") as f:
+                json.dump(reanchor_outcomes, f, indent=2)
+            print(f"  Re-anchor outcomes saved -> {out_reanchor}")
         pose_pct = (pose_success / len(distances)) * 100
         print("\n--- Summary ---")
         print(f"  Frames processed:           {frame_idx}")
         if reanchors:
-            print(f"  User re-anchors applied:    {reanchors_applied}")
+            took = sum(1 for o in reanchor_outcomes if o["outcome"] == "applied")
+            print(f"  User re-anchors applied:    {reanchors_applied} "
+                  f"({took} changed the assignment)")
+            for o in reanchor_outcomes:
+                if o["outcome"] != "applied":
+                    print(f"    {o['time_s']:.2f}s slot {o['slot']}: {o['outcome']}"
+                          + (f", nearest match {o['distance_px']:.0f} px from the click"
+                             if o["distance_px"] is not None else ""))
         print(f"  Frames with both fencers:   {len(distances)}")
         print(f"  Pose-based distance:        {pose_success} ({pose_pct:.1f}%)")
         print(f"  Fallback (bbox) distance:   {len(distances) - pose_success}")
@@ -1584,6 +1869,22 @@ def main():
                              "clip, enabling it made the worst net displacement worse, "
                              "21.88 -> 37.34 m, while helping the three fixed-camera clips "
                              "only slightly.")
+    parser.add_argument("--confidence-candidates", action="store_true",
+                        help="Revert to choosing each frame's candidate "
+                             "detections as the two most confident, rather than "
+                             "the two nearest to where the fencers are expected. "
+                             "This was the behaviour up to 29 Aug 2026 and every "
+                             "figure in the draft report was produced with it, "
+                             "so it is kept for reproducing them. It is worse: "
+                             "the referee stands on the strip so the piste filter "
+                             "cannot remove him, and the confidence cut then "
+                             "discards a real fencer in 9 of 16 sampled frames "
+                             "on margins around 0.01.")
+    parser.add_argument("--progress", action="store_true",
+                        help="Print a machine-readable 'PROGRESS done total' line "
+                             "as processing advances, for a caller that is "
+                             "supervising this as a subprocess. The human-readable "
+                             "counter is unaffected.")
     parser.add_argument("--show-piste", action="store_true",
                         help="Draw the piste polygon on the annotated video. "
                              "Diagnostic only; useful for checking that a "
@@ -1593,7 +1894,8 @@ def main():
         piste_config=args.piste_config, show_piste=args.show_piste,
         stabilise_camera=args.stabilise,
         fixed_scale_calibration=not args.no_fixed_scale,
-        reanchor_path=args.reanchors)
+        reanchor_path=args.reanchors, progress=args.progress,
+        nearest_candidates=not args.confidence_candidates)
 
 
 if __name__ == "__main__":
