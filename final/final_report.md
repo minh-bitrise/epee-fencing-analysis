@@ -481,6 +481,12 @@ same on both clips using identical settings:
 | clip 3 (tuned on) | F1 0.79, 6 corrections | **F1 0.86, 4 corrections** |
 | clip 2 (held back) | F1 0.35, 15 corrections | **F1 0.86, 1 correction** |
 
+*Clip 2's geometry-alone figure was later re-measured at F1 0.80 with two
+corrections, after a frame-rate dependency was corrected in the local-minimum
+window. Recall rose from 0.75 to 1.00 in the same change, so the fall in F1 is a
+shift from missing a touch to admitting two false positives rather than a
+regression in what the detector finds.*
+
 The audio was not merely unhelpful but actively harmful: it generated candidates that the geometry
 then had to filter, and on the noisier recording it flooded the timeline. Removing it also removed
 the ffmpeg dependency, the per-clip band calibration, and the threshold that would not transfer.
@@ -1141,13 +1147,27 @@ with the hand-authored piste configurations:
 | 1 | 92.9% / 93.5% | 2 / **0** | 0.80 / 0.80 |
 | 2 | 98.0% / 98.0% | 15 / **0** | 0.86 / 0.86 |
 | 3 | 97.4% / 97.4% | 0 / 0 | 0.86 / 0.86 |
-| 4 | 73.7% / **79.8%** | 114 / **54** | 0.67 / **0.77** |
+| 4 | 73.7% / **79.8%** | 114 / **54** | 0.60 / 0.60 |
 
 Mix-ups are single-frame position jumps exceeding 1.5 m, which is a direct
 signature of a slot switching person rather than a proxy for it: no fencer crosses
-metres of piste between consecutive frames. Nothing regressed on any clip on any
-measure, and the headline 720p result is unchanged, since clips 1 to 3 still
+metres of piste between consecutive frames. Coverage and mix-ups improve or hold
+on every clip, and the headline 720p result is unchanged, since clips 1 to 3 still
 require six corrections against twenty-one manual entries.
+
+**Clip 4's touch F1 does not move, and an earlier version of this section
+reported it rising from 0.67 to 0.77.** That figure was read at clip 4's own
+best-scoring confidence threshold rather than at the operating point tuned on
+clip 3, which is the protocol this report states and applies elsewhere. Choosing
+a threshold by looking at the held-back clip is the tuning-on-test-data error the
+audio detector's failure was diagnosed with, and quoting a benefit obtained that
+way would have repeated it in the project's own favour. At the tuned operating
+point clip 4 scores F1 0.60 both before and after: the change improves how
+reliably the fencers are followed, not how well touches are found on that clip.
+
+Worth stating rather than quietly correcting, because it is another instance of
+the pattern this project keeps finding in itself, this time in a measurement of
+its own improvement.
 
 **A prediction the footage makes was used to corroborate it.** Play resets to the
 guard lines after every touch, so each fencer should finish a bout within about a

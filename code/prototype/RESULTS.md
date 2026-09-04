@@ -41,7 +41,14 @@ of 16, flickering between first and third place on margins around 0.01.
 | 1 | 92.9% / **93.5%** | 2 / **0** | 0.80 / 0.80 | 1 of 3 / 1 of 3 |
 | 2 | 98.0% / 98.0% | 15 / **0** | 0.86 / 0.86 | 1 of 4 / 1 of 4 |
 | 3 | 97.4% / 97.4% | 0 / 0 | 0.86 / 0.86 | 4 of 14 / 4 of 14 |
-| 4 | 73.7% / **79.8%** | 114 / **54** | 0.67 / **0.77** | 4 of 6 / **3 of 6** |
+| 4 | 73.7% / **79.8%** | 114 / **54** | 0.60 / 0.60 | 8 of 6 / 8 of 6 |
+
+**Touch figures here are all at min confidence 0.00, which is clip 3's tuned operating point, and
+that is the only protocol-compliant way to read a held-back clip.** An earlier version of this
+table gave clip 4 as 0.67 rising to 0.77 with 4 then 3 corrections. Those were read at clip 4's
+OWN best-scoring threshold of 0.80, which is choosing an operating point by looking at the
+held-back clip. At the tuned point clip 4 is 0.60 either way: the candidate change improves
+tracking, not touch detection, on that clip.
 
 Mix-ups are single-frame position jumps over 1.5 m, the direct signature of a slot switching person.
 **The 720p headline is unchanged**: clips 1-3 still give 6 corrections against 21 manual entries.
