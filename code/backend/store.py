@@ -157,7 +157,8 @@ class AnnotationStore:
         p = self._path(bout_id)
         if not os.path.exists(p):
             return {"bout_id": bout_id, "touch_states": {}, "added_touches": [],
-                    "unreliable_segments": [], "reanchors": [], "lunges": []}
+                    "unreliable_segments": [], "reanchors": [], "lunges": [],
+                    "sessions": []}
         with open(p) as f:
             data = json.load(f)
         # tolerate files written by an earlier version
@@ -166,6 +167,7 @@ class AnnotationStore:
         data.setdefault("unreliable_segments", [])
         data.setdefault("reanchors", [])
         data.setdefault("lunges", [])
+        data.setdefault("sessions", [])
         return data
 
     def save(self, bout_id, data):
@@ -225,6 +227,97 @@ class AnnotationStore:
         data["added_touches"] = [t for t in data["added_touches"] if t["id"] != touch_id]
         self.save(bout_id, data)
         return len(data["added_touches"]) < before
+
+    # --- review sessions: the effort measurement ------------------------
+
+    VALID_MODES = ("assisted", "manual")
+
+    def add_session(self, bout_id, mode, elapsed_s, decisions,
+                    touches_after=0, lunges_after=0, note=""):
+        """
+        Record how long one pass over a bout took, and in which mode.
+
+        WHY THIS IS STORED RATHER THAN SHOWN AND FORGOTTEN. The project's central
+        claim is that confirming proposals costs less effort than labelling from
+        scratch, and there is currently no measurement of effort anywhere in it.
+        A figure that exists only in the browser until the page reloads cannot be
+        quoted in the evaluation, so the timing is durable and sits beside the
+        annotations it was produced with.
+
+        WHY MODE IS A CLOSED SET. The comparison is only meaningful between the
+        two conditions it was designed around. A free-text mode would let a
+        half-remembered third condition into a table of two.
+
+        Sessions are appended, never replaced. A second attempt at the same bout
+        is a second data point, including the ones where the user was
+        interrupted: discarding those would keep only the runs that went well,
+        which is the shape of a result that flatters itself.
+        """
+        if mode not in self.VALID_MODES:
+            raise ValueError(f"mode must be one of {self.VALID_MODES}")
+        if float(elapsed_s) <= 0:
+            raise ValueError("elapsed_s must be positive")
+        if int(decisions) < 0:
+            raise ValueError("decisions cannot be negative")
+        data = self.load(bout_id)
+        new_id = _next_id(data["sessions"], "s")
+        data["sessions"].append({
+            "id": new_id,
+            "mode": mode,
+            "elapsed_s": round(float(elapsed_s), 1),
+            "decisions": int(decisions),
+            # Seconds per decision is the comparable figure, since the two modes
+            # do not produce the same NUMBER of decisions: assisted review answers
+            # one question per proposal, manual logging creates one entry per
+            # touch the user finds. Dividing here rather than in the interface
+            # keeps every consumer using the same definition.
+            "seconds_per_decision": (round(float(elapsed_s) / int(decisions), 1)
+                                     if int(decisions) else None),
+            "touches_after": int(touches_after),
+            "lunges_after": int(lunges_after),
+            "note": note,
+            "created": time.time(),
+        })
+        self.save(bout_id, data)
+        return new_id
+
+    def session_comparison(self, bout_id):
+        """
+        The two modes side by side, or an explanation of what is still missing.
+
+        Returns a dict rather than a bare number because a single mean would hide
+        the thing that decides whether the comparison means anything: how many
+        runs it rests on. One run each is an anecdote and should read as one.
+        """
+        sessions = self.load(bout_id)["sessions"]
+        out = {"sessions": sessions}
+        for mode in self.VALID_MODES:
+            runs = [s for s in sessions if s["mode"] == mode]
+            rated = [s["seconds_per_decision"] for s in runs
+                     if s["seconds_per_decision"] is not None]
+            out[mode] = {
+                "runs": len(runs),
+                "total_decisions": sum(s["decisions"] for s in runs),
+                "mean_seconds_per_decision": (round(sum(rated) / len(rated), 1)
+                                              if rated else None),
+            }
+        a, m = out["assisted"], out["manual"]
+        if a["runs"] and m["runs"]:
+            if a["mean_seconds_per_decision"] and m["mean_seconds_per_decision"]:
+                out["speedup"] = round(m["mean_seconds_per_decision"]
+                                       / a["mean_seconds_per_decision"], 2)
+            # Said plainly rather than left for the reader to notice. A ratio
+            # from one run each is an anecdote, and it will be read as a result
+            # unless it is labelled as not being one.
+            out["strength"] = ("one run in each mode: an illustration, not a "
+                               "measurement" if a["runs"] == 1 and m["runs"] == 1
+                               else f"{a['runs']} assisted and {m['runs']} manual runs")
+        else:
+            missing = [k for k in self.VALID_MODES if not out[k]["runs"]]
+            out["speedup"] = None
+            out["strength"] = ("no comparison yet: nothing recorded in "
+                               + " or ".join(missing) + " mode")
+        return out
 
     # --- action 3: mark a segment tracking-unreliable -------------------
 

@@ -166,6 +166,149 @@ def touch_axes(rows, touches):
     return out
 
 
+def score_progression(touches, duration_s):
+    """
+    How the score moved through the bout: lead changes, and how long each fencer
+    spent ahead.
+
+    WHY TIME AND NOT JUST TOUCHES. A 5-4 bout where one fencer led throughout and
+    a 5-4 bout that changed hands four times are the same scoreline and different
+    bouts, and the second is the one a coach wants to talk about. Time leading is
+    the cheap way to tell them apart.
+
+    Doubles advance both scores, so they can end a lead without either fencer
+    scoring past the other. That is correct epee behaviour and not a special
+    case: at 4-4 a double is 5-5.
+
+    Everything here is derived from the touch list the user confirmed. Nothing is
+    inferred from tracking, so this section is unaffected by the swap check that
+    withholds the per-fencer axes.
+    """
+    if not touches:
+        return {"available": False,
+                "reason": "no confirmed touches to build a scoreline from"}
+
+    ordered = sorted(touches, key=lambda t: t["time_s"])
+    left = right = 0
+    leader = None
+    # The last fencer to have HELD the lead, which is not the same as the current
+    # leader. A lead almost always changes hands by passing through level, so
+    # comparing only against the current leader counts no change at all: the
+    # sequence is 1, None, 2, and neither step is a swap between two fencers.
+    # Measured on clip 3 this reported zero lead changes for a bout where one
+    # fencer led for 87 seconds and the other for 38.
+    last_holder = None
+    changes = 0
+    leading_s = {1: 0.0, 2: 0.0}
+    prev_t = 0.0
+    timeline = []
+
+    for t in ordered:
+        # Credit the stretch that just ended to whoever was ahead during it,
+        # before the score changes.
+        if leader:
+            leading_s[leader] += t["time_s"] - prev_t
+        prev_t = t["time_s"]
+
+        scorer = t.get("scorer")
+        if scorer == "left":
+            left += 1
+        elif scorer == "right":
+            right += 1
+        elif scorer == "double":
+            left += 1
+            right += 1
+        # An unattributed touch advances neither score. It is not a zero-zero
+        # event, it is an unknown one, and guessing would put a fabricated
+        # scoreline in front of the user.
+
+        new_leader = 1 if left > right else (2 if right > left else None)
+        if new_leader is not None:
+            if last_holder is not None and new_leader != last_holder:
+                changes += 1
+            last_holder = new_leader
+        leader = new_leader
+        timeline.append({"time_s": t["time_s"], "left": left, "right": right,
+                         "scorer": scorer})
+
+    if leader:
+        leading_s[leader] += max(0.0, duration_s - prev_t)
+
+    total = sum(leading_s.values())
+    return {
+        "available": True,
+        "final": {"fencer_1": left, "fencer_2": right},
+        "lead_changes": changes,
+        "time_leading_s": {1: round(leading_s[1], 1), 2: round(leading_s[2], 1)},
+        "time_leading_pct": {
+            1: round(100.0 * leading_s[1] / total, 1) if total else None,
+            2: round(100.0 * leading_s[2] / total, 1) if total else None,
+        },
+        "level_s": round(max(0.0, duration_s - total), 1),
+        "unattributed": sum(1 for t in ordered
+                            if t.get("scorer") not in ("left", "right", "double")),
+        "timeline": timeline,
+    }
+
+
+# Thirds rather than the five zones a manual logger would offer. The metre scale
+# is derived per clip and the fencers never reach both ends of a fourteen-metre
+# piste in a clip this length, so the boundaries between five bands would be
+# finer than the measurement behind them.
+ZONE_NAMES = ("their own third", "the middle", "the far third")
+
+
+def piste_zones(rows, touches):
+    """
+    Where along the strip each fencer's touches were scored.
+
+    Uses the observed extent of the bout rather than an assumed piste length, for
+    the same reason `territory` does: the scale is derived per clip and the
+    fencers do not visit both ends.
+    """
+    pairs = [(float(r["f1_pos_m"]), float(r["f2_pos_m"])) for r in rows
+             if r.get("f1_pos_m") and r.get("f2_pos_m")]
+    if not pairs or not touches:
+        return {"available": False,
+                "reason": "no tracked positions or no confirmed touches"}
+
+    lo = min(min(a, b) for a, b in pairs)
+    hi = max(max(a, b) for a, b in pairs)
+    span = hi - lo
+    if span <= 0:
+        return {"available": False, "reason": "the fencers never moved apart"}
+
+    counts = {1: [0, 0, 0], 2: [0, 0, 0]}
+    for t in touches:
+        side = t.get("scorer")
+        slot = 1 if side == "left" else (2 if side == "right" else None)
+        if slot is None:
+            continue
+        pos = position_at(rows, t["time_s"], slot)
+        if pos is None:
+            continue
+        # Measured from the scoring fencer's OWN end, so "the far third" means
+        # the same thing for both of them.
+        frac = (pos - lo) / span if slot == 1 else (hi - pos) / span
+        counts[slot][min(2, max(0, int(frac * 3)))] += 1
+
+    return {"available": True, "zones": ZONE_NAMES,
+            "fencer_1": counts[1], "fencer_2": counts[2]}
+
+
+def position_at(rows, time_s, slot):
+    """One fencer's position at the frame nearest a touch, or None."""
+    col = "f1_pos_m" if slot == 1 else "f2_pos_m"
+    best, best_gap = None, TOUCH_MATCH_S
+    for r in rows:
+        if not r.get(col):
+            continue
+        gap = abs(float(r["time_s"]) - time_s)
+        if gap <= best_gap:
+            best, best_gap = float(r[col]), gap
+    return best
+
+
 def _share(a, b):
     """
     One fencer's value as a share of the pair's total, on a 0 to 100 scale where
@@ -193,10 +336,18 @@ def build(csv_path, touches, lunges=None, reset_s=None):
         return {"available": False,
                 "reason": "the bout has no tracking data to profile"}
 
+    duration_for_score = float(rows[-1]["time_s"]) if rows else 0.0
+    # The scoreline is derived entirely from the touches the user confirmed, so
+    # it survives a tracking failure that withholds every per-fencer axis. A bout
+    # the tracker could not follow still has a score, and refusing to show it
+    # would be withholding something this system did not get wrong.
+    scoreline = score_progression(touches, duration_for_score)
+
     swaps, left_share, _ = count_side_swaps(rows)
     if swaps > 0:
         return {
             "available": False,
+            "score": scoreline,
             "swaps": swaps,
             "left_share_pct": round(100.0 * left_share, 1) if left_share else None,
             "reason": (
@@ -271,6 +422,8 @@ def build(csv_path, touches, lunges=None, reset_s=None):
              "fencer_2": {"value": raw[2][k], "score": _share(raw[2][k], raw[1][k])}}
             for k, label, unit, explains in axes
         ],
+        "score": scoreline,
+        "zones": piste_zones(rows, touches),
         "note": ("Each axis scores one fencer against the other in this bout, "
                  "where 50 is parity. It is not a comparison against other "
                  "fencers: four recordings is not a population to normalise "

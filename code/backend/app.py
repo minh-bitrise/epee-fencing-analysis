@@ -1065,6 +1065,44 @@ def propose_lunges(bout_id: str, slot: int = Query(0, ge=0, le=1)):
     }
 
 
+class ReviewSession(BaseModel):
+    mode: str = Field(..., pattern="^(assisted|manual)$")
+    elapsed_s: float = Field(..., gt=0)
+    decisions: int = Field(..., ge=0)
+    note: str = ""
+
+
+@app.post("/api/bouts/{bout_id}/sessions")
+def record_session(bout_id: str, body: ReviewSession):
+    """
+    Record how long one pass over a bout took, assisted or manual.
+
+    WHY THE APPLICATION MEASURES THIS AT ALL. The project's central claim is
+    about effort, and nothing in it measures effort. A user study would measure
+    it better and is parked; this needs no participants, costs one button, and
+    turns "reviewing is faster than labelling" from an assertion into a figure
+    with a denominator.
+
+    The touch and lunge counts are taken from the store rather than from the
+    request, so a client cannot report a session that its own annotations do not
+    support.
+    """
+    b = _get_bout(bout_id)
+    data = store.load(bout_id)
+    proposed = load_proposed_touches(b.touches_csv)
+    session_id = store.add_session(
+        bout_id, body.mode, body.elapsed_s, body.decisions,
+        touches_after=len(store.confirmed_touch_times(bout_id, proposed)),
+        lunges_after=len(data["lunges"]), note=body.note)
+    return {"session_id": session_id, **store.session_comparison(bout_id)}
+
+
+@app.get("/api/bouts/{bout_id}/sessions")
+def get_sessions(bout_id: str):
+    _get_bout(bout_id)
+    return store.session_comparison(bout_id)
+
+
 @app.get("/api/bouts/{bout_id}/profile")
 def fencer_profile(bout_id: str):
     """

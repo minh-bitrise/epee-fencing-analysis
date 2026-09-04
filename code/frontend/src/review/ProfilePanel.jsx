@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
+import ScorePanel from './ScorePanel.jsx'
 
 /**
  * How the two fencers in one bout compare, on six axes, drawn as a radar.
@@ -72,13 +73,18 @@ export default function ProfilePanel({ boutId, boutPath, refreshKey }) {
 
   if (!data.available) {
     return (
-      <div className="note">
-        <b>No profile for this bout.</b> {data.reason}
-        {data.left_share_pct != null && (
-          <> Fencer 1 was on the left in {data.left_share_pct} per cent of
-             frames; on footage where the tracking held it is 100.</>
-        )}
-      </div>
+      <>
+        <div className="note">
+          <b>No profile for this bout.</b> {data.reason}
+          {data.left_share_pct != null && (
+            <> Fencer 1 was on the left in {data.left_share_pct} per cent of
+               frames; on footage where the tracking held it is 100.</>
+          )}
+        </div>
+        {/* The scoreline comes from confirmed touches, not from tracking, so it
+            is still valid on a bout whose per-fencer axes are not. */}
+        <ScorePanel score={data.score} />
+      </>
     )
   }
 
@@ -138,6 +144,8 @@ export default function ProfilePanel({ boutId, boutPath, refreshKey }) {
           ))}
         </tbody>
       </table>
+
+      <ScorePanel score={data.score} zones={data.zones} />
 
       <div className="note">
         {data.note}

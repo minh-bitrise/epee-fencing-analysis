@@ -5,6 +5,8 @@ import Timeline from './Timeline.jsx'
 import TouchTable from './TouchTable.jsx'
 import MetricsPanel from './MetricsPanel.jsx'
 import ProfilePanel from './ProfilePanel.jsx'
+import ReviewQueue, { formatElapsed } from './ReviewQueue.jsx'
+import EffortPanel from './EffortPanel.jsx'
 import SummaryPanel from './SummaryPanel.jsx'
 import LungePanel from './LungePanel.jsx'
 
@@ -26,6 +28,16 @@ export default function ReviewView({ initialBoutId }) {
   const [listError, setListError] = useState(null)
   const [outcomes, setOutcomes] = useState(null)
   const [scorers, setScorers] = useState(null)
+  // The queue owns the keyboard and the playhead while it is open. Held here
+  // rather than inside it so the rest of the screen can stand down: two things
+  // binding "c" to different actions is the kind of conflict that only shows up
+  // when a user presses it at the wrong moment.
+  const [queue, setQueue] = useState(null)
+  // Manual mode withholds the proposals. Its purpose is to be the control
+  // condition for the effort claim, not to be a better way to work.
+  const [manual, setManual] = useState(null)
+  const [sessions, setSessions] = useState(null)
+  const [sessionNote, setSessionNote] = useState(null)
   const videoRef = useRef(null)
   // Guards against keystrokes arriving mid-request. A ref rather than state
   // because the keyboard handler has to read the current value at the moment the
@@ -265,6 +277,10 @@ export default function ReviewView({ initialBoutId }) {
 
   useEffect(() => {
     const onKey = async (e) => {
+      // The queue binds the same keys to a narrower set of actions while it is
+      // open, and both handlers firing would confirm the queue's item and the
+      // table's selected row from one keystroke.
+      if (queue) return
       const t = e.target
       // Guard the type as well as the selector: the event target is not always
       // an Element, and calling matches() on one that is not would throw and
@@ -305,7 +321,7 @@ export default function ReviewView({ initialBoutId }) {
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [rows, selIdx, armedSlot, boutId, decide, select, addTouchAtPlayhead,
-      reload, guard])
+      reload, guard, queue])
 
   // --- exports -----------------------------------------------------------
 
@@ -346,6 +362,116 @@ export default function ReviewView({ initialBoutId }) {
     }
   }
 
+  // --- the review queue and the manual control condition ------------------
+
+  const loadSessions = useCallback(async () => {
+    if (!boutId) return
+    try {
+      setSessions(await api(`${boutPath(boutId)}/sessions`))
+    } catch { /* the comparison is optional; the review works without it */ }
+  }, [boutId])
+
+  useEffect(() => { loadSessions() }, [loadSessions])
+
+  const recordSession = useCallback(async (mode, elapsed_s, decisions) => {
+    // Nothing to record from an abandoned run. A zero-decision session would
+    // enter the comparison with no rate and pull the run count up without
+    // contributing to the figure it is counting runs for.
+    if (!decisions || elapsed_s <= 0) return null
+    try {
+      const r = await api(`${boutPath(boutId)}/sessions`,
+                          postJSON({ mode, elapsed_s, decisions }))
+      setSessions(r)
+      return r
+    } catch (e) {
+      setListError(e.message)
+      return null
+    }
+  }, [boutId])
+
+  const startTouchQueue = useCallback(() => {
+    const pending = rows.filter((r) => r.kind === 'proposed'
+                                       && r.state === 'pending')
+    setQueue({
+      kind: 'touch',
+      startedAt: Date.now(),
+      items: pending.map((p) => ({
+        id: p.id, time_s: p.at,
+        detail: `confidence ${p.confidence?.toFixed(2) ?? '-'}`,
+      })),
+    })
+  }, [rows])
+
+  // Lunge proposals come from a calibration the user has to trigger, so the
+  // queue takes them from the panel that produced them rather than fetching its
+  // own: re-requesting would recalibrate on a different set of confirmations.
+  const startLungeQueue = useCallback((slot, proposals) => {
+    setQueue({
+      kind: 'lunge',
+      slot,
+      startedAt: Date.now(),
+      items: proposals.map((p) => ({
+        id: `${slot}:${p.time_s}`, time_s: p.time_s,
+        detail: `Fencer ${slot + 1}, ${p.margin}x over the threshold`,
+      })),
+    })
+  }, [])
+
+  const decideQueued = useCallback(async (item, decision) => {
+    if (queue?.kind === 'touch') {
+      await api(`${boutPath(boutId)}/touches/${item.id}/decision`,
+                postJSON({ state: decision }))
+    } else if (decision !== 'rejected') {
+      // A rejected lunge proposal records nothing. There is no store of things
+      // the user said were not lunges, and inventing one here would mean the
+      // queue wrote a kind of record nothing else in the system reads.
+      await api(`${boutPath(boutId)}/lunges`,
+                postJSON({ time_s: item.time_s, slot: decision }))
+    }
+    await reload()
+  }, [queue, boutId, reload])
+
+  const exitQueue = useCallback(async ({ answered, elapsed }) => {
+    setQueue(null)
+    const r = await recordSession('assisted', elapsed, answered)
+    if (r && answered) {
+      setSessionNote(`Recorded ${answered} assisted decisions in `
+                     + `${formatElapsed(elapsed)}.`)
+    }
+  }, [recordSession])
+
+  // Both baselines are captured at the start, because the count that matters is
+  // what this RUN produced. Without them a second manual pass would be credited
+  // with everything the first one logged and would look twice as fast.
+  const startManual = useCallback(() => {
+    setManual({
+      startedAt: Date.now(),
+      touchesFrom: rows.filter((r) => r.kind === 'added').length,
+      lungesFrom: data?.lunges?.length ?? 0,
+    })
+    setSessionNote(null)
+  }, [rows, data])
+
+  const finishManual = useCallback(async () => {
+    if (!manual) return null
+    const elapsed = (Date.now() - manual.startedAt) / 1000
+    // Decisions in manual mode are the entries the user CREATED, not proposals
+    // answered, because in this condition there are none. Seconds per decision
+    // is the figure the two modes share.
+    const decisions =
+      Math.max(0, rows.filter((r) => r.kind === 'added').length - manual.touchesFrom)
+      + Math.max(0, (data?.lunges?.length ?? 0) - manual.lungesFrom)
+    setManual(null)
+    if (!decisions) {
+      setSessionNote('Nothing was logged, so that run was not recorded.')
+      return null
+    }
+    const r = await recordSession('manual', elapsed, decisions)
+    setSessionNote(`Recorded ${decisions} manual entries in `
+                   + `${formatElapsed(elapsed)}.`)
+    return r
+  }, [manual, rows, data, recordSession])
+
   const exportAnchors = async () => {
     setAnchorOut({ text: 'exporting...' })
     try {
@@ -376,6 +502,13 @@ export default function ReviewView({ initialBoutId }) {
   const confirmedTimes = rows
     .filter((r) => r.state === 'confirmed' || r.kind === 'added')
     .map((r) => r.at)
+  const pendingCount = rows.filter(
+    (r) => r.kind === 'proposed' && r.state === 'pending').length
+  // Manual mode withholds the detector's proposals entirely. Dimming them or
+  // collapsing them would not do: the condition being measured is labelling
+  // WITHOUT the system's suggestions, and a visible suggestion has already
+  // been read by the time the user decides to ignore it.
+  const visibleRows = manual ? rows.filter((r) => r.kind === 'added') : rows
 
   return (
     <main>
@@ -407,6 +540,34 @@ export default function ReviewView({ initialBoutId }) {
             </div>
           )}
 
+          <div className="row modebar">
+            <button className="primary" disabled={!!queue || !!manual
+                                                  || !pendingCount}
+                    onClick={startTouchQueue}>
+              Review {pendingCount || 'no'} proposal
+              {pendingCount === 1 ? '' : 's'} one at a time
+            </button>
+            {manual ? (
+              <button className="primary" onClick={finishManual}>
+                Finish manual run
+              </button>
+            ) : (
+              <button disabled={!!queue} onClick={startManual}>
+                Log this bout manually
+              </button>
+            )}
+            {manual && (
+              <span className="mini manual-live">
+                Manual mode: proposals hidden, timing.
+              </span>
+            )}
+          </div>
+          {sessionNote && (
+            <div className="note" onClick={() => setSessionNote(null)}>
+              {sessionNote} <span className="mini">(click to dismiss)</span>
+            </div>
+          )}
+
           {data?.has_video ? (
             <video ref={videoRef} controls preload="metadata"
                    src={`${boutPath(boutId)}/video`}
@@ -419,22 +580,37 @@ export default function ReviewView({ initialBoutId }) {
             </div>
           )}
 
-          <Timeline duration={duration} rows={rows}
+          <Timeline duration={duration} rows={visibleRows}
                     segments={data?.unreliable_segments}
                     selIdx={selIdx} currentTime={currentTime}
                     onSelect={select}
                     onSeek={(t) => { if (videoRef.current) videoRef.current.currentTime = t }} />
 
-          <div className="mini" style={{ marginTop: 8 }}>
-            <b>j</b> / <b>l</b> previous and next, <b>k</b> play or pause,
-            {' '}<b>c</b> confirm, <b>x</b> reject, <b>a</b> add a touch here,
-            {' '}<b>,</b> / <b>.</b> step one frame, <b>1</b> / <b>2</b> label a lunge.
-          </div>
+          {queue ? (
+            <ReviewQueue items={queue.items} kind={queue.kind}
+                         startedAt={queue.startedAt}
+                         onSeek={seek} onDecide={decideQueued}
+                         onExit={exitQueue} />
+          ) : (
+            <div className="mini" style={{ marginTop: 8 }}>
+              <b>j</b> / <b>l</b> previous and next, <b>k</b> play or pause,
+              {' '}<b>c</b> confirm, <b>x</b> reject, <b>a</b> add a touch here,
+              {' '}<b>,</b> / <b>.</b> step one frame, <b>1</b> / <b>2</b> label a lunge.
+            </div>
+          )}
         </div>
 
         <div className="panel">
-          <h2>Proposed touches</h2>
-          <TouchTable rows={rows} selIdx={selIdx} onSelect={select}
+          <h2>{manual ? 'Touches you have logged' : 'Proposed touches'}</h2>
+          {manual && (
+            <div className="note">
+              The detector's proposals are hidden for this run. Play the bout and
+              press <code>a</code> at each touch, <code>1</code> or <code>2</code>
+              {' '}at each lunge. This exists to be the control condition for the
+              effort claim, not a better way to work.
+            </div>
+          )}
+          <TouchTable rows={visibleRows} selIdx={selIdx} onSelect={select}
                       onDecide={decide} onDelete={removeAdded}
                       scorerProposals={scorers?.proposals} />
 
@@ -544,6 +720,7 @@ export default function ReviewView({ initialBoutId }) {
         </div>
 
         <LungePanel boutId={boutId} lunges={data?.lunges || []}
+                    onQueue={startLungeQueue}
                     touchTimes={confirmedTimes} onChanged={reload} />
       </div>
 
@@ -584,6 +761,11 @@ export default function ReviewView({ initialBoutId }) {
           {metricsError
             ? <div className="note">{metricsError}</div>
             : <MetricsPanel metrics={metrics} />}
+        </div>
+
+        <div className="panel">
+          <h2>Review effort</h2>
+          <EffortPanel sessions={sessions} />
         </div>
 
         <div className="panel">

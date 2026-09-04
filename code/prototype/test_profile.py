@@ -203,3 +203,101 @@ class TestShare:
 
     def test_two_zeroes_are_parity_not_a_division_error(self):
         assert fp._share(0.0, 0.0) == 50.0
+
+
+class TestScoreProgression:
+    """
+    The scoreline. Derived entirely from confirmed touches, so it is the one part
+    of the profile that survives a tracking failure.
+    """
+
+    def t(self, time_s, scorer):
+        return {"time_s": time_s, "scorer": scorer}
+
+    def test_a_lead_changing_through_level_counts_as_a_change(self):
+        """
+        The defect this replaced. A lead almost always changes hands by passing
+        through level, so comparing only against the CURRENT leader counts no
+        change at all: the sequence is 1, None, 2 and neither step is a swap
+        between two fencers. On clip 3 this reported zero lead changes for a bout
+        where one fencer led 87 seconds and the other 38.
+        """
+        r = fp.score_progression(
+            [self.t(10, "left"), self.t(20, "right"), self.t(30, "right")], 60)
+        assert r["lead_changes"] == 1
+
+    def test_no_change_when_one_fencer_leads_throughout(self):
+        r = fp.score_progression(
+            [self.t(10, "left"), self.t(20, "left"), self.t(30, "right")], 60)
+        assert r["lead_changes"] == 0
+
+    def test_a_double_advances_both_scores(self):
+        # Correct epee behaviour, and not a special case: at 4-4 a double is 5-5.
+        r = fp.score_progression([self.t(10, "double")], 60)
+        assert r["final"] == {"fencer_1": 1, "fencer_2": 1}
+
+    def test_a_double_can_end_a_lead_without_anyone_scoring_past(self):
+        r = fp.score_progression([self.t(10, "left"), self.t(20, "double")], 60)
+        assert r["final"] == {"fencer_1": 2, "fencer_2": 1}
+        assert r["lead_changes"] == 0
+
+    def test_time_leading_runs_to_the_end_of_the_bout(self):
+        # The stretch after the last touch belongs to whoever finished ahead.
+        r = fp.score_progression([self.t(10, "left")], 60)
+        assert r["time_leading_s"][1] == 50.0
+
+    def test_time_before_the_first_touch_is_level_not_led(self):
+        r = fp.score_progression([self.t(10, "left")], 60)
+        assert r["level_s"] == 10.0
+
+    def test_an_unattributed_touch_advances_neither_score(self):
+        # It is an unknown event, not a nil-nil one, and inventing a scorer would
+        # put a fabricated scoreline in front of the user.
+        r = fp.score_progression([self.t(10, "unknown"), self.t(20, "left")], 60)
+        assert r["final"] == {"fencer_1": 1, "fencer_2": 0}
+        assert r["unattributed"] == 1
+
+    def test_touches_out_of_order_are_sorted_first(self):
+        r = fp.score_progression([self.t(30, "right"), self.t(10, "left")], 60)
+        assert [x["time_s"] for x in r["timeline"]] == [10, 30]
+
+    def test_no_touches_means_no_scoreline(self):
+        assert fp.score_progression([], 60)["available"] is False
+
+
+class TestPisteZones:
+    def test_both_fencers_are_measured_from_their_own_end(self, tmp_path):
+        """
+        Otherwise "the far third" means opposite ends of the piste for the two
+        fencers, and the two rows cannot be compared at all.
+        """
+        rows = bout(n=100, f1=lambda i: 1.0, f2=lambda i: 9.0)
+        out = fp.piste_zones(rows, [{"time_s": 1.0, "scorer": "left"},
+                                    {"time_s": 1.0, "scorer": "right"}])
+        # Each scored while standing at their own end, so each lands in bucket 0.
+        assert out["fencer_1"][0] == 1
+        assert out["fencer_2"][0] == 1
+
+    def test_an_unattributed_touch_is_not_placed(self, tmp_path):
+        rows = bout(n=100)
+        out = fp.piste_zones(rows, [{"time_s": 1.0, "scorer": "unknown"}])
+        assert sum(out["fencer_1"]) + sum(out["fencer_2"]) == 0
+
+    def test_says_so_when_there_is_nothing_to_place(self):
+        assert fp.piste_zones([], [])["available"] is False
+
+
+class TestScoreSurvivesTheRefusal:
+    def test_a_swapped_bout_still_reports_its_scoreline(self, tmp_path):
+        """
+        The swap check withholds the per-fencer axes because they describe the
+        tracker. The score does not come from tracking at all, and withholding it
+        would mean suppressing something the system got right.
+        """
+        rows = bout(f1=lambda i: 2.0 if i < 200 else 6.0,
+                    f2=lambda i: 6.0 if i < 200 else 2.0)
+        out = fp.build(write_csv(tmp_path, rows),
+                       [{"time_s": 10.0, "scorer": "left"}])
+        assert out["available"] is False
+        assert out["score"]["available"] is True
+        assert out["score"]["final"] == {"fencer_1": 1, "fencer_2": 0}

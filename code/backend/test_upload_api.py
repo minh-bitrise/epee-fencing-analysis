@@ -607,3 +607,65 @@ class TestFencerProfile:
 
     def test_an_unknown_bout_is_a_404_not_a_crash(self, client):
         assert client.get("/api/bouts/nope:nothing/profile").status_code == 404
+
+
+class TestSessionEndpoints:
+    """The HTTP surface for the effort measurement."""
+
+    def _bout(self, tmp_path, name="sess"):
+        results = tmp_path / "results_uploads" / f"upload_{name}"
+        results.mkdir(parents=True, exist_ok=True)
+        (results / f"b_{name}_distance.csv").write_text(
+            "frame,time_s,distance_raw_m,distance_smooth_m,method,"
+            "f1_advance_m,f1_retreat_m,f2_advance_m,f2_retreat_m,"
+            "f1_pos_m,f2_pos_m\n"
+            "0,0.0,2.0,2.0,pose,0,0,0,0,2.0,6.0\n"
+            "1,0.5,2.0,2.0,pose,0,0,0,0,2.1,6.0\n")
+        (results / f"b_{name}_distance_touches.csv").write_text(
+            "time_s,confidence,min_distance_m,separation_m,audio_support,signals\n"
+            "10.0,0.90,1.20,2.10,0,approach+separated\n")
+        return f"upload_{name}:b_{name}"
+
+    def test_records_a_session_and_returns_the_comparison(self, client, tmp_path):
+        bout = self._bout(tmp_path)
+        r = client.post(f"/api/bouts/{bout}/sessions",
+                        json={"mode": "assisted", "elapsed_s": 60.0,
+                              "decisions": 15})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["assisted"]["mean_seconds_per_decision"] == 4.0
+
+    def test_reads_them_back(self, client, tmp_path):
+        bout = self._bout(tmp_path, name="read")
+        client.post(f"/api/bouts/{bout}/sessions",
+                    json={"mode": "manual", "elapsed_s": 100.0, "decisions": 5})
+        body = client.get(f"/api/bouts/{bout}/sessions").json()
+        assert body["manual"]["runs"] == 1
+
+    def test_an_unknown_mode_is_refused_by_the_schema(self, client, tmp_path):
+        bout = self._bout(tmp_path, name="mode")
+        r = client.post(f"/api/bouts/{bout}/sessions",
+                        json={"mode": "quick", "elapsed_s": 60.0,
+                              "decisions": 15})
+        assert r.status_code == 422
+
+    def test_a_zero_duration_is_refused(self, client, tmp_path):
+        bout = self._bout(tmp_path, name="zero")
+        r = client.post(f"/api/bouts/{bout}/sessions",
+                        json={"mode": "manual", "elapsed_s": 0,
+                              "decisions": 5})
+        assert r.status_code == 422
+
+    def test_the_counts_come_from_the_store_not_the_request(self, client,
+                                                            tmp_path):
+        # So a client cannot report a session its own annotations do not support.
+        bout = self._bout(tmp_path, name="counts")
+        appmod.store.add_touch(bout, 12.0)
+        client.post(f"/api/bouts/{bout}/sessions",
+                    json={"mode": "manual", "elapsed_s": 60.0, "decisions": 99})
+        s = appmod.store.load(bout)["sessions"][0]
+        assert s["decisions"] == 99
+        assert s["touches_after"] == 1
+
+    def test_an_unknown_bout_is_a_404(self, client):
+        assert client.get("/api/bouts/nope:nothing/sessions").status_code == 404

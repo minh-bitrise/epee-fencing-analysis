@@ -6,7 +6,8 @@ import { api, boutPath, del } from '../api.js'
 // the question here is which lunges to compare against, not precise attribution.
 const SCORED_WINDOW_S = 1.0
 
-export default function LungePanel({ boutId, lunges, touchTimes, onChanged }) {
+export default function LungePanel({ boutId, lunges, touchTimes, onChanged,
+                                    onQueue }) {
   const [proposed, setProposed] = useState(null)
 
   const askForProposals = async (slot) => {
@@ -72,6 +73,14 @@ export default function LungePanel({ boutId, lunges, touchTimes, onChanged }) {
             {proposed.proposals.length > 12
               && `... and ${proposed.proposals.length - 12} more`}
           </div>
+          {onQueue && proposed.proposals.length > 0 && (
+            <div className="row" style={{ marginTop: 9 }}>
+              <button className="primary"
+                      onClick={() => onQueue(proposed.slot, proposed.proposals)}>
+                Go through them one at a time
+              </button>
+            </div>
+          )}
           <br />{proposed.note}
         </div>
       )}

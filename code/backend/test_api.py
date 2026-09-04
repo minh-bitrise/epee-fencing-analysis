@@ -810,3 +810,84 @@ class TestReanchorRerunCommand:
         r = app_module.export_reanchors(bout_id)
         assert r["piste_config"] is None
         assert "--piste-config" not in r["next"]
+
+
+class TestReviewSessions:
+    """
+    The effort measurement. The project's central claim is about effort and
+    nothing in it measured effort until this existed, so these tests are mostly
+    about the recorded figure meaning what it says.
+    """
+
+    def test_records_a_run_and_its_rate(self, store):
+        store.add_session("b", "assisted", 60.0, 15)
+        c = store.session_comparison("b")
+        assert c["assisted"]["runs"] == 1
+        assert c["assisted"]["mean_seconds_per_decision"] == 4.0
+
+    def test_the_rate_is_per_decision_not_per_bout(self, store):
+        # The two modes do not produce the same NUMBER of decisions: assisted
+        # answers one question per proposal, manual creates one entry per touch
+        # found. A per-bout figure would compare different amounts of work.
+        store.add_session("b", "assisted", 100.0, 20)
+        store.add_session("b", "manual", 100.0, 5)
+        c = store.session_comparison("b")
+        assert c["assisted"]["mean_seconds_per_decision"] == 5.0
+        assert c["manual"]["mean_seconds_per_decision"] == 20.0
+        assert c["speedup"] == 4.0
+
+    def test_one_run_each_is_labelled_as_an_illustration(self, store):
+        """
+        A speed-up computed from a single pass in each mode is an anecdote about
+        one afternoon, and it will be read as a result unless it says otherwise.
+        """
+        store.add_session("b", "assisted", 60.0, 15)
+        store.add_session("b", "manual", 60.0, 5)
+        c = store.session_comparison("b")
+        assert "illustration, not a measurement" in c["strength"]
+
+    def test_more_runs_stop_it_being_called_an_illustration(self, store):
+        for _ in range(2):
+            store.add_session("b", "assisted", 60.0, 15)
+        store.add_session("b", "manual", 60.0, 5)
+        c = store.session_comparison("b")
+        assert "illustration" not in c["strength"]
+        assert "2 assisted" in c["strength"]
+
+    def test_no_speedup_until_both_modes_have_a_run(self, store):
+        store.add_session("b", "assisted", 60.0, 15)
+        c = store.session_comparison("b")
+        assert c["speedup"] is None
+        assert "manual" in c["strength"]
+
+    def test_runs_accumulate_rather_than_replacing(self, store):
+        # Including the ones that went badly. Keeping only the latest would keep
+        # only the runs the user was happy with, which is the shape of a result
+        # that flatters itself.
+        store.add_session("b", "assisted", 60.0, 10)
+        store.add_session("b", "assisted", 200.0, 10)
+        c = store.session_comparison("b")
+        assert c["assisted"]["runs"] == 2
+        assert c["assisted"]["mean_seconds_per_decision"] == 13.0
+
+    def test_a_run_with_no_decisions_has_no_rate(self, store):
+        # It is recorded, because a pass that produced nothing is a real event,
+        # but it cannot contribute a rate and must not contribute a zero.
+        store.add_session("b", "manual", 60.0, 0)
+        c = store.session_comparison("b")
+        assert c["manual"]["runs"] == 1
+        assert c["manual"]["mean_seconds_per_decision"] is None
+
+    def test_rejects_an_unknown_mode(self, store):
+        # The comparison is only meaningful between the two conditions it was
+        # designed around; free text would let a third one into a table of two.
+        with pytest.raises(ValueError):
+            store.add_session("b", "quick", 60.0, 10)
+
+    def test_rejects_a_zero_or_negative_duration(self, store):
+        with pytest.raises(ValueError):
+            store.add_session("b", "manual", 0.0, 10)
+
+    def test_sessions_survive_a_file_written_before_they_existed(self, store):
+        store.add_touch("b", 10.0)
+        assert store.load("b")["sessions"] == []

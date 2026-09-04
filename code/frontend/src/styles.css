@@ -181,3 +181,55 @@ label.opt { display:flex; gap:6px; align-items:center; color:var(--muted);
      radar look complete when it is not, which is the one reading the panel must
      never invite. */
   .profile-table tr.absent { color:var(--muted); opacity:.6; }
+
+  /* the review queue: one proposal at a time, holding the playhead itself */
+  .modebar { margin-bottom:10px; flex-wrap:wrap; }
+  .manual-live { color:var(--warn); }
+  .queue { margin-top:10px; padding:12px; border:1px solid var(--accent);
+           border-radius:8px; background:#18202b; }
+  .queue-head { display:flex; align-items:baseline; gap:8px; font-size:13px;
+                color:var(--muted); }
+  .queue-head b { color:var(--fg); font-size:17px; }
+  .queue-clock { margin-left:auto; font-variant-numeric:tabular-nums;
+                 color:var(--muted); }
+  .queue-bar { height:4px; background:var(--line); border-radius:2px;
+               margin:8px 0 11px; overflow:hidden; }
+  .queue-bar i { display:block; height:100%; background:var(--accent);
+                 transition:width .18s ease; }
+  .queue-item { display:flex; align-items:baseline; gap:11px; margin-bottom:10px; }
+  .queue-time { font-size:20px; font-variant-numeric:tabular-nums; }
+  .queue-detail { color:var(--muted); font-size:12px; }
+  .queue-actions { flex-wrap:wrap; margin-bottom:8px; }
+  .queue.done h3 { margin:0 0 11px; font-size:14px; }
+  .queue-figures { display:grid; grid-template-columns:repeat(4,1fr); gap:10px;
+                   margin-bottom:11px; }
+  .queue-figures div { display:flex; flex-direction:column; }
+  .queue-figures b { font-size:19px; font-variant-numeric:tabular-nums; }
+  .queue-figures span { font-size:11px; color:var(--muted); }
+
+  /* the effort comparison: the project's central claim, with a denominator */
+  .effort { display:grid; grid-template-columns:1fr 1fr; gap:11px; }
+  .effort-mode h4 { margin:0 0 5px; font-size:11px; font-weight:600;
+                    text-transform:uppercase; letter-spacing:.05em;
+                    color:var(--muted); }
+  .effort-big { font-size:22px; font-variant-numeric:tabular-nums; }
+  .effort-verdict { margin-top:10px; padding:8px 10px; border-radius:6px;
+                    background:#1b2a1f; border:1px solid #2f4a37;
+                    font-size:13px; }
+  .effort-verdict b { font-size:17px; color:var(--ok); }
+
+  /* the scoreline, and where on the strip the touches landed */
+  .scoreline { display:flex; align-items:baseline; justify-content:center;
+               gap:9px; margin:4px 0 10px; font-variant-numeric:tabular-nums; }
+  .scoreline span { font-size:27px; }
+  .scoreline .s1 { color:var(--accent); }
+  .scoreline .s2 { color:var(--warn); }
+  .scoreline .dash { color:var(--muted); font-size:19px; }
+  h3.sub { font-size:11px; text-transform:uppercase; letter-spacing:.05em;
+           color:var(--muted); margin:13px 0 6px; font-weight:600; }
+  .zones { width:100%; border-collapse:collapse; font-size:12px; }
+  .zones th { text-align:left; font-weight:400; color:var(--muted);
+              padding:3px 0; }
+  .zones thead th { font-size:11px; text-align:right; }
+  .zones td { text-align:right; padding:3px 0 3px 8px;
+              font-variant-numeric:tabular-nums; }
