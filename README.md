@@ -28,9 +28,11 @@ cd ../backend && python3 -m uvicorn app:app --port 8000
 ```
 Then open http://localhost:8000.
 
-The summary button needs an Anthropic API key. The server looks for it once at
-startup, first in `ANTHROPIC_API_KEY` and then in the macOS Keychain under the
-service `anthropic-api-key`, so on a machine where the key is already in the
+The summary button needs an API key for the language-model provider. The server
+looks for it once at startup, first in the `ANTHROPIC_API_KEY` environment
+variable and then in the macOS Keychain under the service `anthropic-api-key`
+(both names are fixed by the provider's SDK), so on a machine where the key is
+already in the
 Keychain there is nothing to do. Without a key everything else works and the
 button explains itself.
 

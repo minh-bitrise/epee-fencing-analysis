@@ -113,7 +113,7 @@ KEYCHAIN_SERVICE = "anthropic-api-key"
 
 def _load_api_key_from_keychain():
     """
-    Put the Anthropic key into the environment at startup, reading it from the
+    Put the provider API key into the environment at startup, reading it from the
     macOS Keychain when it is not already there.
 
     WHY AT STARTUP AND NOT ON DEMAND. Starting the server is a deliberate act by
@@ -152,7 +152,7 @@ async def lifespan(_app):
     # starts, so a restart cannot leave a record claiming to be running with
     # nothing behind it.
     source = _load_api_key_from_keychain()
-    print(f"[startup] Anthropic API key: "
+    print(f"[startup] Provider API key: "
           + (f"loaded from the {source}, summary generation is available"
              if source else
              f"not found in the environment or in the Keychain under "
@@ -1084,7 +1084,7 @@ def generate_summary_for_bout(bout_id: str, force: bool = False):
     b = _get_bout(bout_id)
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise HTTPException(
-            400, f"No Anthropic API key is available, so the summary cannot be "
+            400, f"No provider API key is available, so the summary cannot be "
                  f"generated. The server looks in ANTHROPIC_API_KEY and then in "
                  f"the macOS Keychain under the service '{KEYCHAIN_SERVICE}', "
                  f"once, at startup. Add the key there and restart the server.")

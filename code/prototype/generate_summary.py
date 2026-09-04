@@ -540,7 +540,7 @@ def generate(csv_path, model=DEFAULT_MODEL, force=False, touches=None):
     if "ANTHROPIC_API_KEY" not in os.environ:
         raise SystemExit(
             "ANTHROPIC_API_KEY is not set. Get a key from "
-            "https://platform.claude.com/ and run:\n"
+            "the provider console and run:\n"
             "    export ANTHROPIC_API_KEY=sk-ant-..."
         )
 

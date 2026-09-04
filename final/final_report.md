@@ -881,8 +881,8 @@ statistics into a written tactical summary - was implemented as a separate comma
 that `run_detection.py` produces, aggregates it into bout-level statistics (mean, minimum,
 maximum and standard deviation of distance; time spent in each tactical distance band;
 per-fencer cumulative push and pull with percentage shares and net displacement; tracker
-coverage), embeds that payload as JSON in a structured prompt, and calls the Claude API
-(Anthropic Python SDK). The output is constrained by the prompt to a fixed markdown structure:
+coverage), embeds that payload as JSON in a structured prompt, and calls a hosted
+large-language-model API through its Python SDK. The output is constrained by the prompt to a fixed markdown structure:
 a bout-summary paragraph, observed-tendencies bullets each tied to a concrete number,
 suggestions to explore, and a data-caveats paragraph.
 
