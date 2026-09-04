@@ -4,22 +4,50 @@
    and dropping them would mean the next person re-learns the same lesson.
    Additions for the upload and job views follow at the end. */
 
-:root { --bg:#14161a; --panel:#1d2027; --line:#2c313b; --fg:#e6e8ec;
-          --muted:#9aa3b2; --accent:#4da3ff; --ok:#3ddc84; --no:#ff6b6b;
-          --warn:#ffc857; }
+/* COLOUR MEANS SOMETHING HERE, SO THE CHROME DOES NOT USE IT. The two saturated
+   hues in this interface identify the two fencers, and they appear in the
+   timeline, the radar, the score and the table stripes. Everything structural is
+   neutral, so a coloured pixel anywhere is always about a fencer or a state,
+   never about a button being important. The earlier palette used the Fencer 1
+   blue as its general accent, which meant the primary buttons, the progress bars
+   and one of the two fencers were the same colour. */
+:root { --bg:#0f1114; --panel:#161a1f; --raise:#1c2127; --line:#252b33;
+          --fg:#e3e7ea; --muted:#828d9b; --accent:#a7b6c6;
+          --f1:#4da3ff; --f2:#ffc857;
+          --ok:#3ddc84; --no:#ff6b6b; --warn:#ffc857;
+          --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",
+                 Roboto,Helvetica,Arial,sans-serif;
+          --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,
+                 monospace; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg);
-         font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-  header { padding:12px 18px; border-bottom:1px solid var(--line);
-           display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+         font:14px/1.55 var(--sans); -webkit-font-smoothing:antialiased; }
+  /* Every number in this application is a measurement, and measurements are
+     read by comparing them down a column. The mono face is not decoration: it
+     is what makes 2.40 and 13.19 line up.
+     Scoped to the places numbers actually appear rather than applied to <b>,
+     which is also used for emphasis in prose: "Drop a bout video here" set in
+     mono reads as a code sample. */
+  code, .mono, input, .stat b, .queue-clock, .queue-time, .queue-figures b,
+  .effort-big, .scoreline span, .profile-table td, .zones td, table td,
+  .tl .ax { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  header { padding:11px 20px; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+           background:var(--panel); }
   header > * { flex-shrink:0; }
-  h1 { font-size:15px; margin:0; font-weight:600; }
-  select, button, input { background:var(--panel); color:var(--fg);
-                   border:1px solid var(--line); border-radius:6px;
-                   padding:6px 10px; font-size:13px; }
+  h1 { font-size:13px; margin:0; font-weight:600; letter-spacing:.02em; }
+  select, button, input { background:var(--raise); color:var(--fg);
+                   border:1px solid var(--line); border-radius:3px;
+                   padding:6px 10px; font-size:13px; font-family:var(--sans);
+                   transition:border-color .12s, background .12s; }
   button { cursor:pointer; }
-  button:hover { border-color:var(--accent); }
-  button.primary { background:#22344a; border-color:var(--accent); }
+  button:hover:not(:disabled) { border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  /* Outlined rather than filled. A filled accent button is the loudest thing on
+     a screen whose actual content is a video and a column of numbers. */
+  button.primary { background:transparent; border-color:var(--accent);
+                   color:var(--fg); font-weight:500; }
+  button.primary:hover:not(:disabled) { background:var(--raise); }
   /* Cap the working area. Without a cap the left column takes the full width of
      a wide display and the video goes with it, which is worse than merely ugly:
      the fencer labels and the distance readout are drawn INTO the frame by
@@ -32,18 +60,23 @@
          padding:16px 18px; align-items:start;
          max-width:1440px; margin:0 auto; }
   .panel { background:var(--panel); border:1px solid var(--line);
-           border-radius:8px; padding:13px; }
-  .panel + .panel { margin-top:13px; }
-  .panel h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em;
-              color:var(--muted); margin:0 0 9px; font-weight:600; }
+           border-radius:4px; padding:14px 15px; }
+  .panel + .panel { margin-top:12px; }
+  /* A rule under the heading rather than a gap. It reads as an instrument panel
+     and it costs nothing; the previous version had no hierarchy at all, with
+     every label in the interface set at 12 or 13 pixels. */
+  .panel h2 { font-size:10.5px; text-transform:uppercase; letter-spacing:.09em;
+              color:var(--muted); margin:0 0 11px; font-weight:600;
+              padding-bottom:8px; border-bottom:1px solid var(--line);
+              font-family:var(--sans); }
   video { width:100%; height:auto; max-height:62vh; border-radius:6px;
           background:#000; display:block; }
   .novid { padding:40px; text-align:center; color:var(--muted);
            border:1px dashed var(--line); border-radius:6px; }
 
   /* timeline: touches as markers, excluded ranges shaded */
-  .tl { position:relative; height:44px; margin-top:10px; background:#12141a;
-        border:1px solid var(--line); border-radius:6px; cursor:pointer;
+  .tl { position:relative; height:44px; margin-top:10px; background:var(--bg);
+        border:1px solid var(--line); border-radius:3px; cursor:pointer;
         overflow:hidden; }
   .tl .seg { position:absolute; top:0; bottom:0; background:#3a2c2c; }
   .tl .mk { position:absolute; top:4px; bottom:16px; width:3px;
@@ -51,7 +84,7 @@
   .tl .mk.pending   { background:var(--warn); }
   .tl .mk.confirmed { background:var(--ok); }
   .tl .mk.rejected  { background:#4a4a4a; }
-  .tl .mk.added     { background:var(--accent); }
+  .tl .mk.added     { background:var(--f1); }
   .tl .cur { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px;
              background:#fff; pointer-events:none; }
   .tl .ax { position:absolute; bottom:2px; left:0; right:0; height:12px;
@@ -59,24 +92,38 @@
   .tl .ax span { position:absolute; transform:translateX(-50%); }
 
   table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
-  th, td { text-align:left; padding:5px 7px; border-bottom:1px solid var(--line); }
-  th { color:var(--muted); font-weight:500; font-size:12px; }
+  th, td { text-align:left; padding:6px 7px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; font-size:10.5px;
+       text-transform:uppercase; letter-spacing:.07em; font-family:var(--sans); }
   tbody tr { cursor:pointer; }
-  tbody tr:hover { background:#232830; }
-  tbody tr.sel { background:#26313d; }
+  tbody tr:hover { background:var(--raise); }
+  /* The selected row is marked by a rule at its edge as well as a fill. The fill
+     alone was a four-per-cent lightness step, which is invisible on a laptop
+     screen at an angle, and the review loop depends on knowing which row the
+     next keystroke will act on. */
+  tbody tr.sel { background:var(--raise); box-shadow:inset 0 0 0 1px var(--line); }
   tr.confirmed td:first-child { box-shadow:inset 3px 0 0 var(--ok); }
   tr.rejected  td:first-child { box-shadow:inset 3px 0 0 var(--no); opacity:.55; }
   tr.pending   td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
-  tr.added     td:first-child { box-shadow:inset 3px 0 0 var(--accent); }
+  tr.added     td:first-child { box-shadow:inset 3px 0 0 var(--f1); }
   .mini { color:var(--muted); font-size:12px; }
-  .stat { display:flex; justify-content:space-between; padding:3px 0; }
-  .stat b { font-variant-numeric:tabular-nums; font-weight:600; }
+  .stat { display:flex; justify-content:space-between; align-items:baseline;
+          gap:12px; padding:3px 0; }
+  .stat > span { min-width:0; }
+  /* The value never wraps; the label does. A metric worded "no net change"
+     broke across two lines in a 330 px sidebar and read as two values. */
+  .stat b { font-variant-numeric:tabular-nums; font-weight:500;
+            white-space:nowrap; text-align:right; }
   .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden;
          margin:7px 0 4px; }
   .bar > div { height:100%; background:var(--accent); transition:width .2s; }
-  .note { background:#20242c; border-left:3px solid var(--warn);
-          padding:7px 9px; border-radius:4px; color:var(--muted);
-          font-size:12px; margin-top:9px; }
+  .note { background:var(--raise); border-left:2px solid var(--line);
+          padding:8px 11px; border-radius:0 3px 3px 0; color:var(--muted);
+          font-size:12px; line-height:1.5; margin-top:10px; }
+  /* Only an actual warning gets the warning colour. Every explanatory note in
+     this interface used to carry an amber rule, which made the genuine warnings
+     indistinguishable from the paragraphs explaining how a panel works. */
+  .note.err { border-left-color:var(--no); color:var(--fg); }
   .keys { display:flex; gap:12px; flex-wrap:wrap; margin-top:8px; }
   .keys code { background:#12141a; border:1px solid var(--line); border-radius:4px;
                padding:1px 6px; font-size:12px; }
@@ -90,14 +137,18 @@
 
 /* ---- added for the upload and job views ---- */
 
-nav { display:flex; gap:6px; margin-left:auto; }
-nav button { background:transparent; border-color:transparent; color:var(--muted); }
-nav button.active { background:var(--panel); border-color:var(--line); color:var(--fg); }
+nav { display:flex; gap:2px; margin-left:auto; }
+nav button { background:transparent; border-color:transparent; color:var(--muted);
+             border-radius:3px; }
+/* An underline rather than a filled pill: the tab is a place in the application,
+   not an action, and it should not compete with the buttons that are. */
+nav button.active { background:transparent; color:var(--fg); font-weight:500;
+                    box-shadow:inset 0 -2px 0 var(--accent); }
 
 /* One column for the upload view: it has no video to sit beside. */
 main.single { grid-template-columns:minmax(0,1fr); max-width:900px; }
 
-.drop { border:2px dashed var(--line); border-radius:10px; padding:34px 20px;
+.drop { border:1px dashed var(--line); border-radius:4px; padding:38px 20px;
         text-align:center; color:var(--muted); transition:border-color .15s; }
 .drop.over { border-color:var(--accent); background:#1a2330; color:var(--fg); }
 .drop input[type=file] { display:none; }
@@ -106,8 +157,8 @@ main.single { grid-template-columns:minmax(0,1fr); max-width:900px; }
        height:9px; overflow:hidden; }
 .bar > div { background:var(--accent); height:100%; transition:width .3s; }
 
-.job { border:1px solid var(--line); border-radius:8px; padding:11px;
-       margin-bottom:9px; background:#191c22; }
+.job { border:1px solid var(--line); border-radius:4px; padding:12px;
+       margin-bottom:9px; background:var(--raise); }
 .job + .job { margin-top:0; }
 .job header { padding:0; border:0; margin-bottom:7px; gap:9px; }
 .job .name { font-weight:600; overflow:hidden; text-overflow:ellipsis;
@@ -162,16 +213,16 @@ label.opt { display:flex; gap:6px; align-items:center; color:var(--muted);
   .profile .axis-label.absent { opacity:.45; }
   /* Fill and stroke rather than fill alone: the two shapes overlap constantly
      and a reader needs to follow one fencer's outline through the other's. */
-  .profile polygon.f1 { fill:rgba(77,163,255,.20); stroke:var(--accent);
+  .profile polygon.f1 { fill:rgba(77,163,255,.20); stroke:var(--f1);
                         stroke-width:1.4; }
-  .profile polygon.f2 { fill:rgba(255,200,87,.16); stroke:var(--warn);
+  .profile polygon.f2 { fill:rgba(255,200,87,.16); stroke:var(--f2);
                         stroke-width:1.4; }
   .profile-key { display:flex; gap:14px; justify-content:center;
                  margin:2px 0 9px; font-size:12px; color:var(--muted); }
   .profile-key i.sw { display:inline-block; width:9px; height:9px;
                       border-radius:2px; margin-right:5px; }
-  .profile-key i.sw.f1 { background:var(--accent); }
-  .profile-key i.sw.f2 { background:var(--warn); }
+  .profile-key i.sw.f1 { background:var(--f1); }
+  .profile-key i.sw.f2 { background:var(--f2); }
   .profile-table { width:100%; border-collapse:collapse; font-size:12px; }
   .profile-table th { text-align:left; font-weight:400; color:var(--muted);
                       padding:3px 0; }
@@ -185,8 +236,9 @@ label.opt { display:flex; gap:6px; align-items:center; color:var(--muted);
   /* the review queue: one proposal at a time, holding the playhead itself */
   .modebar { margin-bottom:10px; flex-wrap:wrap; }
   .manual-live { color:var(--warn); }
-  .queue { margin-top:10px; padding:12px; border:1px solid var(--accent);
-           border-radius:8px; background:#18202b; }
+  .queue { margin-top:10px; padding:13px 15px; border:1px solid var(--line);
+           border-left:2px solid var(--accent); border-radius:0 4px 4px 0;
+           background:var(--raise); }
   .queue-head { display:flex; align-items:baseline; gap:8px; font-size:13px;
                 color:var(--muted); }
   .queue-head b { color:var(--fg); font-size:17px; }
@@ -197,7 +249,8 @@ label.opt { display:flex; gap:6px; align-items:center; color:var(--muted);
   .queue-bar i { display:block; height:100%; background:var(--accent);
                  transition:width .18s ease; }
   .queue-item { display:flex; align-items:baseline; gap:11px; margin-bottom:10px; }
-  .queue-time { font-size:20px; font-variant-numeric:tabular-nums; }
+  .queue-time { font-size:21px; font-family:var(--mono);
+                font-variant-numeric:tabular-nums; }
   .queue-detail { color:var(--muted); font-size:12px; }
   .queue-actions { flex-wrap:wrap; margin-bottom:8px; }
   .queue.done h3 { margin:0 0 11px; font-size:14px; }
@@ -213,8 +266,8 @@ label.opt { display:flex; gap:6px; align-items:center; color:var(--muted);
                     text-transform:uppercase; letter-spacing:.05em;
                     color:var(--muted); }
   .effort-big { font-size:22px; font-variant-numeric:tabular-nums; }
-  .effort-verdict { margin-top:10px; padding:8px 10px; border-radius:6px;
-                    background:#1b2a1f; border:1px solid #2f4a37;
+  .effort-verdict { margin-top:11px; padding:9px 11px; border-radius:3px;
+                    background:var(--raise); border:1px solid var(--line);
                     font-size:13px; }
   .effort-verdict b { font-size:17px; color:var(--ok); }
 
@@ -222,8 +275,8 @@ label.opt { display:flex; gap:6px; align-items:center; color:var(--muted);
   .scoreline { display:flex; align-items:baseline; justify-content:center;
                gap:9px; margin:4px 0 10px; font-variant-numeric:tabular-nums; }
   .scoreline span { font-size:27px; }
-  .scoreline .s1 { color:var(--accent); }
-  .scoreline .s2 { color:var(--warn); }
+  .scoreline .s1 { color:var(--f1); }
+  .scoreline .s2 { color:var(--f2); }
   .scoreline .dash { color:var(--muted); font-size:19px; }
   h3.sub { font-size:11px; text-transform:uppercase; letter-spacing:.05em;
            color:var(--muted); margin:13px 0 6px; font-weight:600; }

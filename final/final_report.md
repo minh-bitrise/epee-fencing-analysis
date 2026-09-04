@@ -982,6 +982,27 @@ changes tracking rather than interpretation, can only take effect on a reprocess
 interface now queues that reprocess and writes the result to a NEW bout, leaving the original
 intact for comparison.
 
+### Interface design decisions
+
+The interface is a working instrument rather than a demonstration, and two decisions in it are
+worth stating because both were reversals of what the first version did.
+
+The first is that colour carries meaning and the chrome does not use it. The original palette
+took the Fencer 1 blue as its general accent, with the result that the primary buttons, the
+progress bars, the timeline markers for hand-added touches and one of the two fencers were all
+rendered in the same hue. Since the two fencers are identified by colour in the timeline, the
+radar, the scoreline and the table stripes, that made the single most information-carrying
+signal in the interface indistinguishable from decoration. Structural elements are now neutral,
+so a saturated pixel anywhere always identifies a fencer or a state. The same reasoning applied
+to the explanatory notes, every one of which carried the amber warning rule and so made genuine
+warnings indistinguishable from paragraphs explaining how a panel worked.
+
+The second is that numbers are set in a monospaced face. The application's content is a video and
+columns of measurements, and measurements are read by comparing them down a column, which
+proportional figures prevent. The rule is scoped to the places numbers appear rather than applied
+to emphasis generally: an earlier version bound it to the `<b>` element and rendered the phrase
+"Drop a bout video here" in mono, where it read as a code sample.
+
 ### Testing
 
 The system is supported by 506 automated tests: 320 over the pipeline, 163 over the application
@@ -1126,6 +1147,46 @@ measured roughly 40 wide-stance episodes per minute against about 10 labelled
 lunges. And the result rests on two clips and one labeller, so the claim is not
 that lunge detection works, but that per-bout calibration works where transfer
 does not.
+
+### Measuring the effort the design claims to save
+
+The project's central claim is that confirming the system's proposals costs less effort than
+labelling a bout from scratch. Every chapter to this point argues it and none of them measures
+it. A user study would measure it properly and is out of scope for the reasons given in section
+9; what follows is the cheaper thing that was available, which is to build the measurement into
+the tool and take it on a single reviewer.
+
+Two additions make it possible. The first is a review queue: rather than presenting every
+proposal in a table and leaving the user to find the next undecided one, the interface holds the
+playhead at each proposal in turn and takes a single keystroke as the answer. This is not a new
+capability so much as the removal of a cost the earlier interface imposed by accident. The table
+is the right shape for checking work already done and the wrong shape for doing it, because
+finding the next row, clicking it, and waiting for the seek is repeated once per proposal and on
+a bout with a hundred lunge proposals it is most of the work. It is also precisely the cost the
+design claims assisted annotation removes, so leaving it in place would have understated the
+system in its own evaluation.
+
+The second is a manual mode: the same interface with the detector's proposals withheld. It is
+built to be the control condition rather than an alternative way of working. The proposals are
+withheld entirely rather than dimmed or collapsed, because a suggestion that is visible has
+already been read by the time the user decides to ignore it, and the condition being measured is
+labelling without them.
+
+Both modes time themselves, and the timing is stored with the bout's annotations rather than
+displayed and discarded, since a figure that does not survive a page reload cannot be quoted.
+Three decisions about what the figure counts are worth recording. Skipped items are excluded from
+the denominator, because they are not decisions and counting them would improve the measured rate
+in proportion to how many questions went unanswered. The rate is per decision rather than per
+bout, because the two conditions do not produce the same number of decisions: assisted review
+answers one question per proposal, while manual logging creates one entry per touch the user
+finds. And a ratio computed from a single pass in each mode is labelled an illustration rather
+than a measurement, in the stored record and again in the interface, because a number displayed
+in a box is read as a result unless it is explicitly told not to be.
+
+At the time of writing no such pass has been recorded by the author, so this section reports a
+method and not a result. That is the honest position: the instrument exists, it has been
+exercised end to end, and the figure it is designed to produce requires a person who can tell a
+lunge from a wide stance to sit down with a bout.
 
 ### Characterising a fencer without accumulating error
 
@@ -1794,7 +1855,7 @@ disagree with the figures reported here.
 | `detect_touches.py` | proposes touches from the distance series |
 | `detect_scorer.py` | attributes a touch to a fencer by reading the scoring lamps |
 | `detect_lunges.py` | proposes lunges, calibrated on lunges the user has confirmed on that bout |
-| `fencer_profile.py` | six per-fencer axes, and the refusal to compute them where slot identity failed |
+| `fencer_profile.py` | six per-fencer axes, the scoreline and piste zones, and the refusal to compute the axes where slot identity failed |
 | `in_play.py` | scopes metrics to playing time using confirmed touches |
 | `tempo.py` | exchange-rate and tempo measures |
 | `generate_summary.py` | builds the statistics payload and calls the language model |
@@ -1810,7 +1871,7 @@ earlier no-build-step interface is retained and served at `/legacy`, deliberatel
 four actions: it guarantees that a checkout with Python alone still has a working review
 interface, and it is the comparison between an interface with a build step and one without.
 
-**Tests.** 354 in the pipeline, 168 in the backend and 70 in the interface, plus two end-to-end
+**Tests.** 367 in the pipeline, 184 in the backend and 97 in the interface, plus two end-to-end
 tests that drive the real pipeline on a synthetic video to exercise the joins between stages,
 which are made by filename convention rather than by return value. A GitHub Actions workflow runs
 everything that needs neither footage nor model weights.

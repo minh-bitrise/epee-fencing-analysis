@@ -200,6 +200,32 @@ the piste sets a full-range figure by itself, and it is the least trustworthy fr
 The lunge axis reads "not measured" on every clip because nothing supplies confirmed lunges until
 someone labels them in the app. That is absence, not a measured zero, and it is reported as such.
 
+## The scoreline is computed from touches, not tracking (5 Sep 2026)
+
+`score_progression` and `piste_zones` in `fencer_profile.py` derive the final score, lead changes,
+time each fencer spent ahead, and where along the strip the touches were scored. All of it comes
+from the confirmed touch list, so it is valid on clip 4 where the per-fencer axes are refused.
+
+Clip 3, all 12 matched ground-truth touches confirmed:
+
+| figure | value |
+|---|---|
+| final | 9-9 |
+| lead changes | 3 |
+| Fencer 1 ahead | 69.6% of the bout |
+| Fencer 2 ahead | 30.4% |
+| level | 55.0 s |
+| touches in the far third | 0 for either fencer |
+
+**A defect this found.** Lead changes first read 0 on a bout where one fencer led for 87 seconds
+and the other for 38. A lead almost always changes hands by passing THROUGH level, so comparing
+each new leader against the current one sees the sequence 1, None, 2 and counts no swap at either
+step. Tracking the last fencer to have HELD the lead gives 3. Anything comparing consecutive
+leaders in this codebase should be checked for the same mistake.
+
+Unattributed touches advance neither score and are counted separately. They are unknown events,
+not nil-nil ones.
+
 ## Reproducing any of them
 
 ```
