@@ -206,19 +206,25 @@ frame-by-frame editing.
 
 ### 2.6 Existing systems
 
-Two existing tools illustrate the practical landscape. Fencing Manager (2026) allows users to
-upload footage and manually tag actions. Its domain alignment confirms demand for structured
-fencing analysis, but it offers no AI assistance, requires the user to watch entire bouts and
-label every event by hand, and provides no derived analytics such as inter-touch timing or
-distance analysis. Dartfish, a mature general-purpose platform, demonstrates the proven value
-of video analysis across many sports, but is not fencing-specific, depends heavily on manual
-operation, and assumes analyst expertise club-level users frequently lack.
+Three commercial tools illustrate the practical landscape. Athlete Analyzer offers
+fencing-specific video review in which the user uploads footage and tags actions by hand,
+producing hit-zone and pattern statistics from those tags. Its domain alignment confirms demand
+for structured fencing analysis, but the labelling is entirely manual and the analytics are
+summaries of what the user entered rather than measurements taken from the video. Dartfish, a
+mature general-purpose platform, demonstrates the proven value of video analysis across many
+sports, but is not fencing-specific, depends heavily on manual operation, and assumes analyst
+expertise club-level users frequently lack. AI FencingMeter is the closest commercial system to
+this project's stance, applying automated analysis to smartphone footage, but it reports
+blade-speed and reaction-time measures for a single fencer's technique rather than the
+inter-fencer geometry and event structure that this project targets, and its methods are not
+published, so its claims cannot be assessed.
 
-Together these define the gap this project addresses: domain focus without AI assistance, or
-analytical sophistication without fencing specificity. Neither computes the geometric metrics
-that motivate this project. Continuous inter-fencer distance is not merely absent from these
-tools; it is impractical to produce by hand at all, which is the substantive argument for
-automating the measurement layer even when event interpretation stays with the user.
+Together these define the gap this project addresses: fencing-specific tools whose analytics
+are only as good as what the user typed in, a general platform without fencing specificity, and
+an automated tool measuring a different quantity by undisclosed means. None computes continuous
+inter-fencer distance, which is not merely absent from them but impractical to produce by hand
+at all. That is the substantive argument for automating the measurement layer even when event
+interpretation stays with the user.
 
 ### 2.7 Synthesis
 
@@ -858,7 +864,54 @@ distinction the lamps cannot reliably provide.
 
 ## References
 
-*(Carried over from the preliminary report and extended, in Harvard style.)*
+Bazarevsky, V., Grishchenko, I., Raveendran, K., Zhu, T., Zhang, F. and Grundmann, M. (2020)
+'BlazePose: On-device Real-time Body Pose Tracking', arXiv:2006.10204.
+
+Bradski, G. (2000) 'The OpenCV Library', *Dr. Dobb's Journal of Software Tools*, 25(11).
+
+Dartfish (no date) *Dartfish*. Available at: https://www.dartfish.com/ (Accessed: 17 August
+2026).
+
+Hong, J., Fisher, M., Gharbi, M. and Fatahalian, K. (2021) 'Video Pose Distillation for
+Few-Shot, Fine-Grained Sports Action Recognition', *Proceedings of the IEEE/CVF International
+Conference on Computer Vision (ICCV)*. arXiv:2109.01305.
+
+Jocher, G., Chaurasia, A. and Qiu, J. (2023) *Ultralytics YOLOv8* (Version 8.0.0) [Computer
+software]. Available at: https://github.com/ultralytics/ultralytics (Accessed: 5 September
+2026).
+
+Lugaresi, C., Tang, J., Nash, H., McClanahan, C., Uboweja, E., Hays, M., Zhang, F., Chang,
+C.-L., Yong, M.G., Lee, J., Chang, W.-T., Hua, W., Georg, M. and Grundmann, M. (2019)
+'MediaPipe: A Framework for Building Perception Pipelines', arXiv:1906.08172.
+
+Mo, J. (2022) 'Allez Go: Computer Vision and Audio Analysis for AI Fencing Referees', *Journal
+of Student Research*, 11(4).
+
+Mosqueira-Rey, E., Hernández-Pereira, E., Alonso-Ríos, D., Bobes-Bascarán, J. and
+Fernández-Leal, Á. (2023) 'Human-in-the-loop machine learning: a state of the art', *Artificial
+Intelligence Review*, 56(4), pp. 3005-3054.
+
+Rangasamy, K., As'ari, M.A., Rahmad, N.A., Ghazali, N.F. and Ismail, S. (2020) 'Deep learning
+in sport video analysis: a review', *TELKOMNIKA (Telecommunication Computing Electronics and
+Control)*, 18(4), pp. 1926-1933.
+
+Vahdani, E. and Tian, Y. (2021) 'Deep Learning-based Action Detection in Untrimmed Videos: A
+Survey', arXiv:2110.00111.
+
+Zhang, Y., Sun, P., Jiang, Y., Yu, D., Weng, F., Yuan, Z., Luo, P., Liu, W. and Wang, X. (2022)
+'ByteTrack: Multi-Object Tracking by Associating Every Detection Box', *Computer Vision - ECCV
+2022*. Cham: Springer, pp. 1-21.
+
+### Systems referred to in Chapter 2
+
+Athlete Analyzer (no date) *Fencing Video Analysis*. Available at:
+https://www.athleteanalyzer.com/video-analysis-fencing (Accessed: 5 September 2026).
+
+AI FencingMeter (no date) *AI FencingMeter*. Available at: https://aifencingmeter.com/
+(Accessed: 5 September 2026).
+
+Fencing Manager (2026) *Fencing Manager* [Mobile application]. Apple App Store. Available at:
+https://apps.apple.com/us/app/fencing-manager/id6760303574 (Accessed: 17 August 2026).
 
 ---
 
