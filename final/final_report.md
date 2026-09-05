@@ -1909,7 +1909,7 @@ earlier no-build-step interface is retained and served at `/legacy`, deliberatel
 four actions: it guarantees that a checkout with Python alone still has a working review
 interface, and it is the comparison between an interface with a build step and one without.
 
-**Tests.** 367 in the pipeline, 184 in the backend and 97 in the interface, plus two end-to-end
+**Tests.** 367 in the pipeline, 184 in the backend and 122 in the interface, plus two end-to-end
 tests that drive the real pipeline on a synthetic video to exercise the joins between stages,
 which are made by filename convention rather than by return value. A GitHub Actions workflow runs
 everything that needs neither footage nor model weights.
