@@ -1,53 +1,74 @@
-/* Ported from the no-build-step review page so the two interfaces remain one
-   system rather than two that merely share a backend. The comments explaining
-   why particular rules exist came with it: each records a real layout failure,
-   and dropping them would mean the next person re-learns the same lesson.
-   Additions for the upload and job views follow at the end. */
+/* Epee Bout Analysis.
+   This file has been through three passes and the comments record why, because
+   two of them were wrong in ways worth not repeating.
 
-/* COLOUR MEANS SOMETHING HERE, SO THE CHROME DOES NOT USE IT. The two saturated
-   hues in this interface identify the two fencers, and they appear in the
-   timeline, the radar, the score and the table stripes. Everything structural is
-   neutral, so a coloured pixel anywhere is always about a fencer or a state,
-   never about a button being important. The earlier palette used the Fencer 1
-   blue as its general accent, which meant the primary buttons, the progress bars
-   and one of the two fencers were the same colour. */
-:root { --bg:#0f1114; --panel:#161a1f; --raise:#1c2127; --line:#252b33;
-          --fg:#e3e7ea; --muted:#828d9b; --accent:#a7b6c6;
+   PASS 1 changed the palette and the type and left the layout alone, which
+   missed the problem entirely.
+
+   PASS 2 restructured: the work in one column, everything else behind tabs, and
+   the explanatory prose folded away. That was right and is kept.
+
+   PASS 3 is this one. Pass 2 dressed the result as a precision instrument:
+   10-pixel uppercase labels, hairline rules, monospaced everything, 3-pixel
+   corners. It was internally consistent and it read as lab equipment. The people
+   who use this are coaches and fencers, not operators, so the surface is now
+   what a consumer application looks like: bigger text, round corners, filled
+   buttons, real space between things, and a typeface with soft letterforms. */
+
+:root { --bg:#15171c; --panel:#1d2026; --raise:#262a32; --line:#333844;
+          --fg:#eceef2; --muted:#98a1b0; --accent:#7aa7ff;
+          --accent-ink:#10131a;
           --f1:#4da3ff; --f2:#ffc857;
-          --ok:#3ddc84; --no:#ff6b6b; --warn:#ffc857;
-          --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",
-                 Roboto,Helvetica,Arial,sans-serif;
-          --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,
-                 monospace; }
+          --ok:#4bdd93; --no:#ff7a7a; --warn:#ffc857;
+          --sans:Rubik,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,
+                 Helvetica,Arial,sans-serif;
+          --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+          --r:16px; --r-sm:10px;
+          --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.22); }
+
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg);
-         font:14px/1.55 var(--sans); -webkit-font-smoothing:antialiased; }
-  /* Every number in this application is a measurement, and measurements are
-     read by comparing them down a column. The mono face is not decoration: it
-     is what makes 2.40 and 13.19 line up.
-     Scoped to the places numbers actually appear rather than applied to <b>,
-     which is also used for emphasis in prose: "Drop a bout video here" set in
-     mono reads as a code sample. */
-  code, .mono, input, .stat b, .queue-clock, .queue-time, .queue-figures b,
-  .effort-big, .scoreline span, .profile-table td, .zones td, table td,
-  .tl .ax { font-family:var(--mono); font-variant-numeric:tabular-nums; }
-  header { padding:11px 20px; border-bottom:1px solid var(--line);
-           display:flex; align-items:center; gap:14px; flex-wrap:wrap;
-           background:var(--panel); }
+         font:15px/1.6 var(--sans); -webkit-font-smoothing:antialiased; }
+
+  /* Numbers line up by feature, not by face. Pass 2 set every figure in a
+     monospaced font, which does make columns align and also makes an interface
+     look like a terminal. `tabular-nums` gets the alignment from the same
+     friendly face the rest of the page uses. */
+  body { font-variant-numeric:tabular-nums; }
+  code { font-family:var(--mono); font-size:.92em; background:var(--raise);
+         padding:2px 6px; border-radius:6px; }
+
+  header { padding:14px 22px; display:flex; align-items:center; gap:16px;
+           flex-wrap:wrap; background:var(--panel);
+           border-bottom:1px solid var(--line); }
   header > * { flex-shrink:0; }
-  h1 { font-size:13px; margin:0; font-weight:600; letter-spacing:.02em; }
+  h1 { font-size:17px; margin:0; font-weight:600; letter-spacing:-.01em; }
+
+  /* Controls are pills. A 3-pixel corner on a small grey rectangle is the
+     shape of a settings dialog; this is a tool someone reaches for. */
+  /* Secondary buttons keep a visible edge. Filling them with the raised surface
+     alone made them disappear wherever they sat ON a raised surface, which is
+     most places: inside the queue card the three secondary actions read as
+     plain text next to the one filled button. */
   select, button, input { background:var(--raise); color:var(--fg);
-                   border:1px solid var(--line); border-radius:3px;
-                   padding:6px 10px; font-size:13px; font-family:var(--sans);
-                   transition:border-color .12s, background .12s; }
+                   border:1px solid var(--line); border-radius:999px;
+                   padding:9px 16px; font-size:14px; font-family:var(--sans);
+                   font-weight:500;
+                   transition:background .13s, color .13s, box-shadow .13s; }
+  input, select { border-radius:var(--r-sm); font-weight:400;
+                  background:var(--bg); border-color:var(--line); }
   button { cursor:pointer; }
-  button:hover:not(:disabled) { border-color:var(--accent); }
-  button:disabled { opacity:.4; cursor:not-allowed; }
-  /* Outlined rather than filled. A filled accent button is the loudest thing on
-     a screen whose actual content is a video and a column of numbers. */
-  button.primary { background:transparent; border-color:var(--accent);
-                   color:var(--fg); font-weight:500; }
-  button.primary:hover:not(:disabled) { background:var(--raise); }
+  button:hover:not(:disabled) { background:#30353f; }
+  button:disabled { opacity:.38; cursor:not-allowed; }
+  /* Filled, not outlined. Pass 2 made the primary action a thin outline on the
+     reasoning that it should not shout over the video; the result was that the
+     main action on the screen looked like a disabled one. */
+  button.primary { background:var(--accent); color:var(--accent-ink);
+                   border-color:var(--accent); font-weight:600; }
+  button.primary:hover:not(:disabled) { background:#94b8ff; }
+  button:focus-visible, select:focus-visible, input:focus-visible {
+    outline:none; box-shadow:0 0 0 3px rgba(122,167,255,.35); }
+
   /* Cap the working area. Without a cap the left column takes the full width of
      a wide display and the video goes with it, which is worse than merely ugly:
      the fencer labels and the distance readout are drawn INTO the frame by
@@ -56,297 +77,287 @@
      filled the screen. Capping the layout fixes the cause; the max-height below
      covers the other axis, since a 16:9 video 1050 px wide is still 590 px tall
      and would push the metrics panel out of view on a short window. */
-  main { display:grid; grid-template-columns:minmax(0,1fr) 348px; gap:26px;
-         padding:20px 24px 60px; align-items:start;
-         max-width:1500px; margin:0 auto; }
+  main { display:grid; grid-template-columns:minmax(0,1fr) 380px; gap:22px;
+         padding:22px 24px 80px; align-items:start;
+         max-width:1560px; margin:0 auto; }
 
-  /* THE WORK COLUMN. No boxes: the video, the timeline and the decision loop are
-     one continuous thing and drawing a border round each part made three
-     announcements out of one task. Grouping is by space and by a single rule. */
-  .work > * + * { margin-top:14px; }
-  .boutbar { display:flex; align-items:center; gap:12px;
-             padding-bottom:11px; border-bottom:1px solid var(--line); }
+  /* THE WORK COLUMN. Video, timeline, the decision loop, and the record it
+     produces. One card, because it is one task: pass 2 removed the borders
+     entirely and the column then had no edges at all, which on a dark ground
+     reads as unfinished rather than as clean. */
+  .work { background:var(--panel); border-radius:var(--r); padding:18px;
+          box-shadow:var(--shadow); }
+  .work > * + * { margin-top:16px; }
+  .boutbar { display:flex; align-items:center; gap:14px; }
   .boutbar select { min-width:0; max-width:340px; }
-  .boutbar .clock { font-family:var(--mono); color:var(--muted); font-size:12px; }
+  .boutbar .clock { color:var(--muted); font-size:14px; }
   .grow { flex:1; }
-  /* Progress as a bar and a fraction on one line. It used to be a five-row panel
-     of counts at the top of the sidebar, which is a lot of furniture for a
-     number the user glances at. */
-  .progress-inline { display:flex; align-items:center; gap:8px;
-                     font-family:var(--mono); font-size:12px;
+  .progress-inline { display:flex; align-items:center; gap:10px; font-size:14px;
                      color:var(--muted); }
-  .progress-inline i { display:block; width:84px; height:3px;
-                       background:var(--line); border-radius:2px;
+  .progress-inline i { display:block; width:96px; height:7px;
+                       background:var(--raise); border-radius:999px;
                        overflow:hidden; }
-  .progress-inline b { display:block; height:100%; background:var(--accent); }
+  .progress-inline b { display:block; height:100%; background:var(--accent);
+                       border-radius:999px; }
 
-  .actionbar { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
-  /* The shortcuts as a quiet strip rather than a sentence. They are a reference
-     the user glances at twice and then never reads again, and set as prose they
-     took a full line of the working area permanently. */
-  .keyhint { color:#5f6a78; font-size:11px; }
-  .keyhint b { font-family:var(--mono); color:var(--muted); font-weight:400;
-               margin:0 2px 0 7px; }
+  .actionbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .keyhint { color:var(--muted); font-size:13px; }
+  .keyhint b { display:inline-block; background:var(--raise); color:var(--fg);
+               border-radius:6px; padding:1px 7px; font-weight:500;
+               font-size:12px; margin:0 3px 0 9px; }
 
-  .record h2, .sec h3 { font-size:10.5px; text-transform:uppercase;
-                        letter-spacing:.09em; color:var(--muted);
-                        font-weight:600; font-family:var(--sans); }
-  .record h2 { margin:0 0 8px; }
-  .addrow { margin-top:11px; }
+  h2, h3 { font-size:16px; font-weight:600; letter-spacing:-.01em;
+           color:var(--fg); margin:0 0 12px; }
+  .record h2 { margin-top:4px; }
+  .addrow { margin-top:14px; }
 
   /* THE SIDE COLUMN. Tabs, because the groups are separate questions asked at
-     different times, and stacking them made six things of equal weight beside
+     different times, and stacking them put six things of equal weight beside
      the one thing being done. */
-  .side { position:sticky; top:20px; }
-  .tabstrip { display:flex; gap:1px; border-bottom:1px solid var(--line);
-              margin-bottom:15px; }
-  .tabstrip button { background:transparent; border:0; border-radius:0;
-                     color:var(--muted); padding:7px 11px; font-size:12px;
-                     box-shadow:inset 0 -1px 0 transparent; }
-  .tabstrip button:hover { color:var(--fg); }
-  .tabstrip button.active { color:var(--fg); font-weight:500;
-                            box-shadow:inset 0 -1px 0 var(--accent); }
-  .sec + .sec { margin-top:22px; padding-top:17px;
+  .side { position:sticky; top:22px; background:var(--panel);
+          border-radius:var(--r); padding:18px; box-shadow:var(--shadow); }
+  .tabstrip { display:flex; gap:4px; background:var(--bg); padding:4px;
+              border-radius:999px; margin-bottom:20px; }
+  .tabstrip button { flex:1; background:transparent; border:0; padding:8px 6px;
+                     border-color:transparent;
+                     font-size:14px; color:var(--muted); }
+  .tabstrip button:hover { background:transparent; color:var(--fg); }
+  .tabstrip button.active { background:var(--raise); color:var(--fg);
+                            font-weight:600; }
+  .sec + .sec { margin-top:24px; padding-top:20px;
                 border-top:1px solid var(--line); }
-  .sec h3 { margin:0 0 9px; }
 
   /* Reasoning is one click away rather than printed. Nearly every caveat here
-     was paid for by a measurement that went wrong, so none of them are deleted;
-     but printed all at once they made a screen that was mostly paragraphs, and a
+     was paid for by a measurement that went wrong, so none are deleted; but
+     printed all at once they made a screen that was mostly paragraphs, and a
      caveat in a wall of text is read no more carefully than an absent one. */
-  .disclose { margin-top:7px; }
-  .disclose > summary { cursor:pointer; color:var(--accent); font-size:11px;
-                        list-style:none; }
+  .disclose { margin-top:10px; }
+  .disclose > summary { cursor:pointer; color:var(--accent); font-size:13px;
+                        font-weight:500; list-style:none; }
   .disclose > summary::-webkit-details-marker { display:none; }
-  .disclose > summary::before { content:"+ "; }
-  .disclose[open] > summary::before { content:"- "; }
-  .disclose > div { margin-top:6px; padding-left:11px;
-                    border-left:1px solid var(--line); }
-  .panel { background:var(--panel); border:1px solid var(--line);
-           border-radius:4px; padding:14px 15px; }
-  .panel + .panel { margin-top:12px; }
-  /* A rule under the heading rather than a gap. It reads as an instrument panel
-     and it costs nothing; the previous version had no hierarchy at all, with
-     every label in the interface set at 12 or 13 pixels. */
-  .panel h2 { font-size:10.5px; text-transform:uppercase; letter-spacing:.09em;
-              color:var(--muted); margin:0 0 11px; font-weight:600;
-              padding-bottom:8px; border-bottom:1px solid var(--line);
-              font-family:var(--sans); }
-  video { width:100%; height:auto; max-height:62vh; border-radius:6px;
+  .disclose > summary::after { content:" \203A"; display:inline-block;
+                               transition:transform .15s; }
+  .disclose[open] > summary::after { transform:rotate(90deg); }
+  .disclose > div { margin-top:9px; padding:12px 14px; background:var(--bg);
+                    border-radius:var(--r-sm); color:var(--muted);
+                    font-size:13.5px; }
+
+  .panel { background:var(--panel); border-radius:var(--r); padding:18px;
+           box-shadow:var(--shadow); }
+  .panel + .panel { margin-top:16px; }
+
+  video { width:100%; height:auto; max-height:62vh; border-radius:var(--r-sm);
           background:#000; display:block; }
-  .novid { padding:40px; text-align:center; color:var(--muted);
-           border:1px dashed var(--line); border-radius:6px; }
+  .novid { padding:52px; text-align:center; color:var(--muted);
+           border:2px dashed var(--line); border-radius:var(--r); }
 
   /* timeline: touches as markers, excluded ranges shaded */
-  .tl { position:relative; height:44px; margin-top:10px; background:var(--bg);
-        border:1px solid var(--line); border-radius:3px; cursor:pointer;
-        overflow:hidden; }
+  .tl { position:relative; height:52px; background:var(--bg);
+        border-radius:var(--r-sm); cursor:pointer; overflow:hidden; }
   .tl .seg { position:absolute; top:0; bottom:0; background:#3a2c2c; }
-  .tl .mk { position:absolute; top:4px; bottom:16px; width:3px;
-            margin-left:-1.5px; border-radius:2px; }
+  .tl .mk { position:absolute; top:7px; bottom:19px; width:4px;
+            margin-left:-2px; border-radius:999px; }
   .tl .mk.pending   { background:var(--warn); }
   .tl .mk.confirmed { background:var(--ok); }
   .tl .mk.rejected  { background:#4a4a4a; }
   .tl .mk.added     { background:var(--f1); }
   .tl .cur { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px;
              background:#fff; pointer-events:none; }
-  .tl .ax { position:absolute; bottom:2px; left:0; right:0; height:12px;
-            color:var(--muted); font-size:10px; }
+  .tl .ax { position:absolute; bottom:4px; left:0; right:0; height:13px;
+            color:var(--muted); font-size:11px; }
   .tl .ax span { position:absolute; transform:translateX(-50%); }
 
-  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
-  th, td { text-align:left; padding:6px 7px; border-bottom:1px solid var(--line); }
-  th { color:var(--muted); font-weight:500; font-size:10.5px;
-       text-transform:uppercase; letter-spacing:.07em; font-family:var(--sans); }
+  table { width:100%; border-collapse:separate; border-spacing:0; }
+  th, td { text-align:left; padding:11px 12px; }
+  th { color:var(--muted); font-weight:500; font-size:13px; }
   tbody tr { cursor:pointer; }
-  tbody tr:hover { background:var(--raise); }
-  /* The selected row is marked by a rule at its edge as well as a fill. The fill
-     alone was a four-per-cent lightness step, which is invisible on a laptop
-     screen at an angle, and the review loop depends on knowing which row the
-     next keystroke will act on. */
-  tbody tr.sel { background:var(--raise); box-shadow:inset 0 0 0 1px var(--line); }
-  tr.confirmed td:first-child { box-shadow:inset 3px 0 0 var(--ok); }
-  tr.rejected  td:first-child { box-shadow:inset 3px 0 0 var(--no); opacity:.55; }
-  tr.pending   td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
-  tr.added     td:first-child { box-shadow:inset 3px 0 0 var(--f1); }
-  .mini { color:var(--muted); font-size:12px; }
+  tbody td { border-top:1px solid var(--line); }
+  tbody tr:hover td { background:var(--raise); }
+  /* The selected row gets a filled surface and rounded ends. Pass 2 marked it
+     with a four per cent lightness step, which is invisible on a laptop screen
+     at an angle, and the keyboard loop depends on knowing which row the next
+     keystroke acts on. */
+  tbody tr.sel td { background:var(--raise); }
+  tbody tr.sel td:first-child { border-top-left-radius:var(--r-sm);
+                                border-bottom-left-radius:var(--r-sm); }
+  tbody tr.sel td:last-child { border-top-right-radius:var(--r-sm);
+                               border-bottom-right-radius:var(--r-sm); }
+  tr.confirmed td:first-child { box-shadow:inset 4px 0 0 var(--ok); }
+  tr.rejected  td:first-child { box-shadow:inset 4px 0 0 var(--no); opacity:.55; }
+  tr.pending   td:first-child { box-shadow:inset 4px 0 0 var(--warn); }
+  tr.added     td:first-child { box-shadow:inset 4px 0 0 var(--f1); }
+
+  .mini { color:var(--muted); font-size:13.5px; }
   .stat { display:flex; justify-content:space-between; align-items:baseline;
-          gap:12px; padding:3px 0; }
+          gap:14px; padding:7px 0; }
   .stat > span { min-width:0; }
   /* The value never wraps; the label does. A metric worded "no net change"
-     broke across two lines in a 330 px sidebar and read as two values. */
-  .stat b { font-variant-numeric:tabular-nums; font-weight:500;
-            white-space:nowrap; text-align:right; }
-  .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden;
-         margin:7px 0 4px; }
-  .bar > div { height:100%; background:var(--accent); transition:width .2s; }
-  .note { background:var(--raise); border-left:2px solid var(--line);
-          padding:8px 11px; border-radius:0 3px 3px 0; color:var(--muted);
-          font-size:12px; line-height:1.5; margin-top:10px; }
-  /* Only an actual warning gets the warning colour. Every explanatory note in
-     this interface used to carry an amber rule, which made the genuine warnings
-     indistinguishable from the paragraphs explaining how a panel works. */
-  .note.err { border-left-color:var(--no); color:var(--fg); }
-  .keys { display:flex; gap:12px; flex-wrap:wrap; margin-top:8px; }
-  .keys code { background:#12141a; border:1px solid var(--line); border-radius:4px;
-               padding:1px 6px; font-size:12px; }
-  /* Below this the two columns cannot both hold their content, so stack them
-     rather than squeezing the video into a sliver beside the sidebar. */
-  @media (max-width: 980px) {
+     broke across two lines and read as two values. */
+  .stat b { font-weight:600; white-space:nowrap; text-align:right; }
+
+  /* Buttons inside a table row are secondary to the row itself. At the size the
+     rest of the interface uses they made every row 56 px tall and turned a
+     fourteen-row table into a scroll. */
+  td button { padding:5px 13px; font-size:13px; background:var(--bg); }
+  td button:hover:not(:disabled) { background:var(--accent);
+                                   color:var(--accent-ink); }
+  .bar { height:8px; background:var(--raise); border-radius:999px;
+         overflow:hidden; margin:9px 0 6px; }
+  .bar > div { height:100%; background:var(--accent); border-radius:999px;
+               transition:width .2s; }
+
+  /* A note is a soft card, not a bar with a coloured rule down its edge. Only a
+     real warning is coloured: pass 1 gave every explanatory note the amber
+     warning rule, which made genuine warnings indistinguishable from paragraphs
+     explaining how a panel works. */
+  .note { background:var(--raise); padding:12px 15px; border-radius:var(--r-sm);
+          color:var(--muted); font-size:13.5px; line-height:1.55;
+          margin-top:12px; }
+  .note.err { background:#3a2429; color:#ffc9c9; }
+  .keys { display:flex; gap:12px; flex-wrap:wrap; margin-top:10px; }
+
+  @media (max-width: 1040px) {
     main { grid-template-columns:minmax(0,1fr); }
     .side { position:static; }
   }
-  form.inline { display:flex; gap:6px; margin-top:9px; }
+  form.inline { display:flex; gap:8px; margin-top:12px; }
   form.inline input { flex:1; min-width:0; }
 
-/* ---- added for the upload and job views ---- */
+/* ---- upload and job views ---- */
 
-nav { display:flex; gap:2px; margin-left:auto; }
-nav button { background:transparent; border-color:transparent; color:var(--muted);
-             border-radius:3px; }
-/* An underline rather than a filled pill: the tab is a place in the application,
-   not an action, and it should not compete with the buttons that are. */
-nav button.active { background:transparent; color:var(--fg); font-weight:500;
-                    box-shadow:inset 0 -2px 0 var(--accent); }
+nav { display:flex; gap:4px; margin-left:auto; }
+nav button { background:transparent; border-color:transparent;
+             color:var(--muted); }
+nav button.active { background:var(--raise); border-color:var(--line);
+                    color:var(--fg); font-weight:600; }
 
 /* One column for the upload view: it has no video to sit beside. */
-main.single { grid-template-columns:minmax(0,1fr); max-width:900px; }
+main.single { grid-template-columns:minmax(0,1fr); max-width:860px; }
+main.single > div { background:var(--panel); border-radius:var(--r);
+                    padding:22px; box-shadow:var(--shadow); }
 
-.drop { border:1px dashed var(--line); border-radius:4px; padding:38px 20px;
-        text-align:center; color:var(--muted); transition:border-color .15s; }
-.drop.over { border-color:var(--accent); background:#1a2330; color:var(--fg); }
+.drop { border:2px dashed var(--line); border-radius:var(--r); padding:48px 22px;
+        text-align:center; color:var(--muted); transition:border-color .15s,
+        background .15s; }
+.drop.over { border-color:var(--accent); background:#1e2635; color:var(--fg); }
 .drop input[type=file] { display:none; }
 
-.bar { background:#12141a; border:1px solid var(--line); border-radius:5px;
-       height:9px; overflow:hidden; }
-.bar > div { background:var(--accent); height:100%; transition:width .3s; }
-
-.job { border:1px solid var(--line); border-radius:4px; padding:12px;
-       margin-bottom:9px; background:var(--raise); }
+.job { border-radius:var(--r-sm); padding:16px; margin-bottom:12px;
+       background:var(--raise); }
 .job + .job { margin-top:0; }
-.job header { padding:0; border:0; margin-bottom:7px; gap:9px; }
+.job header { padding:0; border:0; background:none; margin-bottom:10px; gap:10px; }
 .job .name { font-weight:600; overflow:hidden; text-overflow:ellipsis;
-             white-space:nowrap; }
+             white-space:nowrap; min-width:0; }
 .job .spacer { flex:1 1 auto; min-width:0; }
 
-.state { font-size:11px; text-transform:uppercase; letter-spacing:.05em;
-         padding:2px 7px; border-radius:4px; border:1px solid var(--line); }
-.state.done      { color:var(--ok);   border-color:#26593c; }
+.state { font-size:12px; font-weight:600; padding:3px 11px; border-radius:999px;
+         background:var(--bg); color:var(--muted); }
+.state.done      { color:var(--ok); }
 .state.failed,
-.state.interrupted { color:var(--no); border-color:#5c2a2a; }
-.state.running   { color:var(--accent); border-color:#2b4d70; }
+.state.interrupted { color:var(--no); }
+.state.running   { color:var(--accent); }
 .state.queued    { color:var(--muted); }
-.state.awaiting_piste { color:var(--warn); border-color:#5c4a1e; }
+.state.awaiting_piste { color:var(--warn); }
 .state.cancelled { color:var(--muted); }
 
-/* The piste frame and its overlay have to scale together, so the canvas is
-   positioned over the image rather than sized in pixels. */
+/* The frame and its overlay must scale together, so the canvas is stretched over
+   the image rather than sized in pixels. */
 .piste-frame { position:relative; display:inline-block; max-width:100%; }
-.piste-frame img { display:block; width:100%; height:auto; border-radius:6px; }
+.piste-frame img { display:block; width:100%; height:auto;
+                   border-radius:var(--r-sm); }
 .piste-frame canvas { position:absolute; inset:0; width:100%; height:100%;
-                      cursor:ns-resize; }
-
+                      cursor:ns-resize; touch-action:none; }
 .err { color:var(--no); }
-pre.log { background:#12141a; border:1px solid var(--line); border-radius:6px;
-          padding:9px; overflow:auto; max-height:220px; font-size:11.5px;
-          white-space:pre-wrap; color:var(--muted); }
-.row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-label.opt { display:flex; gap:6px; align-items:center; color:var(--muted);
-            font-size:12.5px; }
+pre.log { background:var(--bg); border-radius:var(--r-sm); padding:12px;
+          max-height:230px; overflow:auto; font-size:12px;
+          font-family:var(--mono); white-space:pre-wrap; }
+.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+label.opt { display:flex; gap:8px; align-items:center; color:var(--fg);
+            font-size:14px; cursor:pointer; }
+label.opt input { padding:0; }
+.md-h { font-size:14px; font-weight:600; margin:14px 0 6px; color:var(--fg); }
+.suggest { color:var(--warn); font-style:italic; }
 
-.md-h { font-size:12px; margin:10px 0 4px; text-transform:uppercase;
-        letter-spacing:.05em; color:var(--muted); }
+/* ---- fencer profile ---- */
 
-/* A proposed scorer is a suggestion, not a decision, and must not be mistaken
-   for one the user has already made. */
-.suggest { color: var(--warn); font-style: italic; }
-
-  /* fencer profile: a radar comparing the two fencers in one bout.
-     Sized in the SVG's own viewBox units and scaled by CSS, so the label text
-     keeps its proportion to the shape at any panel width rather than needing a
-     breakpoint. The panel is 330 px and the labels sit outside the outer ring,
-     which is why the viewBox is wider than it is tall. */
   .profile svg { width:100%; height:auto; display:block; overflow:visible; }
   .profile .rings { fill:none; stroke:var(--line); }
-  .profile .spoke { stroke:var(--line); stroke-width:.6; }
+  .profile .spoke { stroke:var(--line); stroke-width:.8; }
   /* An axis with no data is drawn at parity because there is nowhere honest to
      put it, which makes it look like a measured tie. The dash is what tells the
      two apart without reading the table underneath. */
-  .profile .spoke.absent { stroke-dasharray:2 2; }
-  .profile .axis-label { font-size:8px; fill:var(--muted); }
+  .profile .spoke.absent { stroke-dasharray:3 3; }
+  .profile .axis-label { font-size:10px; fill:var(--muted); font-weight:500; }
   .profile .axis-label.absent { opacity:.45; }
   /* Fill and stroke rather than fill alone: the two shapes overlap constantly
      and a reader needs to follow one fencer's outline through the other's. */
-  .profile polygon.f1 { fill:rgba(77,163,255,.20); stroke:var(--f1);
-                        stroke-width:1.4; }
-  .profile polygon.f2 { fill:rgba(255,200,87,.16); stroke:var(--f2);
-                        stroke-width:1.4; }
-  .profile-key { display:flex; gap:14px; justify-content:center;
-                 margin:2px 0 9px; font-size:12px; color:var(--muted); }
-  .profile-key i.sw { display:inline-block; width:9px; height:9px;
-                      border-radius:2px; margin-right:5px; }
+  .profile polygon.f1 { fill:rgba(77,163,255,.22); stroke:var(--f1);
+                        stroke-width:2; stroke-linejoin:round; }
+  .profile polygon.f2 { fill:rgba(255,200,87,.18); stroke:var(--f2);
+                        stroke-width:2; stroke-linejoin:round; }
+  .profile-key { display:flex; gap:18px; justify-content:center;
+                 margin:8px 0 14px; font-size:13.5px; color:var(--muted); }
+  .profile-key i.sw { display:inline-block; width:11px; height:11px;
+                      border-radius:999px; margin-right:7px; }
   .profile-key i.sw.f1 { background:var(--f1); }
   .profile-key i.sw.f2 { background:var(--f2); }
-  .profile-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .profile-table { width:100%; border-collapse:collapse; font-size:14px; }
   .profile-table th { text-align:left; font-weight:400; color:var(--muted);
-                      padding:3px 0; }
-  .profile-table td { text-align:right; padding:3px 0 3px 8px;
-                      font-variant-numeric:tabular-nums; }
+                      padding:6px 0; font-size:14px; }
+  .profile-table td { text-align:right; padding:6px 0 6px 10px;
+                      font-weight:500; }
   /* An axis with no data is dimmed rather than hidden. Hiding it would make the
-     radar look complete when it is not, which is the one reading the panel must
-     never invite. */
+     radar look complete when it is not. */
   .profile-table tr.absent { color:var(--muted); opacity:.6; }
 
-  /* the review queue: one proposal at a time, holding the playhead itself */
-  .modebar { margin-bottom:10px; flex-wrap:wrap; }
-  .manual-live { color:var(--warn); }
-  .queue { margin-top:10px; padding:13px 15px; border:1px solid var(--line);
-           border-left:2px solid var(--accent); border-radius:0 4px 4px 0;
-           background:var(--raise); }
-  .queue-head { display:flex; align-items:baseline; gap:8px; font-size:13px;
+/* ---- the review queue ---- */
+
+  .modebar { margin-bottom:12px; flex-wrap:wrap; }
+  .manual-live { color:var(--warn); font-weight:500; }
+  .queue { padding:18px; border-radius:var(--r);
+           background:var(--raise); box-shadow:inset 0 0 0 2px var(--accent); }
+  .queue-head { display:flex; align-items:baseline; gap:9px; font-size:14px;
                 color:var(--muted); }
-  .queue-head b { color:var(--fg); font-size:17px; }
-  .queue-clock { margin-left:auto; font-variant-numeric:tabular-nums;
-                 color:var(--muted); }
-  .queue-bar { height:4px; background:var(--line); border-radius:2px;
-               margin:8px 0 11px; overflow:hidden; }
+  .queue-head b { color:var(--fg); font-size:20px; font-weight:600; }
+  .queue-clock { margin-left:auto; color:var(--muted); }
+  .queue-bar { height:7px; background:var(--bg); border-radius:999px;
+               margin:11px 0 15px; overflow:hidden; }
   .queue-bar i { display:block; height:100%; background:var(--accent);
-                 transition:width .18s ease; }
-  .queue-item { display:flex; align-items:baseline; gap:11px; margin-bottom:10px; }
-  .queue-time { font-size:21px; font-family:var(--mono);
-                font-variant-numeric:tabular-nums; }
-  .queue-detail { color:var(--muted); font-size:12px; }
-  .queue-actions { flex-wrap:wrap; margin-bottom:8px; }
-  .queue.done h3 { margin:0 0 11px; font-size:14px; }
-  .queue-figures { display:grid; grid-template-columns:repeat(4,1fr); gap:10px;
-                   margin-bottom:11px; }
-  .queue-figures div { display:flex; flex-direction:column; }
-  .queue-figures b { font-size:19px; font-variant-numeric:tabular-nums; }
-  .queue-figures span { font-size:11px; color:var(--muted); }
+                 border-radius:999px; transition:width .18s ease; }
+  .queue-item { display:flex; align-items:baseline; gap:14px; margin-bottom:14px; }
+  .queue-time { font-size:28px; font-weight:600; }
+  .queue-detail { color:var(--muted); font-size:13.5px; }
+  .queue-actions { flex-wrap:wrap; margin-bottom:10px; }
+  .queue.done h3 { margin:0 0 14px; }
+  .queue-figures { display:grid; grid-template-columns:repeat(4,1fr); gap:12px;
+                   margin-bottom:14px; }
+  .queue-figures div { display:flex; flex-direction:column; gap:2px; }
+  .queue-figures b { font-size:24px; font-weight:600; }
+  .queue-figures span { font-size:12.5px; color:var(--muted); }
 
-  /* the effort comparison: the project's central claim, with a denominator */
-  .effort { display:grid; grid-template-columns:1fr 1fr; gap:11px; }
-  .effort-mode h4 { margin:0 0 5px; font-size:11px; font-weight:600;
-                    text-transform:uppercase; letter-spacing:.05em;
+/* ---- the effort comparison ---- */
+
+  .effort { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .effort-mode { background:var(--raise); border-radius:var(--r-sm);
+                 padding:14px; }
+  .effort-mode h4 { margin:0 0 6px; font-size:13px; font-weight:500;
                     color:var(--muted); }
-  .effort-big { font-size:22px; font-variant-numeric:tabular-nums; }
-  .effort-verdict { margin-top:11px; padding:9px 11px; border-radius:3px;
-                    background:var(--raise); border:1px solid var(--line);
-                    font-size:13px; }
-  .effort-verdict b { font-size:17px; color:var(--ok); }
+  .effort-big { font-size:26px; font-weight:600; }
+  .effort-verdict { margin-top:14px; padding:12px 15px;
+                    border-radius:var(--r-sm); background:#1e3328;
+                    font-size:14px; }
+  .effort-verdict b { font-size:20px; color:var(--ok); }
 
-  /* the scoreline, and where on the strip the touches landed */
+/* ---- the scoreline, and where the touches landed ---- */
+
   .scoreline { display:flex; align-items:baseline; justify-content:center;
-               gap:9px; margin:4px 0 10px; font-variant-numeric:tabular-nums; }
-  .scoreline span { font-size:27px; }
+               gap:12px; margin:6px 0 16px; }
+  .scoreline span { font-size:40px; font-weight:700; letter-spacing:-.02em; }
   .scoreline .s1 { color:var(--f1); }
   .scoreline .s2 { color:var(--f2); }
-  .scoreline .dash { color:var(--muted); font-size:19px; }
-  h3.sub { font-size:11px; text-transform:uppercase; letter-spacing:.05em;
-           color:var(--muted); margin:13px 0 6px; font-weight:600; }
-  .zones { width:100%; border-collapse:collapse; font-size:12px; }
+  .scoreline .dash { color:var(--muted); font-size:26px; font-weight:400; }
+  .zones { width:100%; border-collapse:collapse; font-size:14px; }
   .zones th { text-align:left; font-weight:400; color:var(--muted);
-              padding:3px 0; }
-  .zones thead th { font-size:11px; text-align:right; }
-  .zones td { text-align:right; padding:3px 0 3px 8px;
-              font-variant-numeric:tabular-nums; }
+              padding:6px 0; }
+  .zones thead th { font-size:12.5px; text-align:right; }
+  .zones td { text-align:right; padding:6px 0 6px 10px; font-weight:500; }

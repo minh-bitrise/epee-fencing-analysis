@@ -1011,11 +1011,22 @@ went wrong, so none can be dropped, but printed simultaneously they produced a s
 mostly prose, and a caveat inside a wall of text is read no more carefully than one that is
 absent.
 
-The second is that numbers are set in a monospaced face. The application's content is a video and
-columns of measurements, and measurements are read by comparing them down a column, which
-proportional figures prevent. The rule is scoped to the places numbers appear rather than applied
-to emphasis generally: an earlier version bound it to the `<b>` element and rendered the phrase
-"Drop a bout video here" in mono, where it read as a code sample.
+The second is that the interface is pitched at a coach rather than at an operator. An
+intermediate version set the whole application in a technical register: ten-pixel uppercase
+labels, hairline rules, monospaced figures throughout and three-pixel corners. It was internally
+consistent, and it read as laboratory equipment. Since measurements are read by comparing them
+down a column, which proportional figures prevent, the alignment that motivated the monospaced
+face is real; but `font-variant-numeric: tabular-nums` supplies it without the register, so the
+monospaced face is now used only for file paths. Type sizes were raised throughout, corners
+rounded, and the primary action filled rather than outlined, an outlined primary having read as a
+disabled control.
+
+This is recorded because it took three attempts and the first two failed in instructive ways. The
+first changed only the palette and the typeface and left the layout untouched, which addressed
+none of the problem. The second restructured correctly but dressed the result in the wrong
+register. Neither failure was visible in any test: the interface passed its full suite in all
+three states, because what the tests assert is that the right information is reachable, and in
+every version it was.
 
 ### Testing
 
