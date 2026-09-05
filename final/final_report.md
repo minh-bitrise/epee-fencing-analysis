@@ -2,7 +2,14 @@
 
 ## About this document
 
-This is the **final project report** for the full project, not the preliminary report.
+This is the **full research record** for the project, maintained continuously as development
+proceeds. It is not the document that gets submitted.
+
+`final/submission_report.md` is the submission version, derived from this one and written to
+the per-chapter word limits. Deriving rather than trimming is deliberate: this document is
+allowed to exceed the caps because its job is to hold every measurement, including the ones
+that failed, and cutting it to length would destroy the record that makes the submitted
+argument checkable. `final/wordcount.py` reports both documents against the caps.
 
 The preliminary report (`preliminary/prelim_report.docx`) is a separate, earlier submission
 with strict per-chapter word limits. This document has no such limits; it is a thorough,
@@ -984,8 +991,8 @@ intact for comparison.
 
 ### Interface design decisions
 
-The interface is a working instrument rather than a demonstration, and two decisions in it are
-worth stating because both were reversals of what the first version did.
+The interface is a working instrument rather than a demonstration, and three decisions in it
+are worth stating because each reversed what an earlier version did.
 
 The first is that colour carries meaning and the chrome does not use it. The original palette
 took the Fencer 1 blue as its general accent, with the result that the primary buttons, the
@@ -996,6 +1003,16 @@ signal in the interface indistinguishable from decoration. Structural elements a
 so a saturated pixel anywhere always identifies a fencer or a state. The same reasoning applied
 to the explanatory notes, every one of which carried the amber warning rule and so made genuine
 warnings indistinguishable from paragraphs explaining how a panel worked.
+
+The second is that the interface is pitched at a coach rather than at an operator. An
+intermediate version set the whole application in a technical register: ten-pixel uppercase
+labels, hairline rules, monospaced figures throughout and three-pixel corners. It was internally
+consistent, and it read as laboratory equipment. Since measurements are read by comparing them
+down a column, which proportional figures prevent, the alignment that motivated the monospaced
+face is real; but `font-variant-numeric: tabular-nums` supplies it without the register, so the
+monospaced face is now used only for file paths. Type sizes were raised throughout, corners
+rounded, and the primary action filled rather than outlined, an outlined primary having read as a
+disabled control.
 
 The third decision, and the one that changed the most, was to stop presenting everything at
 once. The screen showed six bordered panels of equal visual weight, so nothing was more
@@ -1010,16 +1027,6 @@ rather than deleted: nearly every caveat in this interface was paid for by a mea
 went wrong, so none can be dropped, but printed simultaneously they produced a screen that was
 mostly prose, and a caveat inside a wall of text is read no more carefully than one that is
 absent.
-
-The second is that the interface is pitched at a coach rather than at an operator. An
-intermediate version set the whole application in a technical register: ten-pixel uppercase
-labels, hairline rules, monospaced figures throughout and three-pixel corners. It was internally
-consistent, and it read as laboratory equipment. Since measurements are read by comparing them
-down a column, which proportional figures prevent, the alignment that motivated the monospaced
-face is real; but `font-variant-numeric: tabular-nums` supplies it without the register, so the
-monospaced face is now used only for file paths. Type sizes were raised throughout, corners
-rounded, and the primary action filled rather than outlined, an outlined primary having read as a
-disabled control.
 
 A fourth pass addressed the densest parts of the result. The per-fencer measurements had been a
 flat list in which every row carried an "F1" or "F2" prefix, so comparing the two fencers meant
@@ -1919,9 +1926,16 @@ Dependencies are declared in `code/prototype/requirements.txt` and
 
 ### B. CSV schema
 
-The per-frame CSV produced by the prototype has columns: `frame`, `time_s`, `distance_raw_m`,
-`distance_smooth_m`, `method` (`pose` or `bbox`), `f1_advance_m`, `f1_retreat_m`,
-`f2_advance_m`, `f2_retreat_m`.
+The per-frame CSV has columns `frame`, `time_s`, `distance_raw_m`, `distance_smooth_m`,
+`method` (`pose` or `bbox`), `f1_advance_m`, `f1_retreat_m`, `f2_advance_m`, `f2_retreat_m`,
+`f1_pos_m`, `f2_pos_m`, `f1_stance_m`, `f2_stance_m`, `f1_hip_height_m`, `f2_hip_height_m`.
+
+The four advance and retreat columns are **retained but not reported**. They are the withdrawn
+cumulative totals, kept because Appendix D's analysis of why they fail is reproduced from them,
+and because removing a column from a schema that earlier results were written against would
+make those results unreadable. The position columns are what the reliable per-fencer figures
+are derived from, and the stance and hip-height columns are what lunge proposals are calibrated
+on.
 
 ### C. Footage attribution
 
