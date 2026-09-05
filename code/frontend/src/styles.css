@@ -188,6 +188,75 @@
   tr.added     td:first-child { box-shadow:inset 4px 0 0 var(--f1); }
 
   .mini { color:var(--muted); font-size:13.5px; }
+
+  /* THE BOUT'S HEADLINE FIGURES, as tiles. They were the first three lines of a
+     nine-line label-and-value list, where they read as three more of the same
+     rather than as the three numbers that describe the bout. */
+  .tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:10px;
+           margin-bottom:18px; }
+  .tile { background:var(--raise); border-radius:var(--r-sm); padding:12px 13px;
+          display:flex; flex-direction:column; gap:2px; }
+  .tile b { font-size:22px; font-weight:600; line-height:1.15; }
+  .tile span { font-size:12.5px; color:var(--muted); }
+
+  /* THE TWO FENCERS SIDE BY SIDE. As a flat list every row was prefixed "F1" or
+     "F2", so comparing them meant reading alternate lines and matching the words
+     after the prefix. As columns the comparison IS the layout. */
+  .compare { width:100%; border-collapse:collapse; font-size:14px; }
+  .compare thead th { text-align:right; font-size:12.5px; font-weight:500;
+                      color:var(--muted); padding:0 0 8px 10px;
+                      white-space:nowrap; }
+  .compare thead th:first-child { width:44%; }
+  .compare tbody th { text-align:left; font-weight:400; color:var(--muted);
+                      padding:9px 0; font-size:13.5px; }
+  .compare tbody td { text-align:right; padding:9px 0 9px 10px;
+                      font-weight:600; white-space:nowrap; }
+  .compare tbody tr + tr th, .compare tbody tr + tr td {
+    border-top:1px solid var(--line); }
+  .compare .sw { display:inline-block; width:8px; height:8px;
+                 border-radius:999px; margin-right:6px; }
+  .compare .sw.f1 { background:var(--f1); }
+  .compare .sw.f2 { background:var(--f2); }
+
+  /* THE PROPOSALS. As a six-column table every cell had equal weight, so
+     fourteen proposals were fourteen identical bands of small text and finding
+     the one under review meant reading rather than looking. Each is now a row
+     with a hierarchy inside it, separated from its neighbours by a gap rather
+     than by a hairline. */
+  .touches { display:flex; flex-direction:column; gap:7px; }
+  .touch { display:flex; align-items:center; gap:14px; cursor:pointer;
+           padding:11px 15px; border-radius:var(--r-sm);
+           background:var(--raise); border-left:4px solid transparent;
+           transition:background .12s, box-shadow .12s; }
+  .touch:hover { background:#2d323b; }
+  .touch.sel { box-shadow:0 0 0 2px var(--accent); }
+  .touch.confirmed { border-left-color:var(--ok); }
+  .touch.rejected  { border-left-color:#586070; opacity:.55; }
+  .touch.pending   { border-left-color:var(--warn); }
+  .touch.added     { border-left-color:var(--f1); }
+  .touch .t { font-size:16px; font-weight:600; min-width:62px; }
+  .touch .who { font-size:13.5px; min-width:74px; }
+  .touch .who .none { color:var(--muted); }
+  .touch .basis { color:var(--muted); font-size:12.5px; margin-left:auto;
+                  white-space:nowrap; }
+  .touch .acts { display:flex; gap:7px; }
+  .touch .acts button { padding:5px 13px; font-size:13px; background:var(--bg); }
+  .touch .acts button:hover:not(:disabled) { background:var(--accent);
+                                             color:var(--accent-ink); }
+
+  /* The state is what the user is changing, so it is a coloured pill rather than
+     a word in a column. */
+  .pill { font-size:12px; font-weight:600; padding:3px 11px; border-radius:999px;
+          background:var(--bg); color:var(--muted); white-space:nowrap; }
+  .pill.confirmed { color:var(--ok); }
+  .pill.pending   { color:var(--warn); }
+  .pill.rejected  { color:var(--muted); }
+  .pill.added     { color:var(--f1); }
+
+  @media (max-width: 1240px) {
+    /* The evidence is the first thing to go: it is consulted, not scanned. */
+    .touch .basis { display:none; }
+  }
   .stat { display:flex; justify-content:space-between; align-items:baseline;
           gap:14px; padding:7px 0; }
   .stat > span { min-width:0; }
@@ -356,6 +425,24 @@ label.opt input { padding:0; }
   .scoreline .s1 { color:var(--f1); }
   .scoreline .s2 { color:var(--f2); }
   .scoreline .dash { color:var(--muted); font-size:26px; font-weight:400; }
+  /* Time ahead as a split of the bout, because that is what it is. Two rows of
+     percentages made the reader reconstruct that the two shares plus the level
+     time add up to the whole. */
+  .split { display:flex; height:10px; border-radius:999px; overflow:hidden;
+           background:var(--raise); margin:4px 0 9px; }
+  .split i { display:block; height:100%; }
+  .split i.a { background:var(--f1); }
+  .split i.b { background:var(--f2); }
+  .split i.lv { background:var(--line); }
+  .split-key { display:flex; align-items:center; font-size:13px;
+               color:var(--muted); margin-bottom:14px; }
+  .split-key .mid { flex:1; text-align:center; }
+  .split-key .sw { display:inline-block; width:8px; height:8px;
+                   border-radius:999px; margin:0 6px; }
+  .split-key .sw.f1 { background:var(--f1); }
+  .split-key .sw.f2 { background:var(--f2); }
+  h3.sub { font-size:14px; font-weight:600; margin:18px 0 10px; }
+
   .zones { width:100%; border-collapse:collapse; font-size:14px; }
   .zones th { text-align:left; font-weight:400; color:var(--muted);
               padding:6px 0; }

@@ -8,6 +8,15 @@ import { useEffect, useRef } from 'react'
  * and a guess presented without its basis is just an assertion. A low-confidence
  * proposal next to a large separation is a different thing to judge than a
  * high-confidence one, and the user cannot tell them apart otherwise.
+ *
+ * WHY ROWS AND NOT A TABLE. As a six-column table every cell had equal weight,
+ * so fourteen proposals were fourteen identical bands of small text and finding
+ * the one under review meant reading. Each proposal is now one row with a
+ * hierarchy inside it: the timestamp first because that is what identifies it,
+ * the state as a coloured pill because that is what the user is changing, and
+ * the evidence in smaller muted text because it is consulted rather than
+ * scanned. The columns that carried "conf" and "sep" headings are gone: three
+ * words of heading for a number that is self-describing once labelled inline.
  */
 export default function TouchTable({ rows, selIdx, onSelect, onDecide, onDelete,
                                      scorerProposals }) {
@@ -26,75 +35,68 @@ export default function TouchTable({ rows, selIdx, onSelect, onDecide, onDelete,
   }, [selIdx])
 
   if (rows.length === 0) {
-    return (
-      <table><tbody>
-        <tr><td colSpan={6} className="mini">No proposals for this bout.</td></tr>
-      </tbody></table>
-    )
+    return <div className="mini">No proposals for this bout.</div>
   }
 
   return (
-    <table>
-      <thead>
-        <tr>
-          <th>time</th><th>conf</th><th>sep</th>
-          <th>scorer</th><th>state</th><th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r, i) => {
-          const sel = i === selIdx
-          const ref = sel ? selRef : null
-          if (r.kind === 'added') {
-            return (
-              <tr key={`added-${r.id}`} ref={ref}
-                  className={`added${sel ? ' sel' : ''}`}
-                  onClick={() => onSelect(i)}>
-                <td>{r.at.toFixed(1)}s</td>
-                <td className="mini">manual</td>
-                <td>-</td>
-                <td>{r.scorer}</td>
-                <td>added</td>
-                <td>
-                  <button onClick={(e) => { e.stopPropagation(); onDelete(r.id) }}>
-                    remove
-                  </button>
-                </td>
-              </tr>
-            )
-          }
-          return (
-            <tr key={`proposed-${r.id}`} ref={ref}
-                className={`${r.state}${sel ? ' sel' : ''}`}
-                onClick={() => onSelect(i)}>
-              <td>{r.at.toFixed(1)}s</td>
-              <td>{r.confidence.toFixed(2)}</td>
-              <td>{r.separation_m != null ? `${r.separation_m.toFixed(2)}m` : '-'}</td>
-              <td>
-                {r.scorer ?? (() => {
-                  const p = proposedFor(r.at)
-                  // Shown as a suggestion, visibly distinct from a decision the
-                  // user has made. The lamp reading is evidence, not an answer.
-                  return p && p.proposed !== 'unknown'
-                    ? <span className="suggest" title={`green delta ${p.green_delta}, red delta ${p.red_delta}`}>
-                        {p.proposed}?
+    <div className="touches">
+      {rows.map((r, i) => {
+        const sel = i === selIdx
+        const ref = sel ? selRef : null
+        const added = r.kind === 'added'
+        const state = added ? 'added' : r.state
+        const scorer = added ? r.scorer : r.scorer ?? proposedFor(r.at)
+
+        return (
+          <div key={`${r.kind}-${r.id}`} ref={ref}
+               className={`touch ${state}${sel ? ' sel' : ''}`}
+               onClick={() => onSelect(i)}>
+            <span className="t">{r.at.toFixed(1)}s</span>
+
+            <span className={`pill ${state}`}>{state}</span>
+
+            <span className="who">
+              {added ? r.scorer
+                : r.scorer ?? (scorer && scorer.proposed !== 'unknown'
+                    // A suggestion, visibly distinct from a decision the user
+                    // has made. The lamp reading is evidence, not an answer.
+                    ? <span className="suggest"
+                            title={`green delta ${scorer.green_delta}, `
+                                   + `red delta ${scorer.red_delta}`}>
+                        {scorer.proposed}?
                       </span>
-                    : '-'
-                })()}
-              </td>
-              <td>{r.state}</td>
-              <td>
-                <button onClick={(e) => { e.stopPropagation(); onDecide(r.id, 'confirmed') }}>
-                  confirm
+                    : <span className="none">no scorer</span>)}
+            </span>
+
+            {/* What the proposal rests on. The user is adjudicating the
+                system's guess, and a guess without its basis is an assertion. */}
+            <span className="basis">
+              {added ? 'added by hand' : (
+                <>conf {r.confidence.toFixed(2)}
+                  {r.separation_m != null
+                    && <> &middot; sep {r.separation_m.toFixed(2)}m</>}</>
+              )}
+            </span>
+
+            <span className="acts">
+              {added ? (
+                <button onClick={(e) => { e.stopPropagation(); onDelete(r.id) }}>
+                  remove
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); onDecide(r.id, 'rejected') }}>
-                  reject
-                </button>
-              </td>
-            </tr>
-          )
-        })}
-      </tbody>
-    </table>
+              ) : (
+                <>
+                  <button onClick={(e) => {
+                    e.stopPropagation(); onDecide(r.id, 'confirmed')
+                  }}>confirm</button>
+                  <button onClick={(e) => {
+                    e.stopPropagation(); onDecide(r.id, 'rejected')
+                  }}>reject</button>
+                </>
+              )}
+            </span>
+          </div>
+        )
+      })}
+    </div>
   )
 }

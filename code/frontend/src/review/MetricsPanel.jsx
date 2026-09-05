@@ -18,12 +18,18 @@ const floored = (v) =>
 
 const closing = (v) => (v != null ? v.toFixed(1) + '%' : '-')
 
-function Stat({ label, value }) {
-  return <div className="stat"><span>{label}</span><b>{value}</b></div>
+function Tile({ value, label }) {
+  return <div className="tile"><b>{value}</b><span>{label}</span></div>
 }
 
 /**
  * The bout's numbers.
+ *
+ * WHY THE PER-FENCER FIGURES ARE A TABLE AND NOT A LIST. They were a flat list
+ * of label-and-value rows, every one of them prefixed "F1" or "F2", which meant
+ * the two fencers were being compared by reading alternate lines and matching
+ * the words after the prefix. Six rows carrying three measurements. As two
+ * columns the comparison is the layout, and the prefixes disappear.
  *
  * Movement is shown as net displacement and closing share, never as cumulative
  * push and pull totals. Path length sums the size of every frame's movement, so
@@ -38,26 +44,44 @@ export default function MetricsPanel({ metrics }) {
   const w = metrics.whole_recording
   const i = metrics.in_play
 
-  const fencer = (label, whole, scoped) => (
-    <div key={label}>
-      <Stat label={`${label} net displacement (whole)`}
-            value={floored(whole.net_displacement_m)} />
-      <Stat label={`${label} forward movement (in play)`}
-            value={floored(scoped.net_forward_movement_m)} />
-      <Stat label={`${label} closing share (in play)`}
-            value={closing(scoped.closing_share_pct)} />
-    </div>
-  )
+  const rows = [
+    ['net displacement', floored(w.fencer_1.net_displacement_m),
+                         floored(w.fencer_2.net_displacement_m)],
+    ['forward movement', floored(i.fencer_1.net_forward_movement_m),
+                         floored(i.fencer_2.net_forward_movement_m)],
+    ['closing share', closing(i.fencer_1.closing_share_pct),
+                      closing(i.fencer_2.closing_share_pct)],
+  ]
 
   return (
     <>
-      <Stat label="confirmed touches" value={metrics.confirmed_touches.length} />
-      <Stat label="in play" value={`${Math.round(100 * i.in_play_fraction)}%`} />
-      <Stat label="mean distance (in play)"
-            value={i.mean_distance_m != null ? `${i.mean_distance_m.toFixed(2)} m` : '-'} />
-      <Stat label="mean distance (whole)" value={`${w.distance_m.mean.toFixed(2)} m`} />
-      {fencer('F1', w.fencer_1, i.fencer_1)}
-      {fencer('F2', w.fencer_2, i.fencer_2)}
+      {/* The three figures that describe the bout rather than either fencer, as
+          tiles. They were the first three lines of a nine-line list, where they
+          read as three more of the same. */}
+      <div className="tiles">
+        <Tile value={metrics.confirmed_touches.length} label="touches" />
+        <Tile value={`${Math.round(100 * i.in_play_fraction)}%`} label="in play" />
+        <Tile value={i.mean_distance_m != null
+                       ? `${i.mean_distance_m.toFixed(2)} m` : '-'}
+              label="mean gap" />
+      </div>
+
+      <table className="compare">
+        <thead>
+          <tr>
+            <th />
+            <th><i className="sw f1" />Fencer 1</th>
+            <th><i className="sw f2" />Fencer 2</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([label, a, b]) => (
+            <tr key={label}>
+              <th>{label}</th><td>{a}</td><td>{b}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
       {/* A warning is printed; an explanation is folded. The two used to share
           one grey block, which meant a real data-quality problem arrived at the
@@ -80,6 +104,8 @@ export default function MetricsPanel({ metrics }) {
         <div className="mini" style={{ marginTop: 7 }}>
           Scoped to {metrics.scoping_basis}.
           {' '}Movement from {metrics.movement_basis.source}.
+          {' '}Mean gap over the whole recording is
+          {' '}{w.distance_m.mean.toFixed(2)} m.
         </div>
       </Disclosure>
     </>

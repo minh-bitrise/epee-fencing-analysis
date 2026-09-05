@@ -24,9 +24,13 @@ describe('TouchTable', () => {
   it('shows what a proposal rests on, not just that it exists', () => {
     // A guess presented without its basis is an assertion. A low-confidence
     // proposal beside a large separation is a different thing to judge.
-    render(<TouchTable rows={[proposed()]} selIdx={0} {...handlers} />)
-    expect(screen.getByText('0.29')).toBeInTheDocument()
-    expect(screen.getByText('0.87m')).toBeInTheDocument()
+    // The two figures are labelled inline now rather than sitting under column
+    // headings, so they are matched inside the row's evidence line.
+    const { container } = render(
+      <TouchTable rows={[proposed()]} selIdx={0} {...handlers} />)
+    const basis = container.querySelector('.basis').textContent
+    expect(basis).toContain('0.29')
+    expect(basis).toContain('0.87m')
   })
 
   it('offers confirm and reject for a proposal', () => {
@@ -80,7 +84,7 @@ describe('TouchTable', () => {
     const { container } = render(
       <TouchTable rows={[proposed(), proposed({ id: 'p1', at: 60 })]}
                   selIdx={1} {...handlers} />)
-    const selected = container.querySelectorAll('tr.sel')
+    const selected = container.querySelectorAll('.touch.sel')
     expect(selected.length).toBe(1)
   })
 })

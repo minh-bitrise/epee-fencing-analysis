@@ -22,10 +22,24 @@ const zones = () => ({
 describe('ScorePanel', () => {
   it('shows how long each fencer was ahead, not just the final score', () => {
     // A 9-9 that one fencer led for 70 per cent of and a 9-9 that was level
-    // throughout are the same scoreline and different bouts.
-    render(<ScorePanel score={score()} zones={zones()} />)
-    expect(screen.getByText('70%')).toBeInTheDocument()
-    expect(screen.getByText('30%')).toBeInTheDocument()
+    // throughout are the same scoreline and different bouts. Shown as a split
+    // of the whole bout, so the widths must match the shares as well as the
+    // labels: a bar that says one thing and reads as another is worse than no
+    // bar.
+    const { container } = render(<ScorePanel score={score()} zones={zones()} />)
+    expect(screen.getByText(/ahead 70%/)).toBeInTheDocument()
+    expect(screen.getByText(/30% ahead/)).toBeInTheDocument()
+    expect(container.querySelector('.split i.a').style.width).toBe('69.6%')
+    expect(container.querySelector('.split i.b').style.width).toBe('30.4%')
+  })
+
+  it('gives the level time its own share of the bar', () => {
+    // The two leads plus the level stretch are the whole bout. Without the
+    // middle segment the bar would show 100 per cent led and be a lie.
+    const { container } = render(<ScorePanel score={score({
+      time_leading_pct: { 1: 40, 2: 20 },
+    })} zones={zones()} />)
+    expect(container.querySelector('.split i.lv').style.width).toBe('40%')
   })
 
   it('shows lead changes', () => {

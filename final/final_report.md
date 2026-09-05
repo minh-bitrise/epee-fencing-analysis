@@ -1021,12 +1021,25 @@ monospaced face is now used only for file paths. Type sizes were raised througho
 rounded, and the primary action filled rather than outlined, an outlined primary having read as a
 disabled control.
 
-This is recorded because it took three attempts and the first two failed in instructive ways. The
+A fourth pass addressed the densest parts of the result. The per-fencer measurements had been a
+flat list in which every row carried an "F1" or "F2" prefix, so comparing the two fencers meant
+reading alternate lines and matching the words after the prefix, six rows carrying three
+measurements. Presented as a two-column table the comparison becomes the layout itself. The share
+of the bout each fencer spent leading became a single split bar, on the same reasoning: it is a
+share of a whole, and as two separate percentages the reader had to work out that the two shares
+plus the level time account for the bout. The proposal list stopped being a six-column table, in
+which every cell carried equal weight and fourteen proposals were fourteen identical bands of
+small text, and became rows with internal hierarchy: the timestamp first because it identifies
+the proposal, the state as a coloured marker because that is what the user is changing, and the
+confidence and separation in smaller muted text because they are consulted rather than scanned.
+
+This is recorded because it took four attempts and the first three failed in instructive ways. The
 first changed only the palette and the typeface and left the layout untouched, which addressed
 none of the problem. The second restructured correctly but dressed the result in the wrong
-register. Neither failure was visible in any test: the interface passed its full suite in all
-three states, because what the tests assert is that the right information is reachable, and in
-every version it was.
+register. The third fixed the register and left the dense lists inside it unchanged. None of the
+failures was visible in any test: the interface passed its full suite in all four states, because
+what the tests assert is that the right information is reachable, and in every version it was.
+Presentation is the one part of this system that its tests cannot judge.
 
 ### Testing
 

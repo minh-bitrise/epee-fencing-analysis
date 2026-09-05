@@ -14,18 +14,19 @@ import Disclosure from './Disclosure.jsx'
  * different bouts, and the second is the one worth talking about. The final
  * score cannot tell them apart and these two numbers can.
  */
-const pct = (v) => (v == null ? '-' : `${v.toFixed(0)}%`)
-
 export default function ScorePanel({ score, zones }) {
   if (!score) return null
   if (!score.available) {
     return <div className="mini">{score.reason}.</div>
   }
 
-  const t = score.time_leading_pct
+  const t = score.time_leading_pct || {}
+  const a = t[1] ?? 0
+  const b = t[2] ?? 0
+  const level = 100 - a - b
   const total = zones?.available
-    ? zones.fencer_1.reduce((a, b) => a + b, 0)
-      + zones.fencer_2.reduce((a, b) => a + b, 0)
+    ? zones.fencer_1.reduce((x, y) => x + y, 0)
+      + zones.fencer_2.reduce((x, y) => x + y, 0)
     : 0
 
   return (
@@ -36,12 +37,23 @@ export default function ScorePanel({ score, zones }) {
         <span className="s2">{score.final.fencer_2}</span>
       </div>
 
+      {/* Time ahead as one bar rather than two rows reading "F1 ahead" and
+          "F2 ahead". The quantity is a split of a whole, so a split of a whole
+          is what it should look like; as a pair of percentages the reader has to
+          reconstruct that the two plus the level time make the bout. */}
+      <div className="split" title="share of the bout each fencer led">
+        <i className="a" style={{ width: `${a}%` }} />
+        <i className="lv" style={{ width: `${level}%` }} />
+        <i className="b" style={{ width: `${b}%` }} />
+      </div>
+      <div className="split-key">
+        <span><i className="sw f1" />ahead {a.toFixed(0)}%</span>
+        <span className="mid">level {score.level_s.toFixed(0)}s</span>
+        <span>{b.toFixed(0)}% ahead<i className="sw f2" /></span>
+      </div>
+
       <div className="stat"><span>lead changes</span>
         <b>{score.lead_changes}</b></div>
-      <div className="stat"><span>F1 ahead</span><b>{pct(t?.[1])}</b></div>
-      <div className="stat"><span>F2 ahead</span><b>{pct(t?.[2])}</b></div>
-      <div className="stat"><span>level</span>
-        <b>{score.level_s.toFixed(0)}s</b></div>
 
       {score.unattributed > 0 && (
         <div className="note">
@@ -53,14 +65,14 @@ export default function ScorePanel({ score, zones }) {
       {zones?.available && total > 0 && (
         <>
           <h3 className="sub">Where they scored</h3>
-          <table className="zones">
+          <table className="compare">
             <thead>
               <tr><th /><th>own third</th><th>middle</th><th>far third</th></tr>
             </thead>
             <tbody>
-              <tr><th>Fencer 1</th>
+              <tr><th><i className="sw f1" />Fencer 1</th>
                 {zones.fencer_1.map((n, i) => <td key={i}>{n}</td>)}</tr>
-              <tr><th>Fencer 2</th>
+              <tr><th><i className="sw f2" />Fencer 2</th>
                 {zones.fencer_2.map((n, i) => <td key={i}>{n}</td>)}</tr>
             </tbody>
           </table>

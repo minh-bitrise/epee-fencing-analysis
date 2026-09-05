@@ -103,9 +103,12 @@ describe('ReviewView', () => {
 
   it('shows both proposals with what each rests on', async () => {
     stubFetch()
-    render(<ReviewView initialBoutId={BOUT} />)
-    await waitFor(() => expect(screen.getByText('0.90')).toBeInTheDocument())
-    expect(screen.getByText('0.50')).toBeInTheDocument()
+    const { container } = render(<ReviewView initialBoutId={BOUT} />)
+    await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    const basis = [...container.querySelectorAll('.basis')]
+      .map((el) => el.textContent).join(' | ')
+    expect(basis).toContain('0.90')
+    expect(basis).toContain('0.50')
   })
 
   it('confirms a touch on a single keystroke', async () => {
