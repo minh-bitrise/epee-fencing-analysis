@@ -27,7 +27,15 @@ def write_csv(tmp_path, rows, name="m.csv"):
     return str(path)
 
 
-def bout(n=400, f1=lambda i: 2.0, f2=lambda i: 6.0, dist=lambda i: 4.0):
+# Footwork by default. A bout where neither fencer moves is refused outright, and
+# it should be: every axis assumes fencing done on the feet. The earlier fixtures
+# held both positions constant, which is the shape of a wheelchair bout rather
+# than of the clean foot-fencing bout they were standing in for.
+def _walk(base, amp=0.6):
+    return lambda i: base + amp * math.sin(i / 30.0)
+
+
+def bout(n=400, f1=_walk(2.0), f2=_walk(6.0), dist=lambda i: 4.0):
     """A clean bout: fencer 1 on the left throughout, fencer 2 on the right."""
     return [{"frame": i, "time_s": round(i * 0.1, 2),
              "distance_raw_m": dist(i), "distance_smooth_m": dist(i),
@@ -112,8 +120,11 @@ class TestTerritory:
         """
         # Fencer 1 sits 3 m up from the left end; fencer 2 sits 1 m down from the
         # right end. Fencer 1 has taken more ground despite the smaller position.
-        rows = bout(f1=lambda i: 3.0 + (0.0 if i else -3.0),
-                    f2=lambda i: 7.0 + (0.0 if i else 1.0))
+        # Frame 0 establishes the observed extent of the strip; both fencers walk
+        # thereafter, since a bout with no footwork is refused before the axes
+        # are computed at all.
+        rows = bout(f1=lambda i: 0.0 if i == 0 else 3.0 + 0.4 * math.sin(i / 30.0),
+                    f2=lambda i: 8.0 if i == 0 else 7.0 + 0.4 * math.sin(i / 30.0))
         out = fp.build(write_csv(tmp_path, rows), [])
         terr = next(a for a in out["axes"] if a["key"] == "territory_m")
         assert terr["fencer_1"]["score"] > terr["fencer_2"]["score"]
@@ -301,3 +312,62 @@ class TestScoreSurvivesTheRefusal:
         assert out["available"] is False
         assert out["score"]["available"] is True
         assert out["score"]["final"] == {"fencer_1": 1, "fencer_2": 0}
+
+
+class TestFootworkRefusal:
+    """
+    The check that stops the system answering for a sport it cannot measure.
+
+    Wheelchair fencing is fenced from frames bolted to the floor. Every axis
+    here, and the touch and lunge detectors upstream, assume distance opens and
+    closes because the fencers move their feet. Pointed at such a bout the system
+    does not fail visibly, which is worse: it returns a flat distance series, no
+    proposed touches, and a profile at parity, all of which read as a cagey bout.
+    """
+
+    def test_refuses_when_neither_fencer_moves(self, tmp_path):
+        rows = bout(f1=lambda i: 2.0, f2=lambda i: 6.0)
+        out = fp.build(write_csv(tmp_path, rows), [])
+        assert out["available"] is False
+        assert "wheelchair" in out["reason"]
+        assert out["footwork_iqr_m"] < fp.MIN_FOOTWORK_IQR_M
+
+    def test_one_fencer_holding_still_is_ordinary_fencing(self, tmp_path):
+        # A fencer who holds the line while the other works is normal. Only
+        # NEITHER moving is the case this exists to catch, which is why the
+        # larger of the two ranges is tested rather than the mean.
+        rows = bout(f1=lambda i: 2.0, f2=_walk(6.0))
+        out = fp.build(write_csv(tmp_path, rows), [])
+        assert out["available"] is True
+
+    def test_the_scoreline_survives_the_refusal(self, tmp_path):
+        # The touches came from the user, not from footwork. Withholding them
+        # would suppress something the system did not get wrong.
+        rows = bout(f1=lambda i: 2.0, f2=lambda i: 6.0)
+        out = fp.build(write_csv(tmp_path, rows),
+                       [{"time_s": 10.0, "scorer": "left"}])
+        assert out["available"] is False
+        assert out["score"]["available"] is True
+        assert out["score"]["final"] == {"fencer_1": 1, "fencer_2": 0}
+
+    def test_every_evaluation_clip_passes_the_check(self):
+        """
+        The threshold must not reject real foot fencing. The smallest own-position
+        spread measured across the four clips is 0.66 m, against a threshold of
+        0.25, so there is a wide margin. This test fails if a future change to
+        the threshold or to the position pipeline closes it.
+        """
+        import glob
+        import os
+        seen = 0
+        for path in sorted(glob.glob(os.path.join(
+                os.path.dirname(__file__), "results_current",
+                "fencing_clip*_distance.csv"))):
+            rows = fp.load_rows(path)
+            _, p1, p2 = fp._positions(rows)
+            if len(p1) < 10:
+                continue
+            seen += 1
+            assert fp.footwork_range(p1, p2) > fp.MIN_FOOTWORK_IQR_M * 2, path
+        if seen == 0:
+            pytest.skip("evaluation footage not present in this checkout")

@@ -44,6 +44,17 @@ import statistics
 from generate_summary import count_side_swaps
 from in_play import in_play_mask, out_of_play_windows
 
+# The smallest own-position spread measured on real foot-fencing footage is 0.66 m
+# (clip 1's Fencer 1); the largest is 2.78 m. Bounding-box jitter alone produces
+# far less than either. This sits well below the smallest real value and well
+# above jitter.
+#
+# PROVISIONAL, AND ASYMMETRIC EVIDENCE. It is derived from four clips of foot
+# fencing and from NO footage of the case it exists to catch, because none was
+# available. It is calibrated from one side of the boundary only, and should be
+# re-derived if wheelchair footage is ever obtained.
+MIN_FOOTWORK_IQR_M = 0.25
+
 # A touch is attributed to the position the fencers were at when it was awarded,
 # read from the frame nearest that time rather than interpolated. The touch times
 # themselves are only labelled to the nearest second, so sub-frame precision here
@@ -87,6 +98,19 @@ def _iqr(values):
     q1 = s[len(s) // 4]
     q3 = s[(3 * len(s)) // 4]
     return q3 - q1
+
+
+def footwork_range(p1, p2):
+    """
+    How much ground the more mobile of the two fencers covered, as the
+    interquartile range of their own position.
+
+    Used to decide whether footwork-based measurement means anything on this
+    bout at all. The larger of the two is taken rather than the mean, because one
+    fencer holding still while the other moves is ordinary foot fencing, whereas
+    NEITHER moving is the case this exists to detect.
+    """
+    return max(_iqr(p1), _iqr(p2))
 
 
 def territory(p_own, p_other):
@@ -374,8 +398,41 @@ def build(csv_path, touches, lunges=None, reset_s=None):
 
     _, p1, p2 = _positions(rows, mask)
     if len(p1) < 10:
-        return {"available": False,
+        return {"available": False, "score": scoreline,
                 "reason": "too few frames with both fencers tracked to profile"}
+
+    # WHY THIS REFUSES RATHER THAN REPORTING NEAR-ZERO EVERYTHING. Every axis
+    # here, and the touch and lunge detectors upstream of it, assume fencing done
+    # on the feet: distance opens and closes because the fencers move, a touch is
+    # a local minimum in that distance, a lunge is an ankle separation. Wheelchair
+    # fencing is fenced from frames bolted to the floor, so none of that holds.
+    #
+    # Pointed at such a bout the system does not fail visibly, which is worse
+    # than failing. It returns a distance series that barely moves, proposes no
+    # touches, and draws a profile whose axes all sit at parity, and every one of
+    # those outputs looks like a legitimate reading of a cagey bout. Producing
+    # confident nonsense for a population the system was never designed for is a
+    # more serious exclusion than declining to answer.
+    #
+    # The same check catches two failures that are not about Para fencing at all:
+    # footage framed so tightly that the piste collapses in the measured space,
+    # and a tracker that has locked onto two people who are not fencing.
+    footwork = footwork_range(p1, p2)
+    if footwork < MIN_FOOTWORK_IQR_M:
+        return {
+            "available": False,
+            "score": scoreline,
+            "footwork_iqr_m": round(footwork, 2),
+            "reason": (
+                f"neither fencer's position varies by more than "
+                f"{footwork:.2f} m across this bout, against {MIN_FOOTWORK_IQR_M} m "
+                "of movement that footwork-based measurement needs. Every figure "
+                "here assumes fencing done on the feet, so on wheelchair fencing, "
+                "on footage framed too tightly to show the strip, or where the "
+                "tracker has locked onto the wrong people, these axes would read "
+                "as a cagey bout rather than as a measurement that does not "
+                "apply."),
+        }
 
     ta = touch_axes(rows, touches)
     lunges = lunges or {}

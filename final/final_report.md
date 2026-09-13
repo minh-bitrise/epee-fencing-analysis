@@ -719,6 +719,22 @@ return a distance series that barely moves, propose no touches, and report a fen
 whose axes are all near parity. **A system that produces confident nonsense on a population it
 was never designed for is a more serious exclusion than one that refuses.**
 
+**What was done about it.** The system now refuses. The profile already declined to draw a radar
+where slot identity failed, on the reasoning that a shape is read as a verdict whatever caveat
+sits beside it, and the same reasoning applies here. If neither fencer's own position varies by
+more than 0.25 m across a bout, the per-fencer axes are withheld and the reason is given. The
+threshold was derived from the four evaluation clips, where the smallest own-position spread is
+0.66 m and the largest 2.78 m, so it sits well below real foot fencing and well above
+bounding-box jitter. It is **calibrated from one side of the boundary only**, since no wheelchair
+footage was available, and is marked provisional in the code. The same check catches two
+failures that have nothing to do with Para fencing: footage framed so tightly that the strip
+collapses in the measured space, and a tracker locked onto two people who are not fencing. The
+scoreline still reports, because the touches came from the user rather than from footwork.
+
+This does not make the system inclusive. It makes it honest about the boundary of what it
+measures, which is the least that can be done without the domain knowledge and the stakeholder
+input that a genuinely inclusive design would have required from the start.
+
 **A population assumption is baked into every distance figure.** The pixel-to-metre scale
 assumes an average fencer height of 1.75 m. That figure is a men's-senior average, and it is
 applied to every bout regardless of who is fencing. On a women's bout, a junior bout, or any

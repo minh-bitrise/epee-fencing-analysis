@@ -564,7 +564,7 @@ class TestFencerProfile:
 
     def test_profiles_a_bout_whose_tracking_held(self, client, tmp_path):
         bout = self._bout(tmp_path, client,
-                          lambda i: 2.0 + (i % 5) * 0.1, lambda i: 6.0)
+                          lambda i: 2.0 + (i % 40) * 0.03, lambda i: 6.0)
         r = client.get(f"/api/bouts/{bout}/profile")
         assert r.status_code == 200
         body = r.json()
@@ -588,14 +588,14 @@ class TestFencerProfile:
         # Three of the six axes are undefined until touches are confirmed, and a
         # profile built on two should not be read like one built on twenty.
         bout = self._bout(tmp_path, client,
-                          lambda i: 2.0 + (i % 5) * 0.1, lambda i: 6.0,
+                          lambda i: 2.0 + (i % 40) * 0.03, lambda i: 6.0,
                           name="count")
         body = client.get(f"/api/bouts/{bout}/profile").json()
         assert body["confirmed_touches"] == 0
 
     def test_confirmed_touches_reach_the_scoring_axes(self, client, tmp_path):
         bout = self._bout(tmp_path, client,
-                          lambda i: 2.0 + (i % 5) * 0.1, lambda i: 6.0,
+                          lambda i: 2.0 + (i % 40) * 0.03, lambda i: 6.0,
                           name="scored")
         proposed = client.get(f"/api/bouts/{bout}/touches").json()["proposed"]
         client.post(f"/api/bouts/{bout}/touches/{proposed[0]['id']}/decision",

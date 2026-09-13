@@ -379,9 +379,8 @@ compute cost, mitigated by frame-stride throttling on the pose stage.
 Inclusive design is broader than usability and accessibility. It asks who a system excludes and
 why, and the answer is rarely that a person lacked some capacity: exclusion is produced by
 processes and structures that settled on a narrow default through convenience or habit. That
-radical-inclusion position locates the barrier in the environment rather than the user, and it
-has to be present from the start rather than added at the end, which is the test this project
-should be judged against.
+radical-inclusion position locates the barrier in the environment rather than the user, and asks
+that inclusivity be present from the start rather than added at the end.
 
 **Who this system excludes, and why.** The honest answer is that it excludes Para fencers
 completely, and not incidentally. Wheelchair fencing is fenced from frames fixed to the floor:
@@ -394,37 +393,40 @@ distance series that barely moves, propose no touches, and report a profile whos
 near parity. **A system that produces confident nonsense on a population it
 was never designed for is a more serious exclusion than one that refuses.**
 
-**A population assumption is baked into every distance figure.** The pixel-to-metre scale
-assumes an average fencer height of 1.75 m. That figure is a men's-senior average, and it is
-applied to every bout regardless of who is fencing. On a women's bout, a junior bout, or any
-bout between fencers of markedly different heights, every distance in the system is
-systematically wrong by the ratio of the true height to the assumed one. The error is invisible
-because it scales everything consistently, so the numbers stay plausible. This is a clear case
-of a default chosen for convenience becoming a structural exclusion, and it was not noticed
-until the project was examined through this lens.
+**What was done about it.** The system now refuses: if neither fencer's position varies by more
+than 0.25 m across a bout, the per-fencer axes are withheld and the reason given. The threshold
+comes from the four evaluation clips, whose smallest spread is 0.66 m, so it sits well below real
+foot fencing and well above jitter. It is calibrated from one side of the boundary only, no
+wheelchair footage being available, and is marked provisional. This does not make the system
+inclusive; it makes it honest about the boundary of what it measures.
 
-**Data provenance and bias.** The three pre-trained models were selected for availability, which
-is itself a bias. YOLOv8's person class comes from COCO, a convenience-collected web dataset
-whose composition the project did not audit and cannot control; the documented failure of
-facial-analysis systems trained on predominantly pale-skinned cohorts is the standing example of
-what that risks, and nothing here establishes the detection stage is free of an analogous skew.
-The evaluation set compounds it: four clips, three of them elite competition footage, all
-labelled by one person who is also the system's author. That is availability bias in the footage and
-single-annotator bias in the truth.
+**A population assumption is baked into every distance figure.** The pixel-to-metre scale
+assumes a fencer height of 1.75 m, a men's senior average, applied to every bout regardless of
+who is fencing. On a women's or junior bout, or between fencers of markedly different heights,
+every distance is wrong by the ratio of true height to assumed. The error is invisible because it
+scales everything consistently, so the numbers stay plausible. A default chosen for convenience
+became a structural exclusion, and it went unnoticed until the project was examined this way.
+
+**Data provenance and bias.** The three models were selected for availability, itself a bias.
+YOLOv8's person class comes from COCO, a convenience-collected web dataset the project neither
+audited nor controls; the documented failure of facial-analysis systems trained on predominantly
+pale-skinned cohorts is the standing example of the risk, and nothing here establishes the
+detection stage is free of an analogous skew. The evaluation set compounds it: four clips, three
+elite, all labelled by the system's own author.
 
 **What the design gets right, though neither was motivated by inclusion.** The review loop is
-entirely keyboard-driven, every decision bound to a single key, which removes the precise
-pointing a scrubbing interface demands. And colour is never the only carrier of meaning: the
-fencers are blue and amber, a pair surviving the common red-green confusions, but each is also
-labelled and positioned consistently, and every state shown as a colour is also a word. That was
-arrived at for legibility, which is exactly the point radical inclusion makes about process:
-getting there by accident is not a method.
+keyboard-driven, every decision one key, removing the precise pointing a scrubbing interface
+demands. And colour is never the only carrier of meaning: the fencers are blue and amber, a pair
+surviving the common red-green confusions, but each is also labelled and positioned
+consistently, and every state shown as a colour is also a word. Both were arrived at for
+legibility, which is exactly the point radical inclusion makes about process: getting somewhere
+by accident is not a method.
 
-**What was not done.** No user with a disability was consulted, no assistive technology was
-tested against the interface, and no stakeholder outside the author's own club and skill level
-informed the design. The participatory element inclusive design asks for is absent. The
-system's stated user, a club fencer without an analyst or a budget, is an economic widening of
-access rather than an inclusive one, and the report should not conflate the two.
+**What was not done.** No disabled user was consulted, no assistive technology was tested, and
+no stakeholder outside the author's own club informed the design. The participatory element
+inclusive design asks for is absent. The stated user, a club fencer without an analyst or a
+budget, is an economic widening of access rather than an inclusive one, and the two should not
+be conflated.
 
 ### Ethics
 
