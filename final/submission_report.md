@@ -382,16 +382,12 @@ processes and structures that settled on a narrow default through convenience or
 radical-inclusion position locates the barrier in the environment rather than the user, and asks
 that inclusivity be present from the start rather than added at the end.
 
-**Who this system excludes, and why.** The honest answer is that it excludes Para fencers
-completely, and not incidentally. Wheelchair fencing is fenced from frames fixed to the floor:
-there is no footwork, no closing and opening of distance by the feet, and no lunge in the sense
-the pose features model. Every measurement here rests on those things. Distance is measured front foot to front
-foot; touches are proposed from a local minimum in it followed by separation; lunges from the
-ratio of ankle separation to hip height.
-Pointed at a Para bout the system would not fail visibly, which is worse: it would return a
-distance series that barely moves, propose no touches, and report a profile whose axes all sit
-near parity. **A system that produces confident nonsense on a population it
-was never designed for is a more serious exclusion than one that refuses.**
+**Who this excludes.** Para fencers, completely and not incidentally. Wheelchair fencing is
+fenced from frames fixed to the floor: no footwork, no closing and opening of distance by the
+feet, no lunge in the sense the pose features model. Every measurement rests on those. Pointed
+at a Para bout the system would not fail visibly, which is worse: a distance series that barely
+moves, no proposed touches, a profile at parity. **Confident nonsense on a population it was
+never designed for is a worse exclusion than a refusal.**
 
 **What was done about it.** The system now refuses: if neither fencer's position varies by more
 than 0.25 m across a bout, the per-fencer axes are withheld and the reason given. The threshold
