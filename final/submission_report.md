@@ -289,8 +289,8 @@ and the workflow around it, not model development.
 
 ### The assisted-annotation workflow
 
-Four user actions carry the design. Each operates at the level at which a user already thinks
-about a bout, and repairs many frames of derived data in one interaction.
+Four user actions carry the design. Each operates at the level a user already thinks about a
+bout, and repairs many frames of derived data in one interaction.
 
 1. **Confirm or correct a proposed touch.** A proposal can be accepted, retimed, attributed or
    rejected. Confirmed touches also establish the boundaries of each exchange, so resets and
@@ -299,7 +299,7 @@ about a bout, and repairs many frames of derived data in one interaction.
    the user thinking about tracking at all.
 2. **Add a touch the system missed.**
 3. **Mark a segment tracking-unreliable**, excluding it from aggregates while the raw data is
-   preserved.
+   kept.
 4. **Re-anchor a slot**, by clicking the correct fencer at a frame where tracking is wrong.
 
 ### Touch detection: why one signal cannot work
@@ -325,9 +325,9 @@ identically, and assignment is already the user's responsibility.
 Available signals differ systematically by footage type, so the design degrades in tiers rather
 than failing. Tier 1 is a score change, from a broadcast overlay or venue machine, giving both
 timing and attribution. Tier 2 is a buzzer with geometric corroboration. Tier 3 is geometry
-alone, for club footage with no visible machine and no usable audio. Reporting capability per
-tier is more honest than a single number, which would average over footage types offering
-categorically different information.
+alone, for club footage with no visible machine and no usable audio. Reporting per tier is more
+honest than a single number averaging over footage that offers categorically different
+information.
 
 Tier 1 is not merely the most convenient signal but the only one reflecting the referee's
 decision. A scoring machine registers a valid electrical contact; a score display registers an
@@ -422,11 +422,10 @@ consistently, and every state shown as a colour is also a word. Both were arrive
 legibility, which is exactly the point radical inclusion makes about process: getting somewhere
 by accident is not a method.
 
-**What was not done.** No disabled user was consulted, no assistive technology was tested, and
-no stakeholder outside the author's own club informed the design. The participatory element
-inclusive design asks for is absent. The stated user, a club fencer without an analyst or a
-budget, is an economic widening of access rather than an inclusive one, and the two should not
-be conflated.
+**What was not done.** No disabled user was consulted, no assistive technology tested, no
+stakeholder outside the author's own club involved. The participatory element inclusive design
+asks for is absent. The stated user, a club fencer with no analyst and no budget, is an economic
+widening of access rather than an inclusive one, and the two should not be conflated.
 
 ### Ethics
 
