@@ -345,9 +345,9 @@ is not a limitation to apologise for; it is the reason the system is designed as
 
 ### Piste regions are measured, not drawn
 
-Detections whose feet fall outside the piste are discarded before the identity matcher runs,
-which matters because the matcher's gates depend on slot history and so accept whatever the
-detector returns on the first frame. Filtering first means a bystander cannot become a slot's
+Detections whose feet fall outside the piste are discarded before the identity matcher runs.
+This matters because the matcher's gates depend on slot history, so on the first frame they
+accept whatever the detector returns; filtering first means a bystander cannot become a slot's
 initial anchor and then be defended by the gates thereafter.
 
 The region is derived from the footage by sampling frames and clustering where feet actually
