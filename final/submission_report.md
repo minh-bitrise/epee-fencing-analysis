@@ -396,8 +396,8 @@ was never designed for is a more serious exclusion than one that refuses.**
 **What was done about it.** The system now refuses: if neither fencer's position varies by more
 than 0.25 m across a bout, the per-fencer axes are withheld and the reason given. The threshold
 comes from the four evaluation clips, whose smallest spread is 0.66 m, so it sits well below real
-foot fencing and well above jitter. It is calibrated from one side of the boundary only, no
-wheelchair footage being available, and is marked provisional. This does not make the system
+foot fencing and well above jitter. It is calibrated from one side only, no wheelchair
+footage being available, and is marked provisional. This does not make the system
 inclusive; it makes it honest about the boundary of what it measures.
 
 **A population assumption is baked into every distance figure.** The pixel-to-metre scale
