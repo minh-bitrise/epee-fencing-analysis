@@ -26,7 +26,9 @@ The whole workflow runs in a browser: upload a bout, watch it process, review th
 cd code/frontend && npm install && npm run build
 cd ../backend && python3 -m uvicorn app:app --port 8000
 ```
-Then open http://localhost:8000.
+Then open **http://localhost:8000/app/**. The `/app/` matters: the bare root serves an
+older no-build-step page kept as a fallback, which has only the four original annotation
+actions and none of the later features.
 
 The summary button needs an API key for the language-model provider. The server
 looks for it once at startup, first in the `ANTHROPIC_API_KEY` environment
