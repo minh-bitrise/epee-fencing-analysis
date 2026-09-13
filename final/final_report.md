@@ -699,6 +699,60 @@ source code, tests, the report files, and the project documentation.
 ---
 
 
+### Inclusive design
+
+Inclusive design is broader than usability and accessibility. It asks who a system excludes and
+why, and the answer is rarely that a person lacked some capacity: exclusion is produced by
+processes and structures that settled on a narrow default through convenience or habit. That is
+the radical-inclusion position, and it locates the barrier in the environment rather than in the
+user. It also has to be present from the start of a project rather than added at the end, which
+is the test this project should be judged against.
+
+**Who this system excludes, and why.** The honest answer is that it excludes Para fencers
+completely, and not incidentally. Wheelchair fencing is fenced from frames fixed to the floor:
+there is no footwork, no closing and opening of distance by the feet, and no lunge in the sense
+the pose features model. Every measurement here rests on those things. Inter-fencer distance is
+measured front foot to front foot; touches are proposed from a local minimum in that distance
+followed by separation; lunges are proposed from the ratio of ankle separation to hip height.
+Pointed at a Para bout the system would not fail visibly, which is worse than failing: it would
+return a distance series that barely moves, propose no touches, and report a fencer profile
+whose axes are all near parity. **A system that produces confident nonsense on a population it
+was never designed for is a more serious exclusion than one that refuses.**
+
+**A population assumption is baked into every distance figure.** The pixel-to-metre scale
+assumes an average fencer height of 1.75 m. That figure is a men's-senior average, and it is
+applied to every bout regardless of who is fencing. On a women's bout, a junior bout, or any
+bout between fencers of markedly different heights, every distance in the system is
+systematically wrong by the ratio of the true height to the assumed one. The error is invisible
+because it scales everything consistently, so the numbers stay plausible. This is a clear case
+of a default chosen for convenience becoming a structural exclusion, and it was not noticed
+until the project was examined through this lens.
+
+**Data provenance and bias.** The three pre-trained models were selected for availability, which
+is itself a form of availability bias. YOLOv8's person class comes from COCO, a
+convenience-collected web dataset whose composition the project did not audit and cannot
+control. The well-documented failure of facial-analysis systems trained on predominantly
+pale-skinned cohorts is the standing example of what that risks, and nothing in this project
+establishes that its detection stage is free of an analogous skew. The evaluation set compounds
+it: four clips, three of them elite European competition footage, all labelled by one person who
+is also the system's author. That is availability bias in the footage and single-annotator bias
+in the ground truth, and it means the reported figures describe a narrow slice of the sport.
+
+**What the design does get right, and why.** Two things, though neither was originally motivated
+by inclusion. The review loop is entirely keyboard-driven, with every decision bound to a single
+key, which removes the precise pointing that a timeline-scrubbing interface would demand. And
+colour in the interface is never the only carrier of meaning: the two fencers are distinguished
+by blue and amber, a pair that survives the common red-green confusions, but each is also
+labelled and positioned consistently, and every state shown as a colour is also shown as a word.
+That was arrived at for legibility rather than for accessibility, which is the point radical
+inclusion makes about process: getting there by accident is not a method.
+
+**What was not done.** No user with a disability was consulted, no assistive technology was
+tested against the interface, and no stakeholder outside the author's own club and skill level
+informed the design. The participatory element that inclusive design asks for is absent. The
+system's stated user, a club fencer without an analyst or a budget, is an economic widening of
+access rather than an inclusive one, and the report should not conflate the two.
+
 ### Ethics
 
 The project is subject to the module's research-ethics requirements. The analysis is performed
