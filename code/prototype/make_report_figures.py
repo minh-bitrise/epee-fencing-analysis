@@ -275,7 +275,83 @@ def fig_architecture():
     print("wrote", os.path.basename(out))
 
 
+def fig_architecture_components():
+    """
+    The architecture as COMPONENTS ONLY.
+
+    Draft feedback: "the system architecture diagram here should be refined to
+    show just the components, while the descriptions of what each component
+    comprises of is provided separately." The earlier version listed every
+    stage's contents inside its box, so the diagram carried its own
+    documentation and the structure it exists to show was buried in the text
+    inside it. The contents move into a table in the body; the diagram keeps the
+    four layers, what flows between them, and the feedback loop.
+    """
+    from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+
+    FILL = {"client": "#E3F2FD", "api": "#FFF3E0",
+            "pipe": "#F1F8E9", "data": "#F3E5F5"}
+    EDGE = {"client": "#1565C0", "api": "#E65100",
+            "pipe": "#33691E", "data": "#6A1B9A"}
+
+    layers = [
+        ("client", "CLIENT", "React single-page application"),
+        ("api", "APPLICATION AND API", "FastAPI"),
+        ("pipe", "PROCESSING AND AI PIPELINE", "background workers, 7 stages"),
+        ("data", "DATA", "object storage and annotation store"),
+    ]
+    arrows = ["HTTPS, REST / JSON",
+              "dispatch processing job",
+              "persist features and events  /  read for review"]
+
+    H, GAP = 9.0, 7.0
+    total = len(layers) * H + (len(layers) - 1) * GAP
+
+    fig, ax = plt.subplots(figsize=(8.6, 0.105 * total + 0.9))
+    ax.set_xlim(0, 11.6); ax.set_ylim(-1.0, total + 1.0); ax.axis("off")
+
+    y = total
+    spans = []
+    for i, (key, title, sub) in enumerate(layers):
+        ax.add_patch(FancyBboxPatch((0.4, y - H), 8.8, H,
+                                    boxstyle="round,pad=0.25",
+                                    facecolor=FILL[key], edgecolor=EDGE[key],
+                                    linewidth=1.8))
+        ax.text(4.8, y - H / 2 + 1.5, title, fontsize=12, fontweight="bold",
+                color=EDGE[key], ha="center", va="center")
+        ax.text(4.8, y - H / 2 - 1.8, sub, fontsize=9.5, color="#424242",
+                ha="center", va="center", style="italic")
+        spans.append((y, y - H))
+        if i < len(layers) - 1:
+            ax.add_patch(FancyArrowPatch((4.8, y - H), (4.8, y - H - GAP + 0.5),
+                                         arrowstyle="-|>", mutation_scale=18,
+                                         linewidth=1.5, color="#455A64"))
+            ax.text(5.15, y - H - GAP / 2, arrows[i], fontsize=8.5,
+                    style="italic", color="#455A64", va="center")
+        y -= H + GAP
+
+    # The feedback loop stays in the diagram. It is the one thing here that is
+    # structural rather than descriptive: it is what makes the workflow
+    # human-in-the-loop rather than a one-directional pipeline.
+    top = spans[0][1] - 1.5
+    bottom = spans[2][0] - H / 2
+    ax.add_patch(FancyArrowPatch((9.2, top), (9.2, bottom),
+                                 connectionstyle="arc3,rad=-0.30",
+                                 arrowstyle="-|>", mutation_scale=18,
+                                 linewidth=1.8, color="#C62828",
+                                 linestyle=(0, (5, 3))))
+    ax.text(11.0, (top + bottom) / 2,
+            "confirmed corrections re-scope every aggregate",
+            fontsize=9, color="#C62828", rotation=270, va="center", ha="center")
+
+    fig.tight_layout()
+    out = os.path.join(FIG, "fig_architecture_components.png")
+    fig.savefig(out, dpi=DPI); plt.close(fig)
+    print("wrote", os.path.basename(out))
+
+
 if __name__ == "__main__":
+    fig_architecture_components()
     fig_smoothing_sweep()
     fig_framing_vs_coverage()
     fig_touch_signature()
