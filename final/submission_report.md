@@ -272,8 +272,7 @@ that gap.
 ### Users and domain
 
 The target user is a club-level epee fencer or coach with recorded bouts, no analyst and no
-budget. Every automated output is therefore a proposal, and the user's time is the scarce
-resource the system exists to conserve.
+budget. Every automated output is a proposal, and the user's time is the scarce resource.
 
 ### Architecture
 
@@ -283,8 +282,6 @@ the workflow human-in-the-loop: confirmed corrections are written back and re-sc
 aggregate, so the statistics describe the verified record rather than the system's first
 guess.](figures/fig_architecture_components.png)
 
-The diagram shows the layers; the table gives what each contains.
-
 | Layer | Contains |
 |---|---|
 | Client | upload, piste confirmation, frame-accurate player and timeline, the review loop, results |
@@ -293,91 +290,78 @@ The diagram shows the layers; the table gives what each contains.
 | Data | uploaded video, per-frame CSV, job records, annotations |
 
 Two properties matter more than the layering. **Every stage's output is persisted as editable
-data rather than baked into the rendered video**, which is what lets the interface read it back.
-And **the return path is a rescoping rather than a refresh**: confirmed touches bound each
-exchange, so a correction changes which frames contribute to every downstream aggregate, not
-merely which events are listed.
+data rather than baked into the rendered video**, which lets the interface read it back. And
+**the return path is a rescoping rather than a refresh**: confirmed touches bound each exchange,
+so a correction changes which frames contribute to every downstream aggregate, not merely which
+events are listed.
 
-The pipeline stages are invoked as subprocesses rather than imported, for three reasons. The
-heavy work is native code, and YOLO, OpenCV and MediaPipe can fail in ways that end the
-interpreter rather than raise something catchable; in a thread that would take the API and every
-queued job with it, whereas a subprocess failure is an exit code recorded against one job. The
-models cost hundreds of megabytes of resident memory, which a subprocess returns on exit. And
-the pipeline stays a working command line, invoked by exactly the commands that produced the
-figures in this report, so no second code path can disagree with them. Jobs queue at a
-concurrency of one, because detection is CPU-bound.
+Pipeline stages are subprocesses rather than imports. The heavy work is native code, and YOLO,
+OpenCV and MediaPipe can fail in ways that end the interpreter rather than raise something
+catchable; in a thread that takes the API and every queued job with it, whereas a subprocess
+failure is an exit code against one job. The models cost hundreds of megabytes of resident
+memory, which a subprocess returns on exit. And the pipeline stays a working command line,
+invoked by the commands that produced the figures here, so no second code path can disagree.
 
 ### Technology selection
 
-**YOLOv8 with ByteTrack** for detection and tracking, because it is mature, pre-trained on a
-generic person class and bundled with a stable tracker. The `nano` variant runs on a consumer
-CPU; a larger variant substitutes without code changes. **MediaPipe Pose**
-(`pose_landmarker_lite`) for pose, for low setup cost and adequate accuracy on standing humans,
-run on each fencer's crop so the model is given an easier problem constrained to the right
-person. **A hosted large language model** for the written summary, because turning a structured
-payload into readable prose is what such a model does well and the alternative is a template
-system that could not adapt as the payload grows.
+**YOLOv8 with ByteTrack** for detection and tracking, mature, pre-trained on a generic person
+class and bundled with a stable tracker; the `nano` variant runs on a consumer CPU and a larger
+one substitutes without code changes. **MediaPipe Pose** (`pose_landmarker_lite`), run on each
+fencer's crop so the model is given an easier problem constrained to the right person. **A hosted
+large language model** for the written summary, the alternative being a template system that
+could not adapt as the payload grows.
 
-All three are used as pre-trained components. No model is trained or fine-tuned, which is a
-deliberate scope decision: no annotated fencing dataset exists at the scale training would
-require, and building one is a larger project than this. The contribution is the orchestration
-and the workflow around it, not model development.
+All three are used pre-trained. No model is trained or fine-tuned: no annotated fencing dataset
+exists at the scale training requires, and building one is a larger project than this. The
+contribution is the orchestration, not model development.
 
 ### The assisted-annotation workflow
 
-Four user actions carry the design. Each operates at the level a user already thinks about a
-bout, and repairs many frames of derived data in one interaction.
+Four user actions carry the design, each operating at the level a user already thinks about a
+bout and repairing many frames of derived data in one interaction: **confirm or correct a
+proposed touch**, accepting, retiming, attributing or rejecting it; **add a touch the system
+missed**; **mark a segment tracking-unreliable**, excluding it from aggregates while the raw data
+is kept; and **re-anchor a slot** by clicking the correct fencer.
 
-1. **Confirm or correct a proposed touch.** A proposal can be accepted, retimed, attributed or
-   rejected. Confirmed touches also establish the boundaries of each exchange, so resets and
-   walkbacks are excluded from every aggregate. Those are precisely the periods in which the
-   referee enters frame, so confirming touches removes most bystander-contaminated data without
-   the user thinking about tracking at all.
-2. **Add a touch the system missed.**
-3. **Mark a segment tracking-unreliable**, excluding it from aggregates while the raw data is
-   kept.
-4. **Re-anchor a slot**, by clicking the correct fencer at a frame where tracking is wrong.
+The first carries structural weight beyond the touch record. Confirmed touches bound each
+exchange, so resets and walkbacks are excluded from every aggregate, and those are precisely the
+periods in which the referee enters frame. One domain-level act therefore removes most
+bystander-contaminated data without the user thinking about tracking at all.
 
 ### Touch detection: why one signal cannot work
 
 The obvious signal is the scoring machine's buzzer, and Mo (2022) validates audio as a fencing
-cue. Audio alone is insufficient for three reasons specific to how fencing is filmed and
-practised: at a competition several bouts run within earshot and the microphone cannot tell
-which machine fired; fencers test blades against the floor or a guard, which registers on the
-machine identically; and parries and beats produce metallic transients resembling a short
-buzzer. The design therefore scores each candidate on several features, each included because
-it discriminates a specific false positive, which is the test a feature must pass to earn its
-place.
+cue. Audio alone is insufficient for reasons specific to how fencing is filmed: several bouts run
+within earshot at a competition and the microphone cannot tell which machine fired; fencers test
+blades against the floor, which registers identically; and parries produce metallic transients
+resembling a short buzzer. Each candidate is therefore scored on several features, each included
+because it discriminates a specific false positive.
 
-Because the design only needs to *propose* candidates for confirmation, recall matters
-considerably more than precision, and a permissive detector with a confidence score is
-preferable to a strict one. This is a materially easier target than Mo (2022), whose system
-decides which fencer scored. Double touches are an attribution problem rather than a detection
-one: in epee both fencers score if they land within the lockout interval, the event is detected
-identically, and assignment is already the user's responsibility.
+Because the design only needs to *propose* candidates, recall matters more than precision, a
+materially easier target than Mo (2022), whose system decides which fencer scored. Double touches
+are an attribution problem rather than a detection one: both fencers score within the lockout
+interval, the event is detected identically, and assignment is already the user's
+responsibility.
 
 ### A capability hierarchy, and the annulment argument
 
-Available signals differ systematically by footage type, so the design degrades in tiers rather
-than failing. Tier 1 is a score change, from a broadcast overlay or venue machine, giving both
-timing and attribution. Tier 2 is a buzzer with geometric corroboration. Tier 3 is geometry
-alone, for club footage with no visible machine and no usable audio. Reporting per tier is more
-honest than a single number averaging over footage that offers categorically different
-information.
+Available signals differ by footage type, so the design degrades in tiers rather than failing.
+Tier 1 is a score change, from a broadcast overlay or venue machine, giving timing and
+attribution. Tier 2 is a buzzer with geometric corroboration. Tier 3 is geometry alone, for club
+footage with no visible machine and no usable audio. Reporting per tier is more honest than a
+single number averaging over categorically different information.
 
 Tier 1 is not merely the most convenient signal but the only one reflecting the referee's
 decision. A scoring machine registers a valid electrical contact; a score display registers an
 awarded point. These differ whenever a referee annuls a touch, for corps-a-corps, for covering
-target, or for any other non-valid action.
+target, or any other non-valid action.
 
-This yields a stronger justification for the assisted design than the one the literature gives.
-That argument rests on models being unreliable, which invites the reply that better models
-would remove the need for user involvement. The annulment case is not of that kind. When a
-referee annuls a touch, the hit occurred, the machine fired, and no point was awarded: **the
-information distinguishing those outcomes is absent from the video and audio entirely.** It is
-a refereeing judgement, not a physical event, and no model of any quality can recover it from
-the recording. The touch detector therefore cannot be correct in principle, only useful. That
-is not a limitation to apologise for; it is the reason the system is designed as an assistant.
+This justifies the assisted design more strongly than the literature does. That argument rests on
+models being unreliable, which invites the reply that better models would remove the need for the
+user. The annulment case is not of that kind. When a referee annuls a touch, the hit occurred,
+the machine fired, and no point was awarded: **the information distinguishing those outcomes is
+absent from the recording entirely.** It is a refereeing judgement, not a physical event, and no
+model can recover it. The detector therefore cannot be correct in principle, only useful.
 
 ### Piste regions are measured, not drawn
 
@@ -386,78 +370,99 @@ This matters because the matcher's gates depend on slot history, so on the first
 accept whatever the detector returns; filtering first means a bystander cannot become a slot's
 initial anchor and then be defended by the gates thereafter.
 
-The region is derived from the footage by sampling frames and clustering where feet actually
-fall, then shown for confirmation, rather than drawn by hand: a polygon placed by eye raised the
-headline coverage figure while quadrupling the count of physically impossible distance readings.
-The user is still asked, because the measurement assumes the two people standing closest
-together at the same depth are the fencers, and a person spots the exception instantly.
+The region is derived by sampling frames and clustering where feet actually fall, then shown for
+confirmation, rather than drawn by hand: a polygon placed by eye raised headline coverage while
+quadrupling physically impossible distance readings. The user is still asked, because the
+measurement assumes the two people closest together at the same depth are the fencers.
 
-### Evaluation plan
+### Evaluation strategy
 
-The system is evaluated in three ways. Touch detection and attribution are scored against
-hand-labelled ground truth, with clips held back from tuning. Tracking is judged by coverage
-and by side swaps, a direct signature of identity failure rather than a proxy. The effort claim
-is measured by timing an assisted review pass against a manual one in the same interface. A
-user study with several participants would measure effort properly and is treated as further
-work; the built-in timing is the cheaper instrument that needs no participants.
+The template proposes evaluating such a system by accuracy against ground truth and by user
+feedback. Both are adopted, but neither is sufficient, and the strategy departs from them in
+three ways the results chapter justifies.
+
+**Held-back data rather than accuracy alone.** An accuracy figure quoted on the data a system was
+tuned on measures fit, not capability. Clips are therefore withheld, and the operating point
+fixed on one applied unchanged to the others. This is the most consequential decision here: it
+exposed the first touch detector, which scored respectably on its own clip and collapsed
+elsewhere. Without it the evaluation would have reported a feature that did not work.
+
+**Signatures of failure rather than proxies for success.** Coverage records whether the tracker
+committed to a detection, not whether it committed to the right person, so a confident wrong
+answer raises it. The strategy adds a measure that can only indicate failure: two fencers do not
+cross on a piste, so a sign change in their relative position is a tracking error, not a fencing
+event. It needs no threshold and cannot be improved by being wrong more confidently. Evaluation is
+anchored where possible to a constraint the sport imposes rather than a number the system
+produces.
+
+**Resolution as well as correctness.** A metric can be correctly derived and still incapable of
+distinguishing anything. Each movement metric is therefore tested for what it could detect, by
+block resampling for intervals and by running the same machinery against synthetic series with
+known biases, so a null result is readable rather than merely absent. This strand the template
+does not suggest, and it is where the methodological contribution sits.
+
+**The effort claim** is measured by timing an assisted pass against a manual one in the same
+interface. A user study would measure it better and is further work; this is what can be done
+without participants.
+
+Three limits are acknowledged in advance rather than discovered: the set is small and
+single-labelled; there is no frame-level tracking ground truth, so the tracking strand measures
+commitment rather than correctness; and the effort measurement, on the author alone, is an
+illustration rather than a population estimate.
 
 ### Methodology and risk
 
-Development proceeds in two-week iterations, each producing demonstrable output, with commits
-made at green-test states and messages recording what was measured. AI components are de-risked
-first, so feasibility is established before the interface is built. The principal risks are
-model performance on real footage, mitigated by the assisted workflow and graceful fallbacks;
-scope creep, mitigated by an explicit separation between current scope and further work; and
-compute cost, mitigated by frame-stride throttling on the pose stage.
+Development proceeds in two-week iterations, each producing demonstrable output, with commits at
+green-test states. AI components are de-risked first, so feasibility is established before the
+interface is built. The principal risks are model performance on real footage, mitigated by the
+assisted workflow and fallbacks; scope creep, mitigated by separating current scope from further
+work; and compute cost, mitigated by frame-stride throttling on pose.
 
 ### Inclusive design
 
 Inclusive design is broader than usability and accessibility. It asks who a system excludes and
 why, and the answer is rarely that a person lacked some capacity: exclusion is produced by
-processes and structures that settled on a narrow default through convenience or habit. That
-radical-inclusion position locates the barrier in the environment rather than the user, and asks
-that inclusivity be present from the start rather than added at the end.
+processes that settled on a narrow default through convenience or habit. That radical-inclusion
+position locates the barrier in the environment rather than the user, and asks that inclusivity
+be present from the start.
 
-**Who this excludes.** Para fencers, completely and not incidentally. Wheelchair fencing is
-fenced from frames fixed to the floor: no footwork, no closing and opening of distance by the
-feet, no lunge in the sense the pose features model. Every measurement rests on those. Pointed
-at a Para bout the system would not fail visibly, which is worse: a distance series that barely
-moves, no proposed touches, a profile at parity. **Confident nonsense on a population it was
-never designed for is a worse exclusion than a refusal.**
+**Who this excludes.** Para fencers, completely and not incidentally. Wheelchair fencing is fenced
+from frames fixed to the floor: no footwork, no closing of distance by the feet, no lunge in the
+sense the pose features model, and every measurement rests on those. Pointed at a Para bout the
+system would not fail visibly, which is worse: a flat distance series, no proposed touches, a
+profile at parity. **Confident nonsense on a population it was never designed for is a worse
+exclusion than a refusal.**
 
 **What was done about it.** The system now refuses: if neither fencer's position varies by more
-than 0.25 m across a bout, the per-fencer axes are withheld and the reason given. The threshold
-comes from the four evaluation clips, whose smallest spread is 0.66 m, so it sits well below real
-foot fencing and well above jitter. It is calibrated from one side only, no wheelchair
-footage being available, and is marked provisional. This does not make the system
-inclusive; it makes it honest about the boundary of what it measures.
+than 0.25 m, the per-fencer axes are withheld and the reason given. The threshold comes from the
+four clips, whose smallest spread is 0.66 m, and is calibrated from one side only, no wheelchair
+footage being available. This does not make the system inclusive; it makes it honest about the
+boundary of what it measures.
 
-**A population assumption is baked into every distance figure.** The pixel-to-metre scale
-assumes a fencer height of 1.75 m, a men's senior average, applied to every bout regardless of
-who is fencing. On a women's or junior bout, or between fencers of markedly different heights,
-every distance is wrong by the ratio of true height to assumed. The error is invisible because it
-scales everything consistently, so the numbers stay plausible. A default chosen for convenience
-became a structural exclusion, and it went unnoticed until the project was examined this way.
+**A population assumption is baked into every distance figure.** The pixel-to-metre scale assumes
+a fencer height of 1.75 m, a men's senior average, applied to every bout. On a women's or junior
+bout every distance is wrong by the ratio of true height to assumed, invisibly, because it scales
+everything consistently. A default chosen for convenience became a structural exclusion, unnoticed
+until the project was examined this way.
 
-**Data provenance and bias.** The three models were selected for availability, itself a bias.
-YOLOv8's person class comes from COCO, a convenience-collected web dataset the project neither
-audited nor controls; the documented failure of facial-analysis systems trained on predominantly
-pale-skinned cohorts is the standing example of the risk, and nothing here establishes the
-detection stage is free of an analogous skew. The evaluation set compounds it: four clips, three
-elite, all labelled by the system's own author.
+**Data provenance and bias.** The models were selected for availability, itself a bias. YOLOv8's
+person class comes from COCO, a convenience-collected web dataset the project neither audited nor
+controls; the documented failure of facial-analysis systems trained on predominantly pale-skinned
+cohorts is the standing example, and nothing here establishes the detection stage is free of an
+analogous skew. The evaluation set compounds it: four clips, three elite, all labelled by the
+author.
 
 **What the design gets right, though neither was motivated by inclusion.** The review loop is
 keyboard-driven, every decision one key, removing the precise pointing a scrubbing interface
-demands. And colour is never the only carrier of meaning: the fencers are blue and amber, a pair
-surviving the common red-green confusions, but each is also labelled and positioned
-consistently, and every state shown as a colour is also a word. Both were arrived at for
-legibility, which is exactly the point radical inclusion makes about process: getting somewhere
-by accident is not a method.
+demands. And colour is never the only carrier of meaning: the fencers are blue and amber, which
+survives the common red-green confusions, but each is also labelled and positioned consistently,
+and every state shown as a colour is also a word. Both were arrived at for legibility, which is
+the point radical inclusion makes about process: getting somewhere by accident is not a method.
 
 **What was not done.** No disabled user was consulted, no assistive technology tested, no
-stakeholder outside the author's own club involved. The participatory element inclusive design
-asks for is absent. The stated user, a club fencer with no analyst and no budget, is an economic
-widening of access rather than an inclusive one, and the two should not be conflated.
+stakeholder outside the author's own club involved. The participatory element is absent. The
+stated user, a club fencer with no budget, is an economic widening of access rather than an
+inclusive one, and the two should not be conflated.
 
 ### Ethics
 
