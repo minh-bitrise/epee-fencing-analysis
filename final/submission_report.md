@@ -249,21 +249,44 @@ interpretation stays with the user.
 
 ### 2.7 Synthesis
 
-The literature establishes three points. Deep-learning video analysis is the appropriate
-foundation (Rangasamy et al., 2020), and pose in particular is informative for fine-grained
-sports actions (Hong et al., 2021). The techniques most relevant to fencing are powerful but
-unreliable on unconstrained footage (Vahdani and Tian, 2021; Hong et al., 2021), which makes
-fully automatic analysis an unsuitable goal. And both the human-in-the-loop literature
-(Mosqueira-Rey et al., 2023) and the limitations of existing systems point toward an assisted
-approach combining automated suggestion with human verification.
+**An apparent contradiction, and its resolution.** Vahdani and Tian hold that temporal action
+detection is unsolved on realistic footage, while Mo reports 89 to 90 per cent accuracy on a
+harder fencing task than this project attempts. Taken at face value these conflict. They do not,
+and the reconciliation determines this project's design. Mo's conditions are precisely those the
+survey identifies as what supervised methods require: roughly 4,000 clips of international
+competition, captured under fixed cameras with consistent framing. The survey's pessimism is
+about footage without those properties. Mo therefore does not refute the survey; he satisfies its
+preconditions, and in doing so demonstrates that the binding constraint is data and capture
+conditions rather than technique.
 
-The application occupies the gap left by prior work, bringing AI assistance to a
-fencing-specific, club-accessible niche while adopting the human-in-the-loop stance the
-technical literature implies is necessary. One limitation of this review should be
-acknowledged: the fencing-specific literature is thin, resting substantially on a single system
-(Mo, 2022), so several arguments transfer findings from adjacent sports rather than resting on
-fencing-specific evidence. Chapter 5 provides a small amount of direct fencing evidence against
-that gap.
+**A dependency running through three of the four works.** Mo's system rests on pose, and Hong et
+al. establish that pose estimators degrade under motion blur, occlusion and domain shift, which
+are exactly the conditions elite capture minimises and club capture does not. Mo's result is
+therefore conditioned on the circumstances that suppress the failure Hong et al. document. The
+same architecture on single-camera club footage inherits a weaker signal, and the literature
+offers no evidence about how much weaker. This project's own measurements supply a little:
+pose succeeded on roughly a third of tracked frames, failing most in the clinches Hong et al.
+name.
+
+**Where that leaves the design.** If automation in this domain is conditioned on data and capture
+this project does not have, the useful question is not how to approach Mo's accuracy but how to
+be useful without his conditions. Mosqueira-Rey et al. answer it by making human correction a
+designed component rather than a fallback, and by supplying the evaluation criteria that follow,
+namely effort saved and interactions needed to repair an error rather than accuracy alone. The
+four works therefore form an argument rather than a list: the method is available, its
+performance is conditioned on data quality, the conditions do not hold here, and a
+human-in-the-loop design is the response.
+
+**Two critical reservations.** First, the fencing-specific literature is thin, resting
+substantially on one system, so several arguments here transfer from adjacent sports rather than
+resting on fencing evidence. Second, and more sharply, following the literature was itself a
+source of error. Mo's validation of audio as a cue was adopted and the resulting detector failed
+on held-back footage, because the finding was conditioned on capture quality that the paper had
+no reason to foreground. **Background work supplies methods together with the circumstances that
+produced them, and a review reporting the method without the circumstances invites exactly that
+mistake.** Chapter 5 records the cost, which was one labelling session, and the practice adopted
+in response, which is that no claim from the literature is carried into the design without being
+tested on held-back footage of the kind the system will actually meet.
 
 ---
 
@@ -483,70 +506,65 @@ the changes of direction carry most of the evidence.
 
 ### Pipeline
 
-Per frame: YOLOv8 (`yolov8n.pt`) runs with ByteTrack, filtered to the person class; detections
-are filtered by the piste region; a custom `FencerTracker` assigns them to two persistent slots;
-MediaPipe `pose_landmarker_lite` runs on each slot's crop; distance is measured front-foot to
-front-foot where pose is available and bottom-of-box to bottom-of-box otherwise, normalised to
-metres by mean bounding-box height against an assumed 1.75 m fencer; and a CSV row and an
-annotated frame are written. Pose runs every third frame, which trades sample frequency for a
-roughly threefold reduction in wall-clock time.
+Per frame: YOLOv8 runs with ByteTrack filtered to the person class; detections are filtered by
+the piste region; a custom `FencerTracker` assigns them to two persistent slots; MediaPipe runs
+on each slot's crop; distance is measured front-foot to front-foot where pose is available and
+bottom-of-box otherwise, normalised to metres by mean bounding-box height against an assumed
+1.75 m fencer. Pose runs every third frame, trading sample frequency for a roughly threefold
+reduction in wall-clock time.
 
-Front foot to front foot rather than centre to centre because arm and weapon extension distort
-a bounding box in a way unrelated to where the body is, and because the gap between front feet
-is what coaches mean by distance. The metre scale is approximate, sensitive to camera angle and
-to actual heights, and is reported as an estimate; it is consistent enough for comparison
-within a bout, which is the main use.
+Front foot to front foot rather than centre to centre because arm and weapon extension distort a
+bounding box in a way unrelated to where the body is, and because the gap between front feet is
+what coaches mean by distance. The metre scale is approximate and reported as an estimate,
+consistent enough for comparison within a bout.
 
 ### Identity tracking, in four iterations
 
 The first version locked onto the two highest-confidence ByteTrack IDs and accepted only those
-IDs thereafter. This was robust against bystanders and extremely fragile to ID reassignment,
-losing both fencers for over 95 per cent of frames in a three-minute clip.
+thereafter: robust against bystanders, extremely fragile to ID reassignment, losing both fencers
+for over 95 per cent of frames.
 
-The second replaced strict IDs with **spatial continuity**: assignments to slots minimise total
-movement from each slot's last known position. Coverage recovered to near-complete, but the
-matcher would accept any bystander who happened to be the second most confident detection.
+The second replaced strict IDs with **spatial continuity**, assignments minimising total movement
+from each slot's last known position. Coverage recovered, but the matcher accepted any bystander
+who happened to be the second most confident detection.
 
 The third added two **gates**, rejecting candidates too far from a slot's last centre or too
 different in height. Set strictly these dropped coverage to about 55 per cent by rejecting
 legitimate motion; relaxed, they gave about 82 per cent while filtering obvious bystanders, and
-cut maximum observed inter-fencer distance from 11.27 m to 6.60 m, confirming they were
-excluding exactly the wrong-target outliers inflating the estimate.
+cut maximum observed inter-fencer distance from 11.27 m to 6.60 m, confirming they excluded the
+wrong-target outliers inflating the estimate.
 
 The fourth added the piste filter and a **constant-velocity motion model**. The motivating case
-is a referee walking into the position a fencer occupied a moment ago: under position-only
-gating that is an excellent match, because the gate asks only whether the candidate is near
-where the slot last was; under prediction-based gating it is a poor one, because the fencer was
-moving and the referee is not where that motion leads. The predicted position anchors both the
-gate and the assignment cost, so one change improves both rejection and allocation. Two guards
-proved necessary after the first version failed on footage: velocity is estimated only from
-commits within three frames of each other, since differencing positions further apart measures
-displacement over the gap and extrapolates far outside the frame; and a slot unmatched for
-thirty frames discards its history, because a slot whose stale history rejects every candidate
-can otherwise never recover.
+is a referee walking into the position a fencer occupied a moment ago: under position-only gating
+that is an excellent match, since the gate asks only whether the candidate is near where the slot
+last was; under prediction-based gating it is poor, because the fencer was moving and the referee
+is not where that motion leads. The predicted position anchors both the gate and the assignment
+cost, so one change improves rejection and allocation together. Two guards proved necessary after
+the first version failed on footage: velocity is estimated only from commits within three frames
+of each other, since differencing positions further apart measures displacement over the gap; and
+a slot unmatched for thirty frames discards its history, because one whose stale history rejects
+every candidate can otherwise never recover.
 
 Chapter 5 reports a fifth change, to candidate selection, which turned out to be the cause of
 both documented failure modes.
 
 ### Attribution and lunge proposals
 
-`detect_scorer.py` reads the piste-side scoring machine's lamps. Lamps rather than a score
-overlay, because broadcasts usually carry both but club footage carries only the machine, and
-the club case is the target user. Whole-frame saturated-colour counts rather than a region
-around the machine, because club footage is hand-held and follows the action, so the machine
-drifts across the frame and out of it and a fixed region is empty much of the time. A local
-baseline taken two to three seconds earlier removes what is permanently red in shot, which on
-these clips means an exit sign, sponsor banners and the piste itself. It is never permitted to
-propose touches, only to attribute ones already found: the lamps fire whenever the circuit
-closes, including when fencers test weapons just after a touch, and taking touch times as given
-removes that entire failure class rather than filtering it. This is classical colour
-thresholding and adds no fourth pre-trained model.
+`detect_scorer.py` reads the scoring machine's lamps. Lamps rather than a score overlay, because
+broadcasts carry both but club footage carries only the machine. Whole-frame saturated-colour
+counts rather than a region around the machine, because club footage is hand-held and follows the
+action, so the machine drifts out of frame and a fixed region is empty much of the time. A local
+baseline two to three seconds earlier removes what is permanently red in shot: an exit sign,
+sponsor banners, the piste. It is never permitted to propose touches, only to attribute ones
+already found, since the lamps fire whenever the circuit closes, including when fencers test
+weapons just after a touch. Taking touch times as given removes that failure class rather than
+filtering it. This is classical colour thresholding and adds no fourth model.
 
 `detect_lunges.py` proposes lunges from the ratio of ankle separation to hip height, calibrated
-on the first five lunges the user has confirmed on the bout being watched. It does not attempt
-to transfer a threshold between bouts, because Chapter 5 shows transfer is the thing that does
-not work. Calibrating from confirmed labels reuses the interactive-correction mechanism the
-design already depends on rather than adding a demand on the user.
+on the first five the user confirms on the bout being watched. It does not transfer a threshold
+between bouts, because Chapter 5 shows transfer is what fails. Calibrating from confirmed labels
+reuses the correction mechanism the design already depends on rather than adding a demand on the
+user.
 
 ### The language model, and the constraints placed on it
 
@@ -557,16 +575,13 @@ in a structured prompt, and calls a hosted large-language-model API. Output is c
 fixed structure of a summary paragraph, observed-tendency bullets each tied to a concrete
 number, suggestions to explore, and a data-caveats paragraph.
 
-Two design points matter more than the integration. First, the prompt carries explicit
-**honesty constraints**: the model is told that distances are estimates, that aggregates are
-scoped by the user's confirmed touches, that cumulative movement totals are withdrawn, and that
-it must never invent touches, scores or events absent from the data. This addresses the known
-risk of fabricated plausible specifics, and it mirrors the project-wide stance of stating
-measurement limits rather than glossing them. Second, generation is **never automatic and is
-cached**: a hash of the model identity and both prompts is stored alongside the output and the
-call is skipped when nothing has changed, so re-running the stage does not re-bill. The user
-presses a button; what the application layer changed is only that they no longer type a
-command.
+Two design points matter more than the integration. The prompt carries explicit **honesty
+constraints**: the model is told that distances are estimates, that aggregates are scoped by
+confirmed touches, that cumulative movement totals are withdrawn, and that it must never invent
+touches, scores or events absent from the data. This addresses the known risk of fabricated
+plausible specifics. And generation is **never automatic and is cached**: a hash of the model
+identity and both prompts is stored alongside the output and the call skipped when nothing has
+changed, so re-running does not re-bill.
 
 The summaries are constrained by what the pipeline can honestly supply rather than by the
 model. They grow as the payload does, since the architecture is unchanged as confirmed touches,
