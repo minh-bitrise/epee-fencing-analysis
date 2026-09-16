@@ -424,3 +424,23 @@ def test_pace_would_duplicate_the_scoring_share_axis():
     rows = [{"time_s": str(t_), "distance_smooth_m": "2.0"} for t_ in range(30)]
     share = fp.touch_axes(rows, t)[1]["scoring_share_pct"]
     assert as_axis == share
+
+
+def test_pace_reports_an_unknown_split_as_absent_not_zero():
+    """Twelve touches with no scorer recorded is not two fencers who scored
+    nothing. results_after:fencing_clip3 is exactly this bout, and the first
+    version reported 0.00 and 0.00 per fencer beside a bout rate of 4.00."""
+    t = [{"time_s": i * 10} for i in range(12)]
+    p = fp.pace(t, 180.0)
+    assert p["per_min"] == 4.0
+    assert p["fencer_1_per_min"] is None
+    assert p["fencer_2_per_min"] is None
+    assert p["unattributed"] == 12
+
+
+def test_pace_keeps_a_real_zero_for_a_fencer_who_was_outscored():
+    """A zero beside a non-zero figure IS a measurement and must not be hidden."""
+    t = [{"time_s": 10, "scorer": "left"}, {"time_s": 20, "scorer": "left"}]
+    p = fp.pace(t, 60.0)
+    assert p["fencer_1_per_min"] == 2.0
+    assert p["fencer_2_per_min"] == 0.0

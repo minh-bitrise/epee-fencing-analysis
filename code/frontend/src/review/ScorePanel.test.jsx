@@ -111,4 +111,16 @@ describe('ScorePanel', () => {
     render(<ScorePanel score={score()} pace={{ available: false, reason: 'x' }} />)
     expect(screen.queryByText(/per minute/)).not.toBeInTheDocument()
   })
+
+  it('says the split is unknown rather than printing zero twice', () => {
+    // results_after:fencing_clip3 is this bout: twelve touches, none with a
+    // recorded scorer. "0.00 and 0.00 per fencer" reads as two fencers who
+    // scored nothing, which is the one reading the data cannot support.
+    render(<ScorePanel score={score()} pace={{
+      available: true, duration_s: 180.0, touches: 12, per_min: 4.0,
+      fencer_1_per_min: null, fencer_2_per_min: null, unattributed: 12,
+    }} />)
+    expect(screen.getByText('4.00')).toBeInTheDocument()
+    expect(screen.getByText(/split between the two fencers is not known/)).toBeInTheDocument()
+  })
 })

@@ -257,9 +257,20 @@ def _bout_label(bout_id):
 
 @app.get("/api/bouts")
 def list_bouts():
-    """Processed bouts available for review, with review progress for each."""
+    """Processed bouts available for review, with review progress for each.
+
+    ORDER IS DISCOVERY ORDER, NOT ALPHABETICAL. RESULTS_DIRS is ordered
+    deliberately, results_current first because it is the reference set, and
+    discover_bouts walks it in that order. Sorting here threw that away: the
+    interface opens on the first bout that has both touches and a video, and
+    alphabetically that is `results_ablation:ablation_180p`, a deliberately
+    degraded 180p clip kept only so the resolution ablation stays openable. The
+    application opened on its own worst artefact, with an overlay too coarse to
+    read, and nothing in the test suite noticed because every test asks whether
+    a bout is reachable and all of them were.
+    """
     out = []
-    for bout_id, b in sorted(_bouts().items()):
+    for bout_id, b in _bouts().items():
         proposed = load_proposed_touches(b.touches_csv)
         out.append({
             "bout_id": bout_id,

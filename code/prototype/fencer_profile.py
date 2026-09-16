@@ -376,16 +376,23 @@ def pace(touches, duration_s):
            "duration_s": round(duration_s, 1),
            "touches": len(touches),
            "per_min": round(len(touches) / minutes, 2)}
-    doubles = sum(1 for t in touches if t.get("scorer") == "double")
+    attributed = [t for t in touches
+                  if t.get("scorer") in ("left", "right", "double")]
+    doubles = sum(1 for t in attributed if t.get("scorer") == "double")
     for slot, side in ((1, "left"), (2, "right")):
-        credited = sum(1 for t in touches if t.get("scorer") == side) + 0.5 * doubles
-        out[f"fencer_{slot}_per_min"] = round(credited / minutes, 2)
+        credited = sum(1 for t in attributed if t.get("scorer") == side) + 0.5 * doubles
+        # No scorer recorded anywhere means the split is UNKNOWN, not zero each.
+        # A bout of twelve touches reported as 0.00 and 0.00 per fencer reads as
+        # two fencers who scored nothing, which is the one reading the data
+        # cannot support. A real 0.00 beside a non-zero figure is different: that
+        # is a fencer who was outscored, and it stays.
+        out[f"fencer_{slot}_per_min"] = (round(credited / minutes, 2)
+                                         if attributed else None)
     # Touches with no scorer recorded are counted in the bout rate and in
     # neither fencer's, so the two per-fencer rates need not sum to the bout
     # rate. Reporting them as if they did would attribute a touch nobody
     # confirmed the winner of.
-    out["unattributed"] = len(touches) - sum(
-        1 for t in touches if t.get("scorer") in ("left", "right", "double"))
+    out["unattributed"] = len(touches) - len(attributed)
     return out
 
 

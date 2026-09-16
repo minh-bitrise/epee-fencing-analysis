@@ -356,6 +356,29 @@ class TestMetricsEndpoint:
         for wanted in ("results_current", "results_fixed", "results_pose"):
             assert wanted in names
 
+    def test_the_endpoint_keeps_that_order_rather_than_sorting(self, tmp_path, monkeypatch):
+        """
+        The order above is only worth having if it survives to the client. It did
+        not: /api/bouts sorted alphabetically, so the interface opened on
+        `results_ablation:ablation_180p`, the deliberately degraded clip kept so
+        the resolution ablation stays openable. Asserting the constant was first
+        passed while the application opened on its own worst artefact.
+        """
+        import app as app_module
+        ref, abl = tmp_path / "results_current", tmp_path / "results_ablation"
+        for d, base in ((ref, "fencing_clip3"), (abl, "ablation_180p")):
+            d.mkdir()
+            (d / f"{base}_distance.csv").write_text(
+                "frame,time_s,distance_raw_m,distance_smooth_m,method\n"
+                "0,0.0,2.0,2.0,pose\n")
+        # Alphabetically results_ablation comes first; by intent it comes last.
+        monkeypatch.setattr(app_module, "RESULTS_DIRS", [str(ref), str(abl)])
+        monkeypatch.setattr(app_module, "store",
+                            AnnotationStore(str(tmp_path / "ann_order")))
+        app_module._bouts_cache["key"] = None
+        ids = [b["bout_id"] for b in app_module.list_bouts()["bouts"]]
+        assert ids[0].startswith("results_current:")
+
 
 # -------------------- lunge labelling --------------------
 

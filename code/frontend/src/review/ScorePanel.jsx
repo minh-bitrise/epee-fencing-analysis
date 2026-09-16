@@ -68,10 +68,19 @@ export default function ScorePanel({ score, zones, pace }) {
           <div className="stat"><span>touches per minute</span>
             <b>{pace.per_min.toFixed(2)}</b></div>
           <div className="mini">
-            {pace.fencer_1_per_min.toFixed(2)} and {pace.fencer_2_per_min.toFixed(2)}
-            {' '}per fencer, doubles counted half to each.
-            {pace.unattributed > 0 && ' The two do not sum to the bout rate because'
-              + ' a touch with no scorer is counted in neither.'}
+            {/* A null split is not a zero one. With no scorer recorded anywhere
+                the per-fencer rates are unknown, and printing 0.00 twice would
+                read as two fencers who scored nothing. */}
+            {pace.fencer_1_per_min == null || pace.fencer_2_per_min == null
+              ? 'No scorer recorded on any touch, so the split between the two '
+                + 'fencers is not known.'
+              : <>
+                  {pace.fencer_1_per_min.toFixed(2)} and{' '}
+                  {pace.fencer_2_per_min.toFixed(2)} per fencer, doubles counted
+                  half to each.
+                  {pace.unattributed > 0 && ' The two do not sum to the bout rate'
+                    + ' because a touch with no scorer is counted in neither.'}
+                </>}
           </div>
         </>
       )}
