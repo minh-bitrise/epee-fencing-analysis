@@ -9,12 +9,20 @@ import Disclosure from './Disclosure.jsx'
  * not follow still has a score, and suppressing it would be withholding
  * something the system did not get wrong.
  *
+ * WHY PACE IS HERE AND NOT ON THE RADAR. Touches per minute is derived from
+ * the same confirmed list, so it belongs on the same side of that line. It is
+ * deliberately not a radar axis: both fencers are divided by the same bout
+ * duration, so scoring a rate against the other fencer would reproduce the
+ * scoring-share axis exactly, and a radar with the same number twice reads as
+ * better evidenced than it is. As an absolute figure it says what share cannot,
+ * which is whether this was a bout of fourteen touches or of three.
+ *
  * WHY LEAD CHANGES AND TIME LEADING. A 5-4 bout that one fencer led throughout
  * and a 5-4 bout that changed hands four times are the same scoreline and
  * different bouts, and the second is the one worth talking about. The final
  * score cannot tell them apart and these two numbers can.
  */
-export default function ScorePanel({ score, zones }) {
+export default function ScorePanel({ score, zones, pace }) {
   if (!score) return null
   if (!score.available) {
     return <div className="mini">{score.reason}.</div>
@@ -54,6 +62,19 @@ export default function ScorePanel({ score, zones }) {
 
       <div className="stat"><span>lead changes</span>
         <b>{score.lead_changes}</b></div>
+
+      {pace?.available && (
+        <>
+          <div className="stat"><span>touches per minute</span>
+            <b>{pace.per_min.toFixed(2)}</b></div>
+          <div className="mini">
+            {pace.fencer_1_per_min.toFixed(2)} and {pace.fencer_2_per_min.toFixed(2)}
+            {' '}per fencer, doubles counted half to each.
+            {pace.unattributed > 0 && ' The two do not sum to the bout rate because'
+              + ' a touch with no scorer is counted in neither.'}
+          </div>
+        </>
+      )}
 
       {score.unattributed > 0 && (
         <div className="note">

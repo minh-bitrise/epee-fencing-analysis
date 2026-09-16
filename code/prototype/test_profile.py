@@ -371,3 +371,56 @@ class TestFootworkRefusal:
             assert fp.footwork_range(p1, p2) > fp.MIN_FOOTWORK_IQR_M * 2, path
         if seen == 0:
             pytest.skip("evaluation footage not present in this checkout")
+
+
+# --- pace ---------------------------------------------------------------
+
+def test_pace_counts_doubles_half_to_each():
+    t = [{"time_s": 10, "scorer": "left"},
+         {"time_s": 20, "scorer": "right"},
+         {"time_s": 30, "scorer": "double"}]
+    p = fp.pace(t, 60.0)
+    assert p["per_min"] == 3.0
+    assert p["fencer_1_per_min"] == 1.5
+    assert p["fencer_2_per_min"] == 1.5
+
+
+def test_pace_does_not_attribute_a_touch_with_no_scorer():
+    """The per-fencer rates need not sum to the bout rate, and must not be made
+    to: splitting an unconfirmed touch would invent an attribution."""
+    t = [{"time_s": 10, "scorer": "left"}, {"time_s": 20}]
+    p = fp.pace(t, 60.0)
+    assert p["per_min"] == 2.0
+    assert p["fencer_1_per_min"] + p["fencer_2_per_min"] == 1.0
+    assert p["unattributed"] == 1
+
+
+def test_pace_is_absent_rather_than_zero_without_touches():
+    assert fp.pace([], 120.0)["available"] is False
+    assert fp.pace([{"time_s": 1, "scorer": "left"}], 0)["available"] is False
+
+
+def test_pace_survives_a_tracking_refusal(tmp_path):
+    """Pace comes from confirmed touches and the clock, not from tracking, so a
+    bout whose per-fencer axes are withheld still has a pace."""
+    rows = bout(n=400, f1=lambda i: 2.0 + 4.0 * (i > 200),
+                f2=lambda i: 6.0 - 4.0 * (i > 200))
+    csv_path = write_csv(tmp_path, rows)
+    touches = [{"time_s": 10, "scorer": "left"}, {"time_s": 12, "scorer": "right"}]
+    res = fp.build(csv_path, touches)
+    assert res["available"] is False
+    assert res["pace"]["available"] is True
+    assert res["pace"]["touches"] == 2
+
+
+def test_pace_would_duplicate_the_scoring_share_axis():
+    """The reason pace is not a seventh axis, asserted rather than left in a
+    comment: within one bout both fencers are divided by the same duration, so
+    scoring a rate as a share of the pair reproduces the existing axis exactly."""
+    t = [{"time_s": 5, "scorer": "left"}, {"time_s": 9, "scorer": "left"},
+         {"time_s": 14, "scorer": "right"}, {"time_s": 20, "scorer": "double"}]
+    p = fp.pace(t, 120.0)
+    as_axis = fp._share(p["fencer_1_per_min"], p["fencer_2_per_min"])
+    rows = [{"time_s": str(t_), "distance_smooth_m": "2.0"} for t_ in range(30)]
+    share = fp.touch_axes(rows, t)[1]["scoring_share_pct"]
+    assert as_axis == share

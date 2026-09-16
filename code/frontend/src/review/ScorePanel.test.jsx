@@ -84,4 +84,31 @@ describe('ScorePanel', () => {
                                 reason: 'no confirmed touches to build a scoreline from' }} />)
     expect(screen.getByText(/no confirmed touches/)).toBeInTheDocument()
   })
+
+  it('shows the bout pace, which the scoreline alone cannot give', () => {
+    // A 5-4 over three minutes and a 5-4 over forty seconds are the same
+    // scoreline and different bouts.
+    render(<ScorePanel score={score()} pace={{
+      available: true, duration_s: 180.0, touches: 18, per_min: 6.0,
+      fencer_1_per_min: 3.0, fencer_2_per_min: 3.0, unattributed: 0,
+    }} />)
+    expect(screen.getByText('6.00')).toBeInTheDocument()
+    expect(screen.getByText(/3.00 and 3.00 per fencer/)).toBeInTheDocument()
+  })
+
+  it('explains why the two fencer rates do not sum to the bout rate', () => {
+    // They only fail to sum when a touch has no confirmed scorer, and a reader
+    // who spots the arithmetic without the explanation will read it as a bug.
+    render(<ScorePanel score={score()} pace={{
+      available: true, duration_s: 60.0, touches: 3, per_min: 3.0,
+      fencer_1_per_min: 1.0, fencer_2_per_min: 1.0, unattributed: 1,
+    }} />)
+    expect(screen.getByText(/counted in neither/)).toBeInTheDocument()
+  })
+
+  it('omits pace entirely when there is none, rather than showing zero', () => {
+    // Zero touches per minute is a rate; no confirmed touches is an absence.
+    render(<ScorePanel score={score()} pace={{ available: false, reason: 'x' }} />)
+    expect(screen.queryByText(/per minute/)).not.toBeInTheDocument()
+  })
 })

@@ -79,7 +79,8 @@ export default function ProfilePanel({ boutId, boutPath, refreshKey,
   if (error) return <div className="note err">{error}</div>
   if (!data) return <div className="mini">Loading.</div>
 
-  if (scoreOnly) return <ScorePanel score={data.score} zones={data.zones} />
+  if (scoreOnly) return <ScorePanel score={data.score} zones={data.zones}
+                                    pace={data.pace} />
 
   if (!data.available) {
     return (
@@ -93,7 +94,7 @@ export default function ProfilePanel({ boutId, boutPath, refreshKey,
         </div>
         {/* The scoreline comes from confirmed touches, not from tracking, so it
             is still valid on a bout whose per-fencer axes are not. */}
-        <ScorePanel score={data.score} />
+        <ScorePanel score={data.score} pace={data.pace} />
       </>
     )
   }

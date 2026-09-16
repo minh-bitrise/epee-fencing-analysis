@@ -348,6 +348,47 @@ def _share(a, b):
     return round(100.0 * a / total, 1)
 
 
+def pace(touches, duration_s):
+    """
+    How often touches were scored, for the bout and for each fencer, per minute.
+
+    WHY THIS IS NOT A SEVENTH AXIS. Every axis scores one fencer as a share of
+    the pair, and within a single bout both fencers are divided by the SAME
+    duration, so a rate axis would reduce to exactly the scoring-share axis
+    already there. Two axes carrying one number is a radar that looks twice as
+    well evidenced as it is. The rate belongs here, as an absolute figure, where
+    it says something share cannot: whether this was a bout of fourteen touches
+    in three minutes or of three.
+
+    WHY IT SITS BESIDE THE SCORELINE RATHER THAN THE AXES. It is derived from
+    the touches the user confirmed and from the recording's length. Nothing in
+    it comes from tracking, so it survives the checks that withhold every
+    per-fencer axis, exactly as the scoreline does.
+
+    Doubles count half to each fencer, as everywhere else in this module.
+    """
+    if not touches or not duration_s:
+        return {"available": False,
+                "reason": ("no confirmed touches to count" if not touches
+                           else "the recording has no measured duration")}
+    minutes = duration_s / 60.0
+    out = {"available": True,
+           "duration_s": round(duration_s, 1),
+           "touches": len(touches),
+           "per_min": round(len(touches) / minutes, 2)}
+    doubles = sum(1 for t in touches if t.get("scorer") == "double")
+    for slot, side in ((1, "left"), (2, "right")):
+        credited = sum(1 for t in touches if t.get("scorer") == side) + 0.5 * doubles
+        out[f"fencer_{slot}_per_min"] = round(credited / minutes, 2)
+    # Touches with no scorer recorded are counted in the bout rate and in
+    # neither fencer's, so the two per-fencer rates need not sum to the bout
+    # rate. Reporting them as if they did would attribute a touch nobody
+    # confirmed the winner of.
+    out["unattributed"] = len(touches) - sum(
+        1 for t in touches if t.get("scorer") in ("left", "right", "double"))
+    return out
+
+
 def build(csv_path, touches, lunges=None, reset_s=None):
     """
     A profile for both fencers, or a refusal explaining why one cannot be drawn.
@@ -366,12 +407,14 @@ def build(csv_path, touches, lunges=None, reset_s=None):
     # the tracker could not follow still has a score, and refusing to show it
     # would be withholding something this system did not get wrong.
     scoreline = score_progression(touches, duration_for_score)
+    bout_pace = pace(touches, duration_for_score)
 
     swaps, left_share, _ = count_side_swaps(rows)
     if swaps > 0:
         return {
             "available": False,
             "score": scoreline,
+            "pace": bout_pace,
             "swaps": swaps,
             "left_share_pct": round(100.0 * left_share, 1) if left_share else None,
             "reason": (
@@ -398,7 +441,7 @@ def build(csv_path, touches, lunges=None, reset_s=None):
 
     _, p1, p2 = _positions(rows, mask)
     if len(p1) < 10:
-        return {"available": False, "score": scoreline,
+        return {"available": False, "score": scoreline, "pace": bout_pace,
                 "reason": "too few frames with both fencers tracked to profile"}
 
     # WHY THIS REFUSES RATHER THAN REPORTING NEAR-ZERO EVERYTHING. Every axis
@@ -422,6 +465,7 @@ def build(csv_path, touches, lunges=None, reset_s=None):
         return {
             "available": False,
             "score": scoreline,
+            "pace": bout_pace,
             "footwork_iqr_m": round(footwork, 2),
             "reason": (
                 f"neither fencer's position varies by more than "
@@ -480,6 +524,7 @@ def build(csv_path, touches, lunges=None, reset_s=None):
             for k, label, unit, explains in axes
         ],
         "score": scoreline,
+        "pace": bout_pace,
         "zones": piste_zones(rows, touches),
         "note": ("Each axis scores one fencer against the other in this bout, "
                  "where 50 is parity. It is not a comparison against other "
@@ -511,6 +556,14 @@ def main():
     args = p.parse_args()
 
     result = build(args.metrics, load_touches(args.touches))
+    pc = result.get("pace") or {}
+    if pc.get("available"):
+        print(f"pace: {pc['per_min']} touches/min over {pc['duration_s']} s "
+              f"({pc['fencer_1_per_min']} / {pc['fencer_2_per_min']} per fencer)")
+        if pc.get("unattributed"):
+            print(f"  {pc['unattributed']} touch(es) with no scorer recorded, "
+                  "counted in the bout rate and in neither fencer's")
+        print()
     if not result["available"]:
         print(f"no profile: {result['reason']}")
     else:

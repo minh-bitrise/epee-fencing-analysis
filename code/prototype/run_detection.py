@@ -1614,6 +1614,7 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
 
         # compute distance + update push/pull when both fencers visible
         dist_raw_m  = None
+        dist_bbox_m = None
         dist_method = None
         f1_pos_m    = None
         f2_pos_m    = None
@@ -1649,6 +1650,17 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
             front0 = get_front_foot(pose_data[0], ref0[0], ref1[0]) if pose_data[0] else None
             front1 = get_front_foot(pose_data[1], ref1[0], ref0[0]) if pose_data[1] else None
 
+            # The bounding-box estimate is computed on EVERY frame, not only when
+            # pose fails. It costs two subtractions and it is the only way to ask
+            # what pose contributes: on a frame where pose succeeded, the two
+            # estimates are of the same quantity from different landmarks, so they
+            # can be compared directly. Without this column the comparison would
+            # be between disjoint sets of frames, which measures which frames pose
+            # copes with, not what pose adds. See evaluate_pose.py.
+            p0 = get_box_bottom_centre(box0)
+            p1 = get_box_bottom_centre(box1)
+            dist_bbox_m = normalise_distance(pixel_distance(p0, p1), avg_height_px)
+
             if front0 and front1:
                 dist_px     = pixel_distance(front0, front1)
                 dist_raw_m  = normalise_distance(dist_px, avg_height_px)
@@ -1656,10 +1668,8 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
                 pose_success += 1
             else:
                 # fallback: bbox bottom-centres (feet proxy) - more accurate than centre
-                p0 = get_box_bottom_centre(box0)
-                p1 = get_box_bottom_centre(box1)
                 dist_px     = pixel_distance(p0, p1)
-                dist_raw_m  = normalise_distance(dist_px, avg_height_px)
+                dist_raw_m  = dist_bbox_m
                 dist_method = "bbox"
 
             # Push/pull uses the bounding-box bottom-centre ONLY, never the hip.
@@ -1740,6 +1750,7 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
             "time_s":            round(time_sec, 3),
             "distance_raw_m":    round(dist_raw_m, 3)     if dist_raw_m     is not None else "",
             "distance_smooth_m": round(dist_display_m, 3) if dist_display_m is not None else "",
+            "distance_bbox_m":   round(dist_bbox_m, 3)    if dist_bbox_m    is not None else "",
             "method":            dist_method or "",
             "f1_advance_m":      round(push_pull.advance_m[0], 3),
             "f1_retreat_m":      round(push_pull.retreat_m[0], 3),
@@ -1774,7 +1785,7 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
     with open(out_csv, "w", newline="") as f:
         writer_csv = csv.DictWriter(f, fieldnames=[
             "frame", "time_s",
-            "distance_raw_m", "distance_smooth_m", "method",
+            "distance_raw_m", "distance_smooth_m", "distance_bbox_m", "method",
             "f1_advance_m", "f1_retreat_m",
             "f2_advance_m", "f2_retreat_m",
             "f1_pos_m", "f2_pos_m",
