@@ -735,6 +735,49 @@ calibration and an external dependency, and was beaten by a local minimum in a s
 computed. And the negative result was necessary to reach the positive one, since geometry alone
 was not tried until audio had failed.
 
+### A learned proposer, and what it could not beat
+
+The touch detector accepts a candidate when the distance minimum has at least 0.4 m of
+prominence and the fencers then separate by at least 0.8 m. Both constants were set against
+clip 3. The rule works, and that does not establish whether it works because the sport has this
+structure or because two numbers happen to suit these recordings. A trained classifier answers
+the question by competing with it.
+
+Every local minimum in the distance series becomes a candidate, described by fifteen features and
+labelled from the same ground truth. Two models are trained leave one clip out, the recording
+being the unit generalisation is claimed over and therefore the unit that must be held out.
+The rule is applied to the same candidates, merged by the same step and scored by the same
+function, because comparing a model against numbers produced by a different pipeline compares
+protocols rather than models. The operating point is chosen by an inner leave one clip out inside
+each training set, so the held-out clip is not consulted until the figure is final.
+
+![**Figure 5.2: A learned touch proposer against the hand rule.** Left, F1 under leave one clip
+out, with the four per-clip folds drawn over the pooled bar. Right, the change in the boosted
+model's F1 when each feature group is removed.](figures/fig_touch_model.png)
+
+**The rule wins**, F1 0.78 against 0.68 for gradient boosted trees and 0.48 for logistic
+regression, micro-averaged over the 27 touches. The per-clip folds in the left panel are the
+reason the gap should not be read as decisive: they span 0.59 to 0.89 for the rule alone, so a
+difference of 0.10 between methods sits inside the variation between recordings.
+
+The ablation is the more useful half. Removing the separation features costs the model 0.19 F1
+and nothing else costs it more than 0.05, so a model offered fifteen alternatives puts its weight
+on the same quantity the rule thresholds. Two groups have positive deltas, meaning the model
+scores better without them, which is what redundant correlated features do when there are 27
+positive examples. The defensible reading is narrow and worth stating exactly: **the rule's
+choice of feature is not arbitrary**, because a model free to choose differently did not. It says
+nothing about whether 0.4 and 0.8 are the right values.
+
+Nor does it show that learning cannot help here. The learning curve has two usable points, 0.54
+and 0.73 for the boosted model, against a fold-to-fold standard deviation of 0.22: the spread is
+as large as the gap, so it cannot distinguish a model starved of data from one at its ceiling.
+That is a statement about the evidence base rather than about the method, and it is the
+quantitative form of the argument for more labelled footage. Candidate generation also remains a
+domain rule throughout; the model ranks minima, it does not find touches in video.
+
+Two defects in the protocol were found while building it, both of which flattered the result
+before being fixed, and neither of which would have been visible in the output (Appendix D).
+
 ### The candidate cut: one cause behind both tracking failure modes
 
 Two failure modes were treated for most of this project as inherent limits of single-camera
@@ -860,10 +903,10 @@ repairs it because the truncated steps reach 5.4 m in a single frame. What faile
 operation, not the series: an instantaneous reading averaged over thousands of frames absorbs a
 dropout, a running sum banks it.
 
-![**Figure 5.2: Path length and net displacement across median smoothing windows, clip 3.** Both
+![**Figure 5.3: Path length and net displacement across median smoothing windows, clip 3.** Both
 are computed from the same smoothed series at each window.](figures/fig_smoothing_sweep.png)
 
-Figure 5.2 is why the totals were withdrawn rather than qualified. Path length falls
+Figure 5.3 is why the totals were withdrawn rather than qualified. Path length falls
 monotonically as the window widens with no asymptote, so any figure quoted describes the smoother
 rather than the fencer. Net displacement, from the same series, moves once and holds. Both see
 identical input and only one is stable under it, which makes the diagnosis certain.
@@ -939,23 +982,23 @@ gate rejecting a referee, or flicker dropping a slot. None introduce wrong data;
 sample. Clip 4 is the outlier by a wide margin and the reason is not the one the project assumed
 for a month.
 
-![**Figure 5.3: The same pipeline on tight and wide framing.** Clip 3 above, clip 4 below,
+![**Figure 5.4: The same pipeline on tight and wide framing.** Clip 3 above, clip 4 below,
 printed at equal width. The fencers are the same physical size; what differs is how much of the
 frame they occupy, and clip 4's spectator gallery is visible along the
 top.](figures/fig_framing_comparison.png)
 
-Figure 5.3 puts the two extremes side by side at equal print width, which is the comparison that
+Figure 5.4 puts the two extremes side by side at equal print width, which is the comparison that
 makes the cause visible: the fencers are not smaller people or worse lit, they simply occupy less
 of the frame. The obvious reading, that clip 4 is 360p and the others 720p, is wrong.
 **Source resolution is invisible to the detector.** YOLOv8 resizes so the longest side is 640, so
 clip 4 fed at 320x180, 640x360 and 1280x720 all produce the same 640x360 model input, a 103 px
 fencer and 89 to 90 per cent detection. Clip 3 behaves identically across a fourfold range.
 
-![**Figure 5.4: Coverage against fencer height in the network's input.** Source resolution is
+![**Figure 5.5: Coverage against fencer height in the network's input.** Source resolution is
 annotated. Clip 4 is both the smallest fencer and the lowest coverage, while the 720p clips at
 similar fencer heights reach similar coverage.](figures/fig_framing_vs_coverage.png)
 
-Figure 5.4 is the quantity that does predict coverage, and it is drawn against fencer height in
+Figure 5.5 is the quantity that does predict coverage, and it is drawn against fencer height in
 the model's input rather than against source resolution for exactly that reason. The three clips
 clustered between 133 and 162 px reach 93 to 98 per cent; clip 4 at 103 px reaches 74 per cent
 before slot repair. Four points is not a curve and no threshold is claimed from it, but the
@@ -1175,6 +1218,19 @@ the tracked boxes masked out was implemented and validated by recovering a synth
 exactly, and reduced a synthetic pan bias of +8.33 and -8.30 m to +0.03 and +0.03 m. On real
 footage it did not repair the totals, which is what identified accumulation rather than
 panning as the cause.
+
+**Two protocol defects in the learned touch proposer, both flattering.** Labelling every
+candidate inside the two-second match tolerance as positive gave 1,326 positives for 27 touches,
+about fifty per touch, because minima are dense at the generating prominence. That turns "is this
+the touch" into "is this near a touch", which is a far easier question. Exactly one candidate per
+touch is now positive, the nearest, and the others inside the tolerance are dropped from training
+rather than called negative: a candidate half a second from a real touch is genuinely ambiguous
+and training on it as a negative teaches the model something false. Second, choosing an operating
+point requires an inner leave one clip out inside the training set, so a single training clip has
+no inner fold; the first learning curve silently fell back to a fixed threshold there, making the
+one-clip point the only one whose threshold was untuned. It duly scored higher than two clips,
+which reads exactly like a model learning less from more data. Both are now covered by tests, and
+neither was visible in the output.
 
 **The resolution ablation was invalid by construction.** It varied output encoding rather than
 the resolution the models see, so a flat result was guaranteed in advance and established

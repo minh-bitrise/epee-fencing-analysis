@@ -45,7 +45,16 @@ def split_chapters(text):
 
 
 def counts(body):
-    raw, prose, in_code = 0, 0, False
+    """Raw words, and the words the caps are checked against.
+
+    CAPTIONS RUN OVER SEVERAL LINES, which an earlier version of this got wrong.
+    It excluded any line STARTING with "![", so the first line of each caption
+    was excluded and its continuation lines were counted as prose. Every figure
+    in the report therefore charged about thirty words of its own caption
+    against the chapter that held it. A caption block is excluded from the line
+    that opens it through the line that closes the markdown image.
+    """
+    raw, prose, in_code, in_caption = 0, 0, False, False
     for line in body.split("\n"):
         stripped = line.strip()
         if stripped.startswith("```"):
@@ -53,8 +62,18 @@ def counts(body):
             continue
         n = len(stripped.split())
         raw += n
+        was_caption = in_caption
+        if not in_caption and stripped.startswith("!["):
+            in_caption = True
+            was_caption = True
+        # A blank line also closes it. Without that guard a caption whose image
+        # link was malformed would silently exclude the rest of the chapter,
+        # which is the failure mode that matters: it under-counts, so nothing
+        # would look wrong.
+        if in_caption and (not stripped or ("](" in stripped and ")" in stripped)):
+            in_caption = False
         # Excluded from the counted total: tables, code, and figure captions.
-        if in_code or stripped.startswith("|") or stripped.startswith("!["):
+        if in_code or was_caption or stripped.startswith("|"):
             continue
         prose += n
     return raw, prose

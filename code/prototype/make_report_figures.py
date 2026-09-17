@@ -350,8 +350,89 @@ def fig_architecture_components():
     print("wrote", os.path.basename(out))
 
 
+def fig_touch_model(results_json="results_current/touch_model_eval.json"):
+    """
+    The learned proposer against the hand rule, and what the model leans on.
+
+    TWO PANELS BECAUSE THERE ARE TWO CLAIMS AND ONLY ONE IS THE HEADLINE. The
+    left panel says the rule wins; on its own that is a bar chart of three
+    numbers and invites the reader to take a 0.10 gap at face value across four
+    recordings, so the per-clip folds are drawn on top of the pooled bar. Their
+    spread is most of the story: clip 4 sits far below the others for every
+    method, and no difference between methods is large against that.
+
+    The right panel is the finding. Removing the separation features costs the
+    model 0.19 and nothing else costs it more than 0.05, so the model puts its
+    weight on the same quantity the rule thresholds. Bars run both ways because
+    two groups have POSITIVE deltas, meaning the model scores better without
+    them, which is what redundant correlated features do at 27 positives. Hiding
+    that by plotting magnitudes would turn an honest oddity into a clean story.
+    """
+    import json
+    with open(results_json) as f:
+        d = json.load(f)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.6))
+
+    names = [("rule", "Hand rule"), ("boosted", "Boosted trees"),
+             ("logistic", "Logistic")]
+    xs = np.arange(len(names))
+    pooled = [d[k]["pooled"]["f1"] for k, _ in names]
+    bars = ax1.bar(xs, pooled, width=0.55,
+                   color=[GREY, BLUE, BLUE], zorder=2)
+    # Clip 4 is marked because it is the hardest recording in the set and the
+    # panel's point is how much of the spread is one clip. It is the lowest fold
+    # for the rule and for the boosted model; for logistic it is SECOND lowest,
+    # behind clip 1 at 0.22, and the mark is what lets a reader see that rather
+    # than take "clip 4 is always worst" on trust. An earlier version of this
+    # comment asserted the stronger claim and the plot disproves it.
+    for x, (k, _) in zip(xs, names):
+        for r in d[k]["folds"]:
+            is4 = r["clip"].endswith("clip4")
+            ax1.scatter(x + 0.22, r["f1"], s=44 if is4 else 34,
+                        color=RED if is4 else "#263238", marker="D" if is4 else "o",
+                        zorder=5 if is4 else 4, edgecolor="white", linewidth=0.8)
+    ax1.scatter([], [], color=RED, marker="D", s=44, label="clip 4 (360p)")
+    ax1.scatter([], [], color="#263238", s=34, label="clips 1 to 3 (720p)")
+    ax1.legend(fontsize=8.5, loc="upper right", framealpha=0.9)
+    for b, v in zip(bars, pooled):
+        ax1.text(b.get_x() + b.get_width() / 2, v + 0.022, f"{v:.2f}",
+                 ha="center", fontsize=10, fontweight="bold")
+    ax1.set_xticks(xs); ax1.set_xticklabels([n for _, n in names])
+    ax1.set_ylabel("F1, micro-averaged over 27 touches")
+    ax1.set_ylim(0, 1.12)
+    ax1.set_title("Leave one clip out: the rule wins\n"
+                  "(dots are the four per-clip folds)", fontsize=11)
+    ax1.grid(True, axis="y", alpha=0.3, zorder=0)
+
+    abl = d["ablation"]
+    base = abl["base"]
+    groups = [(g, abl[g] - base) for g in abl if g != "base"]
+    groups.sort(key=lambda kv: kv[1])
+    ys = np.arange(len(groups))
+    ax2.barh(ys, [v for _, v in groups],
+             color=[RED if v < -0.05 else (ORANGE if v < 0 else GREY)
+                    for _, v in groups], zorder=2)
+    for y, (g, v) in zip(ys, groups):
+        ax2.text(v + (-0.008 if v < 0 else 0.008), y, f"{v:+.2f}",
+                 va="center", ha="right" if v < 0 else "left", fontsize=9)
+    ax2.set_yticks(ys); ax2.set_yticklabels([g for g, _ in groups])
+    ax2.axvline(0, color="#263238", linewidth=1)
+    ax2.set_xlabel("change in F1 when the group is removed")
+    ax2.set_xlim(-0.24, 0.12)
+    ax2.set_title("Only separation carries the model,\n"
+                  "which is what the rule already thresholds", fontsize=11)
+    ax2.grid(True, axis="x", alpha=0.3, zorder=0)
+
+    fig.tight_layout()
+    out = os.path.join(FIG, "fig_touch_model.png")
+    fig.savefig(out, dpi=DPI); plt.close(fig)
+    print("wrote", os.path.basename(out))
+
+
 if __name__ == "__main__":
     fig_architecture_components()
+    fig_touch_model()
     fig_smoothing_sweep()
     fig_framing_vs_coverage()
     fig_touch_signature()
