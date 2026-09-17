@@ -226,6 +226,40 @@ leaders in this codebase should be checked for the same mistake.
 Unattributed touches advance neither score and are counted separately. They are unknown events,
 not nil-nil ones.
 
+## Pose is the weaker distance estimate (17 Sep 2026)
+
+`results_posecmp` is the four evaluation clips re-run with the `distance_bbox_m` column, which
+records the bounding-box distance on EVERY frame rather than only where pose failed. That column
+is the whole point: without it pose and the box are compared on disjoint sets of frames, which
+measures which frames pose copes with, not what pose adds.
+
+```bash
+python3 evaluate_pose.py --results results_posecmp
+```
+
+| clip | paired frames | median diff | IQR | jitter pose | jitter box | AUC pose | AUC box |
+|---|---|---|---|---|---|---|---|
+| fencing_clip  | 3236 | -0.561 | 0.259 | 0.038 | 0.033 | 0.887 | 0.967 |
+| fencing_clip2 | 2767 | -0.608 | 0.435 | 0.084 | 0.066 | 0.986 | 0.972 |
+| fencing_clip3 | 1372 | -0.548 | 0.313 | 0.071 | 0.073 | 0.827 | 0.833 |
+| fencing_clip4 |  522 | -0.091 | 0.769 | 0.431 | 0.139 | 0.586 | 0.708 |
+
+Pooled over 361 two-second windows holding 39 labelled touches: **pose 0.759, box 0.805, a
+difference of -0.046 with a 95 per cent interval of -0.091 to -0.006, which excludes zero.**
+
+**Quote the pooled figures, not a clip.** Pose leads on exactly one clip of four, and quoting
+clip 2 alone would be the single-clip error the audio detector was diagnosed with.
+
+Pose reads about 0.55 m closer on the three 720p clips, which is expected and not itself a fault:
+the front foot is ahead of the box bottom-centre. Clip 4 is where it comes apart. At 360p the
+median difference collapses to -0.09 m with an IQR of 0.77, and pose's frame-to-frame jitter is
+three times the box's, so the landmark is not being found in a consistent place at all.
+
+**What this does NOT say.** Neither estimate is checked against a measured distance, and no
+ground truth in this project could provide one. Both could be wrong in the same direction and
+this would not see it. The claim is only that the refinement does not reach the decision distance
+exists to serve.
+
 ## Reproducing any of them
 
 ```
@@ -247,3 +281,7 @@ the set the evaluation was run on. `results_fixed/` or `results_pose/` for anyth
 movement, because only those have the raw position columns the reliable metrics are
 derived from. Do not quote movement figures from `results_after/`: they come from the
 cumulative-difference fallback, which TODO B1g measured as 24 m adrift.
+
+`results_posecmp/` for the pose-against-box comparison only. It is the same pipeline as
+`results_current/` plus one extra column, so its other figures should agree; quote them from
+`results_current/` anyway, so there is one reference set and not two.
