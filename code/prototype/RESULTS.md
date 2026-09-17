@@ -260,6 +260,73 @@ ground truth in this project could provide one. Both could be wrong in the same 
 this would not see it. The claim is only that the refinement does not reach the decision distance
 exists to serve.
 
+## A learned touch proposer loses to the hand rule (17 Sep 2026)
+
+```bash
+python3 touch_features.py --results results_current
+python3 train_touch.py --results results_current --curve --ablation \
+        --json results_current/touch_model_eval.json
+```
+
+Leave one clip out over four clips and 27 labelled touches. The rule is applied
+to the same candidate set, merged by the same step and scored by the same
+function, so this is a model comparison and not a protocol comparison.
+
+| model | precision | recall | F1 |
+|---|---|---|---|
+| hand rule (prominence 0.4 m, separation 0.8 m) | 0.72 | 0.85 | **0.78** |
+| gradient boosted trees | 0.74 | 0.63 | 0.68 |
+| logistic regression | 0.38 | 0.67 | 0.48 |
+
+Figures are MICRO-averaged: counts summed, then rates computed. Clip 3 holds
+fourteen touches and clip 1 holds three, so a mean of per-clip F1 would let a
+good result on three offset a bad one on fourteen.
+
+**Feature ablation, boosted model, F1 with each group removed**
+
+| removed | F1 | delta |
+|---|---|---|
+| nothing | 0.68 | |
+| separation | 0.49 | **-0.19** |
+| pose | 0.64 | -0.04 |
+| rates, dwell, context | 0.68 to 0.69 | about 0 |
+| distance | 0.73 | +0.05 |
+| prominence | 0.72 | +0.04 |
+
+**This is the result worth quoting.** Separation carries the model and nothing
+else moves it by more than 0.05, so the model puts its weight on the same
+quantity the rule thresholds. Removing raw distance and prominence HELPS, which
+at 27 positives is what redundant correlated features do. The rule's two
+constants are therefore not arbitrary: they are where a learned model
+independently ends up.
+
+**Learning curve, mean F1 by training-set size**
+
+| model | 2 clips | 3 clips | fold spread (sd) |
+|---|---|---|---|
+| logistic | 0.55 | 0.49 | 0.23 |
+| boosted | 0.54 | 0.73 | 0.22 |
+
+**Do not read a trend into this.** Two points, and the fold-to-fold standard
+deviation is as large as the gap between them. The curve cannot currently tell a
+data-starved model from a flat one, which is a statement about the evidence base
+and the quantitative case for labelling more clips. The curve starts at two
+because choosing an operating point needs an inner leave-one-clip-out inside the
+training set and one clip has no inner fold.
+
+**Two protocol defects found while building this, both of which flattered the
+result.** Labelling every candidate inside the two-second tolerance as positive
+gave 1,326 positives for 27 touches, about fifty per touch, turning "is this the
+touch" into "is this near a touch". And the learning curve's one-clip point
+silently used an untuned threshold, so it scored HIGHER than two clips: the
+protocol changing, which reads exactly like the model learning less from more
+data. Both are fixed and both have tests.
+
+**What this does NOT say.** Candidate generation is still a domain rule; the
+model ranks local minima and does not find touches in video. And 27 positives
+is small enough that the per-clip numbers are noisy, which is why only the
+pooled figures are quoted.
+
 ## Reproducing any of them
 
 ```
