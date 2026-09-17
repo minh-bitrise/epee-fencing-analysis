@@ -64,6 +64,8 @@ import sys
 
 import numpy as np
 
+import clips
+
 # Length of a scoring window, in seconds. Chosen as the approach-and-hit span the
 # touch detector itself works over rather than for convenience: shorter and a
 # labelled touch time, which is recorded to the nearest second, can fall outside
@@ -206,12 +208,7 @@ def clip_key(csv_path):
     return os.path.basename(csv_path).replace("_distance.csv", "")
 
 
-GT_FOR = {
-    "fencing_clip":  "ground_truth/fencing_clip1_touches.csv",
-    "fencing_clip2": "ground_truth/fencing_clip2_touches.csv",
-    "fencing_clip3": "ground_truth/fencing_clip3_touches.csv",
-    "fencing_clip4": "ground_truth/fencing_clip4_touches.csv",
-}
+GT_FOR = clips.CLIPS   # one definition of the evaluation set, see clips.py
 
 
 def analyse(results_dir, gt_dir="."):

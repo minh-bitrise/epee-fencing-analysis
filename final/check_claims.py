@@ -131,6 +131,42 @@ def check_readme_counts(c, counted):
             c.equal(f"README {name} count", got, int(m.group(1)))
 
 
+def check_evaluation_set(c):
+    """Every ground-truth file must be reachable, and every group real.
+
+    The failure this prevents: labelling a new clip, dropping the CSV in, and
+    having every evaluation silently ignore it because nothing maps the clip
+    name to that file. Nothing errors in that case. The numbers just quietly
+    stay as they were.
+    """
+    proto = os.path.join(ROOT, "code/prototype")
+    sys.path.insert(0, proto)
+    try:
+        import clips as clipset
+    except Exception as e:                                  # noqa: BLE001
+        c.skip("evaluation set", f"clips.py did not import: {e}")
+        return
+
+    on_disk = {f for f in os.listdir(os.path.join(proto, "ground_truth"))
+               if f.endswith("_touches.csv")}
+    mapped = {os.path.basename(v) for v in clipset.CLIPS.values()}
+    orphans = sorted(on_disk - mapped)
+    if orphans:
+        c.fail("evaluation set",
+               f"labelled but unreachable, nothing in clips.py maps to them: {orphans}")
+    else:
+        c.ok(f"{len(on_disk)} label files, all reachable from clips.py")
+
+    unknown = sorted(set(clipset.GROUP) - set(clipset.CLIPS))
+    if unknown:
+        c.fail("evaluation set", f"GROUP names unknown clips: {unknown}")
+    else:
+        labelled = [k for k, v in clipset.CLIPS.items()
+                    if os.path.exists(os.path.join(proto, v))]
+        c.ok(f"{len(labelled)} clips labelled, "
+             f"{len(clipset.groups(labelled))} independent recordings")
+
+
 def check_readme_commands(c):
     """Every script the README tells the reader to run must exist."""
     readme = read("README.md")
@@ -325,6 +361,8 @@ def main(argv=None):
     check_readme_commands(c)
     print("\ndocuments")
     check_derived_is_current(c)
+    print("\nevaluation set")
+    check_evaluation_set(c)
 
     if args.skip_tests:
         print("\ntest counts: skipped")

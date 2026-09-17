@@ -179,23 +179,73 @@ class TestProtocol:
     def test_threshold_selection_never_sees_the_test_clip(self, monkeypatch):
         """The protocol's load-bearing claim, asserted rather than trusted.
         Choosing the operating point on the held-out clip is the error the audio
-        detector was diagnosed with and it would be invisible in the output."""
-        seen = []
-        real = tt.fit_predict
+        detector was diagnosed with and it would be invisible in the output.
 
-        def spy(model, Xtr, ytr, Xte):
-            seen.append(Xte.shape[0])
-            return real(model, Xtr, ytr, Xte)
+        An earlier version of this test spied on `fit_predict`, which
+        pick_threshold stopped calling when the inner loop was rewritten to fold
+        over recordings. It kept passing while watching a function nobody
+        called. This one tags each clip's features with a value unique to it and
+        checks what the model was actually asked to score, which cannot go stale
+        the same way."""
+        tag = {c: float(i + 1) for i, c in enumerate("abcd")}
+        data = {}
+        for c, v in tag.items():
+            X = np.full((40, len(tf.FEATURE_NAMES)), v)
+            data[c] = {"X": X, "y": np.array([1] + [0] * 39),
+                       "times": np.arange(40.0) * 3, "truth": [0.0]}
 
-        monkeypatch.setattr(tt, "fit_predict", spy)
-        data = {c: {"X": np.random.default_rng(i).normal(size=(40, len(tf.FEATURE_NAMES))),
-                    "y": np.array([1] + [0] * 39),
-                    "times": np.arange(40.0) * 3,
-                    "truth": [0.0]}
-                for i, c in enumerate("abcd")}
+        scored, trained = [], []
+
+        class Spy:
+            def fit(self, X, y):
+                trained.extend(np.unique(X[:, 0]).tolist())
+                return self
+
+            def predict_proba(self, X):
+                scored.extend(np.unique(X[:, 0]).tolist())
+                return np.column_stack([np.zeros(len(X)), np.linspace(0, 1, len(X))])
+
+        monkeypatch.setattr(tt, "models", lambda: {"logistic": Spy()})
         tt.pick_threshold("logistic", data, ["a", "b", "c"])
-        # three inner folds over three training clips, none of them clip d
-        assert len(seen) == 3
+
+        assert tag["d"] not in scored, "the held-out clip was scored"
+        assert tag["d"] not in trained, "the held-out clip was trained on"
+        assert sorted(set(scored)) == [tag["a"], tag["b"], tag["c"]]
+
+    def test_a_recording_is_never_on_both_sides_of_a_fold(self, monkeypatch):
+        """7a and 7b are two windows of one video. Held out separately, a model
+        trains on one and is tested on the other, which is testing it on its own
+        training data and reports a better number with nothing to show for it."""
+        # Three recordings, not two: holding one out must still leave two for
+        # the inner fold that picks the threshold, or the code correctly refuses
+        # and this tests nothing.
+        names = ["fencing_clip", "fencing_clip3", "fencing_clip7a", "fencing_clip7b"]
+        data = {}
+        for i, c in enumerate(names):
+            data[c] = {"X": np.full((30, len(tf.FEATURE_NAMES)), float(i + 1)),
+                       "y": np.array([1] + [0] * 29),
+                       "times": np.arange(30.0) * 3, "truth": [0.0]}
+
+        pairs = []
+
+        class Spy:
+            def fit(self, X, y):
+                self.trained = set(np.unique(X[:, 0]).tolist())
+                return self
+
+            def predict_proba(self, X):
+                pairs.append((self.trained, set(np.unique(X[:, 0]).tolist())))
+                return np.column_stack([np.zeros(len(X)), np.linspace(0, 1, len(X))])
+
+        monkeypatch.setattr(tt, "models", lambda: {"logistic": Spy()})
+        tt.evaluate(data, "logistic")
+        assert pairs
+        for trained, scored in pairs:
+            assert not (trained & scored), "a clip was trained on and scored"
+        # 7a and 7b carry tags 3.0 and 4.0: either both are trained on or
+        # neither is, never one while the other is being scored.
+        for trained, _ in pairs:
+            assert (3.0 in trained) == (4.0 in trained)
 
     def test_threshold_selection_refuses_a_single_training_clip(self):
         """It cannot be done, and the earlier version did it anyway by falling
@@ -206,5 +256,5 @@ class TestProtocol:
         data = {"a": {"X": np.zeros((5, len(tf.FEATURE_NAMES))),
                       "y": np.array([1, 0, 0, 0, 0]),
                       "times": np.arange(5.0), "truth": [0.0]}}
-        with pytest.raises(ValueError, match="two training clips"):
+        with pytest.raises(ValueError, match="two training RECORDINGS"):
             tt.pick_threshold("logistic", data, ["a"])

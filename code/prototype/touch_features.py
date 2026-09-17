@@ -49,6 +49,7 @@ import sys
 
 import numpy as np
 
+import clips
 import detect_touches as dt
 
 # Prominence for candidate GENERATION. Deliberately well below the detector's
@@ -291,12 +292,9 @@ def ceiling(times, truth, tolerance=MATCH_TOLERANCE_S):
     return hit / len(truth)
 
 
-CLIPS = {
-    "fencing_clip":  "ground_truth/fencing_clip1_touches.csv",
-    "fencing_clip2": "ground_truth/fencing_clip2_touches.csv",
-    "fencing_clip3": "ground_truth/fencing_clip3_touches.csv",
-    "fencing_clip4": "ground_truth/fencing_clip4_touches.csv",
-}
+# The evaluation set lives in one module, because it was written out here and in
+# evaluate_pose.py and adding footage meant remembering to edit both.
+CLIPS = clips.CLIPS
 
 
 def build_all(results_dir, base="."):

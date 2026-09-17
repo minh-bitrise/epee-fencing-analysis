@@ -52,6 +52,7 @@ import sys
 
 import numpy as np
 
+import clips as clipset
 import evaluate_touches as et
 import touch_features as tf
 
@@ -187,55 +188,70 @@ def pick_threshold(model_name, data, train_clips):
     fold separately and averaging the chosen thresholds would pick a value that
     was never evaluated on anything.
     """
-    if len(train_clips) < 2:
+    if len(clipset.groups(train_clips)) < 2:
         raise ValueError(
-            "threshold selection needs at least two training clips: with one "
-            "there is no inner fold to sweep on, and falling back to a fixed "
+            "threshold selection needs at least two training RECORDINGS: with "
+            "one there is no inner fold to sweep on, and falling back to a fixed "
             "default would make that point incomparable with the others")
     times, scores, truth_all = [], [], []
     offset = 0.0
-    for held in train_clips:
-        rest = [c for c in train_clips if c != held]
-        if not rest:
-            continue
+    # The inner split folds over recordings for the same reason the outer one
+    # does: an operating point chosen on a clip whose twin is in the training
+    # set is chosen on data the model has seen.
+    for inner_test, rest in clipset.folds(train_clips):
         Xtr, ytr = training_split(data, rest)
-        d = data[held]
-        s = fit_predict(models()[model_name], Xtr, ytr, d["X"])
-        # Shift each inner clip onto its own stretch of a shared timeline so
-        # merging and matching cannot pair events across different recordings.
-        times.append(d["times"] + offset)
-        scores.append(s)
-        truth_all.extend(g + offset for g in d["truth"])
-        offset += float(d["times"].max()) + 1000.0 if d["times"].size else 1000.0
+        m = models()[model_name]
+        m.fit(Xtr, ytr)
+        for held in inner_test:
+            d = data[held]
+            s = m.predict_proba(d["X"])[:, 1]
+            # Shift each inner clip onto its own stretch of a shared timeline so
+            # merging and matching cannot pair events across different clips.
+            times.append(d["times"] + offset)
+            scores.append(s)
+            truth_all.extend(g + offset for g in d["truth"])
+            offset += (float(d["times"].max()) + 1000.0
+                       if d["times"].size else 1000.0)
     if not times:
         return 0.5
     th, _ = sweep(np.concatenate(times), np.concatenate(scores), truth_all)
     return th
 
 
-def evaluate(data, model_name, clips=None, train_on=None):
-    """Outer leave-one-clip-out. Returns a result per held-out clip."""
-    clips = clips or list(data)
+def evaluate(data, model_name, only=None, train_on=None):
+    """Outer leave-one-RECORDING-out. Returns a result per held-out clip.
+
+    Folding over recordings rather than files is not a refinement. Two windows
+    of one video share a camera, a venue and both fencers, so holding out one
+    while training on the other tests the model on its own training data and
+    reports a better number with no error to show for it. `clips.folds` decides
+    what travels together; see that module.
+    """
+    names = list(only or data)
     out = []
-    for test in clips:
-        pool = [c for c in clips if c != test]
+    for test_group, pool in clipset.folds(names):
         train_clips = train_on(pool) if train_on else pool
         if not train_clips:
             continue
-        d = data[test]
-        if model_name == "rule":
-            s = rule_scores(d["X"], tf.FEATURE_NAMES)
-            th = 0.0
-        else:
+        if model_name != "rule":
             th = pick_threshold(model_name, data, train_clips)
             Xtr, ytr = training_split(data, train_clips)
-            s = fit_predict(models()[model_name], Xtr, ytr, d["X"])
-        r = score_proposals(d["times"], s, th, d["truth"])
-        out.append({"clip": test, "n_train": len(train_clips),
-                    "threshold": float(th), "touches": len(d["truth"]),
-                    **{k: r[k] for k in
-                       ("tp", "fp", "fn", "precision", "recall", "f1",
-                        "corrections")}})
+            model = models()[model_name]
+            model.fit(Xtr, ytr)
+        # Every clip in the held-out recording is scored by the SAME fitted
+        # model, which is what holding out a recording means.
+        for test in test_group:
+            d = data[test]
+            if model_name == "rule":
+                s, th = rule_scores(d["X"], tf.FEATURE_NAMES), 0.0
+            else:
+                s = model.predict_proba(d["X"])[:, 1]
+            r = score_proposals(d["times"], s, th, d["truth"])
+            out.append({"clip": test, "n_train": len(train_clips),
+                        "threshold": float(th), "touches": len(d["truth"]),
+                        **{k: r[k] for k in
+                           ("tp", "fp", "fn", "precision", "recall", "f1",
+                            "corrections")}})
     return out
 
 
@@ -295,22 +311,28 @@ def main(argv=None):
         # fixed 0.5 there, which made the one-clip point the only one whose
         # threshold was untuned, and it duly scored HIGHER than two clips. That
         # was the protocol changing, not the model learning less from more data.
-        sizes = [k for k in (2, 3) if k <= len(data) - 1]
+        n_groups = len(clipset.groups(list(data)))
+        sizes = [k for k in range(2, n_groups) if k <= n_groups - 1]
         print("\nLearning curve: F1 against number of training clips")
         print(f"{'model':<10}" + "".join(f"{k} clips".rjust(9) for k in sizes)
               + f"{'spread':>9}")
         for name in ("logistic", "boosted"):
             cells, spreads = [], []
+            all_groups = clipset.groups(list(data))
             for k in sizes:
                 f1s = []
-                for train_clips in itertools.combinations(sorted(data), k + 1):
-                    # every (k+1)-subset: one clip held out, k used for training
-                    for test in train_clips:
-                        rest = [c for c in train_clips if c != test]
-                        rows = evaluate(data, name, clips=[test],
-                                        train_on=lambda pool, r=rest: r)
-                        if rows:
-                            f1s.append(rows[0]["f1"])
+                for chosen in itertools.combinations(sorted(all_groups), k + 1):
+                    # every (k+1)-subset of RECORDINGS: one held out, k trained on
+                    members = [c for c in data if clipset.group_of(c) in chosen]
+                    for g in chosen:
+                        rest = [c for c in members if clipset.group_of(c) != g]
+                        rows = evaluate(
+                            data, name,
+                            only=[c for c in members if clipset.group_of(c) == g]
+                                 + rest,
+                            train_on=lambda pool, r=rest: r)
+                        f1s.extend(r_["f1"] for r_ in rows
+                                   if clipset.group_of(r_["clip"]) == g)
                 cells.append(float(np.mean(f1s)))
                 spreads.append(float(np.std(f1s)))
             report.setdefault("curve", {})[name] = {
