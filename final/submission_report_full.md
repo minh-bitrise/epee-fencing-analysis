@@ -662,7 +662,7 @@ The pipeline also writes a per-frame CSV (Appendix B), the proposed-touch CSV an
 
 ### Testing
 
-The system is supported by 722 automated tests: 409 over the pipeline, 187 over the application
+The system is supported by 739 automated tests: 426 over the pipeline, 187 over the application
 layer and 126 over the interface, plus two end-to-end tests driving the real pipeline on a
 synthetic video. The end-to-end pair exists for what unit tests structurally cannot reach: the
 stages are joined by filename conventions rather than return values, and a bout identifier is
@@ -1171,16 +1171,24 @@ program that the web layer invokes rather than reimplements, so no second code p
 disagree with the figures in Chapter 5: `run_detection.py` (detection, tracking, pose, distance
 and the annotated render), `derive_piste.py` (measures a piste region from footage),
 `detect_touches.py`, `detect_scorer.py`, `detect_lunges.py`, `fencer_profile.py`, `in_play.py`
-(scopes metrics to playing time), `tempo.py`, `generate_summary.py`, and the `evaluate_*.py`
-scorers against ground truth. `code/backend/` is the FastAPI application: endpoints, the
+(scopes metrics to playing time), `tempo.py`, `generate_summary.py`, `audit_summary.py` (checks
+every figure in a generated summary against the payload it was given), `touch_features.py` and
+`train_touch.py` (the learned proposer and its protocol), and the `evaluate_*.py` scorers
+against ground truth. `code/backend/` is the FastAPI application: endpoints, the
 background job runner, the annotation store and disk accounting. `code/frontend/` is the React
 interface.
 
 ### B. CSV schema
 
 The per-frame CSV has columns `frame`, `time_s`, `distance_raw_m`, `distance_smooth_m`,
-`method` (`pose` or `bbox`), `f1_advance_m`, `f1_retreat_m`, `f2_advance_m`, `f2_retreat_m`,
-`f1_pos_m`, `f2_pos_m`, `f1_stance_m`, `f2_stance_m`, `f1_hip_height_m`, `f2_hip_height_m`.
+`distance_bbox_m`, `method` (`pose` or `bbox`), `f1_advance_m`, `f1_retreat_m`, `f2_advance_m`,
+`f2_retreat_m`, `f1_pos_m`, `f2_pos_m`, `f1_stance_m`, `f2_stance_m`, `f1_hip_height_m`,
+`f2_hip_height_m`.
+
+`distance_bbox_m` holds the bounding-box distance on every frame, including frames where pose
+succeeded and `distance_raw_m` therefore holds the pose estimate instead. It is redundant on
+fallback frames by construction, and it is the column that makes the pose comparison in
+Chapter 5 a paired one.
 
 The four advance and retreat columns are **retained but not reported**. They are the withdrawn
 cumulative totals, kept because Appendix D's analysis of why they fail is reproduced from them,
