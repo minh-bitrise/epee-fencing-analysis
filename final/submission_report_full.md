@@ -630,6 +630,36 @@ doing it, since finding the next undecided row and waiting for the seek repeats 
 proposal. That is precisely the cost the design claims assisted annotation removes, so leaving
 it in place would have understated the system in its own evaluation.
 
+### What the pipeline produces
+
+![**Figure 4.1: Annotated output frame, clip 1 at 50.1 s.** Both fencers are boxed with pose
+landmarks overlaid; the display shows elapsed time, smoothed distance with its derivation method,
+and per-fencer net displacement and closing share.](figures/fig_annotated_clip1.png)
+
+Figure 4.1 is the artefact the review interface plays, and it is chosen over the source video
+deliberately: a user adjudicating a proposed touch can see what the tracker saw at that moment
+rather than having to trust it. It also documents the piste filter working under conditions the
+evaluation set otherwise has little of. A fencer on the adjacent strip, the officials behind the
+desk and a spectator at the right are all present in this frame and all correctly excluded. That
+this is visible at all is the argument for rendering the overlay rather than only logging the
+numbers: the same frame that carries the measurement carries the evidence that it was taken from
+the right two people.
+
+![**Figure 4.2: Inter-fencer distance over time, clip 1.** Pose-derived and bounding-box fallback
+samples are distinguished, with the tactical bands marked.](figures/fig_distance_clip1.png)
+
+Figure 4.2 is the series every downstream stage consumes, and the two sample colours are the
+reason it is plotted this way. The pose-derived and fallback samples are visibly interleaved
+rather than segregated into stretches, which is what showed that pose availability varies frame
+to frame rather than clip to clip, and is what made the paired comparison in Section 5 possible
+at all. Section 5 reports the outcome of that comparison, which is that the two estimators are
+close enough that the refinement does not reach the decision. Read alongside Figure 5.1, the
+plot also shows why the touch detector works on this signal: the minima are sharp and the
+recoveries sustained, so the pattern the detector looks for is present without smoothing chosen
+to produce it.
+
+The pipeline also writes a per-frame CSV (Appendix B), the proposed-touch CSV and the summary.
+
 ### Testing
 
 The system is supported by 722 automated tests: 409 over the pipeline, 187 over the application
@@ -901,12 +931,47 @@ a legitimate one. Small integers stay weakly covered.
 The honest result is narrower than "the summaries are faithful": **no fabricated decimal figure
 appears in either**, on an instrument measured to catch such figures nine times in ten.
 
-### Coverage and remaining failures
+### Coverage is governed by framing, not by resolution
 
 Coverage, meaning both fencers detected and assigned to stable slots, is 93 to 98 per cent on
 three clips and 79.8 per cent on clip 4. The remainder is mostly a fencer partly off-screen, a
 gate rejecting a referee, or flicker dropping a slot. None introduce wrong data; they shrink the
-sample.
+sample. Clip 4 is the outlier by a wide margin and the reason is not the one the project assumed
+for a month.
+
+![**Figure 5.3: The same pipeline on tight and wide framing.** Clip 3 above, clip 4 below,
+printed at equal width. The fencers are the same physical size; what differs is how much of the
+frame they occupy, and clip 4's spectator gallery is visible along the
+top.](figures/fig_framing_comparison.png)
+
+Figure 5.3 puts the two extremes side by side at equal print width, which is the comparison that
+makes the cause visible: the fencers are not smaller people or worse lit, they simply occupy less
+of the frame. The obvious reading, that clip 4 is 360p and the others 720p, is wrong.
+**Source resolution is invisible to the detector.** YOLOv8 resizes so the longest side is 640, so
+clip 4 fed at 320x180, 640x360 and 1280x720 all produce the same 640x360 model input, a 103 px
+fencer and 89 to 90 per cent detection. Clip 3 behaves identically across a fourfold range.
+
+![**Figure 5.4: Coverage against fencer height in the network's input.** Source resolution is
+annotated. Clip 4 is both the smallest fencer and the lowest coverage, while the 720p clips at
+similar fencer heights reach similar coverage.](figures/fig_framing_vs_coverage.png)
+
+Figure 5.4 is the quantity that does predict coverage, and it is drawn against fencer height in
+the model's input rather than against source resolution for exactly that reason. The three clips
+clustered between 133 and 162 px reach 93 to 98 per cent; clip 4 at 103 px reaches 74 per cent
+before slot repair. Four points is not a curve and no threshold is claimed from it, but the
+ordering is consistent and the mechanism behind it is independently established.
+
+The intervention this suggested also failed, which is the more useful half. Cropping to the piste
+and masking the gallery both **reduced** coverage, to 65.9 and 66.4 per cent against a baseline of
+73.7, and pushed corrections to 117 per cent of manual effort, meaning the tool would be worse
+than useless on that clip. The boundary was derived from the detections rather than placed by
+eye, and removed 52 per cent of detections without touching a single observed fencer box, so this
+is not a badly drawn mask. Raw detection of two fencer-sized boxes falls from 85.3 to 80.0 per
+cent masked with median fencer height unchanged, so the detector is finding the same-sized
+fencers less often once the surrounding scene is removed. Why it should benefit from context it
+is not being asked about is not established here and is not guessed at. What is established is
+that **removing image content on the assumption that it can only help is wrong**, and that the
+earlier resolution ablation was flat because it varied a quantity the model never sees.
 
 ---
 
