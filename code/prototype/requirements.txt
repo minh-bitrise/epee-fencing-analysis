@@ -3,6 +3,10 @@ opencv-python-headless>=4.8.0
 matplotlib>=3.7.0
 numpy>=1.24.0
 mediapipe>=0.10.0
+# Only for train_touch.py, the learned touch proposer evaluated against the
+# hand-set rule. Nothing in the running system imports it: the shipped detector
+# is still the rule, because the comparison found the rule better.
+scikit-learn>=1.3.0
 anthropic>=0.92.0
 # backend (assisted-annotation API)
 fastapi

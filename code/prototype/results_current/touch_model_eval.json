@@ -1,0 +1,219 @@
+{
+  "rule": {
+    "folds": [
+      {
+        "clip": "fencing_clip2",
+        "n_train": 3,
+        "threshold": 0.0,
+        "touches": 4,
+        "tp": 4,
+        "fp": 1,
+        "fn": 0,
+        "precision": 0.8,
+        "recall": 1.0,
+        "f1": 0.888888888888889,
+        "corrections": 1
+      },
+      {
+        "clip": "fencing_clip3",
+        "n_train": 3,
+        "threshold": 0.0,
+        "touches": 14,
+        "tp": 12,
+        "fp": 2,
+        "fn": 2,
+        "precision": 0.8571428571428571,
+        "recall": 0.8571428571428571,
+        "f1": 0.8571428571428571,
+        "corrections": 4
+      },
+      {
+        "clip": "fencing_clip4",
+        "n_train": 3,
+        "threshold": 0.0,
+        "touches": 6,
+        "tp": 5,
+        "fp": 6,
+        "fn": 1,
+        "precision": 0.45454545454545453,
+        "recall": 0.8333333333333334,
+        "f1": 0.5882352941176471,
+        "corrections": 7
+      },
+      {
+        "clip": "fencing_clip",
+        "n_train": 3,
+        "threshold": 0.0,
+        "touches": 3,
+        "tp": 2,
+        "fp": 0,
+        "fn": 1,
+        "precision": 1.0,
+        "recall": 0.6666666666666666,
+        "f1": 0.8,
+        "corrections": 1
+      }
+    ],
+    "pooled": {
+      "tp": 23,
+      "fp": 9,
+      "fn": 4,
+      "precision": 0.71875,
+      "recall": 0.8518518518518519,
+      "f1": 0.7796610169491525,
+      "corrections": 13
+    }
+  },
+  "logistic": {
+    "folds": [
+      {
+        "clip": "fencing_clip2",
+        "n_train": 3,
+        "threshold": 0.9888190621210561,
+        "touches": 4,
+        "tp": 4,
+        "fp": 3,
+        "fn": 0,
+        "precision": 0.5714285714285714,
+        "recall": 1.0,
+        "f1": 0.7272727272727273,
+        "corrections": 3
+      },
+      {
+        "clip": "fencing_clip3",
+        "n_train": 3,
+        "threshold": 0.9982699437073217,
+        "touches": 14,
+        "tp": 8,
+        "fp": 4,
+        "fn": 6,
+        "precision": 0.6666666666666666,
+        "recall": 0.5714285714285714,
+        "f1": 0.6153846153846153,
+        "corrections": 10
+      },
+      {
+        "clip": "fencing_clip4",
+        "n_train": 3,
+        "threshold": 0.6652354510033266,
+        "touches": 6,
+        "tp": 4,
+        "fp": 10,
+        "fn": 2,
+        "precision": 0.2857142857142857,
+        "recall": 0.6666666666666666,
+        "f1": 0.4,
+        "corrections": 12
+      },
+      {
+        "clip": "fencing_clip",
+        "n_train": 3,
+        "threshold": 0.982862600066644,
+        "touches": 3,
+        "tp": 2,
+        "fp": 13,
+        "fn": 1,
+        "precision": 0.13333333333333333,
+        "recall": 0.6666666666666666,
+        "f1": 0.2222222222222222,
+        "corrections": 14
+      }
+    ],
+    "pooled": {
+      "tp": 18,
+      "fp": 30,
+      "fn": 9,
+      "precision": 0.375,
+      "recall": 0.6666666666666666,
+      "f1": 0.4800000000000001,
+      "corrections": 39
+    }
+  },
+  "boosted": {
+    "folds": [
+      {
+        "clip": "fencing_clip2",
+        "n_train": 3,
+        "threshold": 0.9503502587534648,
+        "touches": 4,
+        "tp": 4,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "corrections": 0
+      },
+      {
+        "clip": "fencing_clip3",
+        "n_train": 3,
+        "threshold": 0.9594270378403249,
+        "touches": 14,
+        "tp": 8,
+        "fp": 0,
+        "fn": 6,
+        "precision": 1.0,
+        "recall": 0.5714285714285714,
+        "f1": 0.7272727272727273,
+        "corrections": 6
+      },
+      {
+        "clip": "fencing_clip4",
+        "n_train": 3,
+        "threshold": 0.9640229924426957,
+        "touches": 6,
+        "tp": 3,
+        "fp": 6,
+        "fn": 3,
+        "precision": 0.3333333333333333,
+        "recall": 0.5,
+        "f1": 0.4,
+        "corrections": 9
+      },
+      {
+        "clip": "fencing_clip",
+        "n_train": 3,
+        "threshold": 0.9404498471316299,
+        "touches": 3,
+        "tp": 2,
+        "fp": 0,
+        "fn": 1,
+        "precision": 1.0,
+        "recall": 0.6666666666666666,
+        "f1": 0.8,
+        "corrections": 1
+      }
+    ],
+    "pooled": {
+      "tp": 17,
+      "fp": 6,
+      "fn": 10,
+      "precision": 0.7391304347826086,
+      "recall": 0.6296296296296297,
+      "f1": 0.68,
+      "corrections": 16
+    }
+  },
+  "curve": {
+    "logistic": [
+      0.5872667780562517,
+      0.4888888888888889,
+      0.4800000000000001
+    ],
+    "boosted": [
+      0.7055514795793594,
+      0.5508883432038134,
+      0.68
+    ]
+  },
+  "ablation": {
+    "base": 0.68,
+    "distance": 0.7272727272727273,
+    "prominence": 0.72,
+    "separation": 0.49056603773584906,
+    "rates": 0.6774193548387097,
+    "dwell": 0.6792452830188679,
+    "pose": 0.6440677966101694,
+    "context": 0.6923076923076923
+  }
+}
