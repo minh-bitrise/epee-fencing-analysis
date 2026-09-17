@@ -10,8 +10,10 @@ A web application that helps fencers and coaches analyse epee bout videos. Users
 - Pose estimation (MediaPipe Pose)
 - Inter-fencer distance analysis over time
 - Assisted event annotation (confirm / correct AI suggestions)
+- Touch attribution from the scoring lamps, and lunge proposals calibrated per bout
 - Bout statistics and tactical profile
-- LLM-generated written summary
+- LLM-generated written summary, with an automated check that every figure in it came from the data
+- A review queue and a manual-logging mode, which are the two conditions of the effort measurement
 
 ## Running the application
 The whole workflow runs in a browser: upload a bout, watch it process, review the result.
@@ -49,10 +51,10 @@ interrupts a running job.
 ### Tests
 
 ```bash
-cd code/prototype && python3 -m pytest -q          # pipeline: 320
-cd code/backend   && python3 -m pytest -q -m "not slow"   # API: 163
-cd code/backend   && python3 -m pytest -q test_end_to_end.py  # slow, loads models
-cd code/frontend  && npm test                      # interface: 41
+cd code/prototype && python3 -m pytest -q                  # pipeline: 426
+cd code/backend   && python3 -m pytest -q -m "not slow"   # API: 185
+cd code/backend   && python3 -m pytest -q test_end_to_end.py  # slow, loads models: 2
+cd code/frontend  && npm test                             # interface: 126
 ```
 
 The end-to-end tests are marked slow and excluded from the fast run. They drive
@@ -68,8 +70,32 @@ cd code/prototype
 python3 derive_piste.py    --video <bout.mp4> --output piste.json   # optional
 python3 run_detection.py   --video <bout.mp4> --output results/ [--piste-config piste.json]
 python3 detect_touches.py  --csv results/<bout>_distance.csv
+python3 detect_scorer.py   --video <bout.mp4> --touches <touches.csv>
+python3 detect_lunges.py   --csv results/<bout>_distance.csv --annotations <annotations.json>
+python3 fencer_profile.py  --metrics results/<bout>_distance.csv --touches <touches.csv>
 python3 generate_summary.py --csv results/<bout>_distance.csv --touches <touches.csv>
 ```
+
+### Reproducing the evaluation
+These are the commands behind the figures in Chapter 5 of the report. Each scores
+something against hand-labelled ground truth in `code/prototype/ground_truth/`, and
+each prints what it cannot establish as well as what it can.
+```bash
+cd code/prototype
+python3 evaluate_touches.py --truth ground_truth/fencing_clip3_touches.csv \
+                            --candidates results_current/fencing_clip3_distance_touches.csv
+python3 evaluate_lunges.py --csv results_pose/fencing_clip3_distance.csv \
+                           --bout results_pose:fencing_clip3   # calibration vs transfer
+python3 evaluate_closing_share.py --power        # what the metric can and cannot resolve
+python3 evaluate_pose.py --results results_posecmp   # pose against the bounding box
+python3 audit_summary.py --summary results_current/fencing_clip3_distance_summary.md
+python3 touch_features.py --results results_current  # labelled candidates, and the ceiling
+python3 train_touch.py --results results_current --curve --ablation   # learned proposer vs rule
+```
+`train_touch.py` needs `scikit-learn`, which nothing in the running system imports:
+the shipped detector is the hand-set rule, because the comparison found the rule
+better. `evaluate_pose.py` needs a results directory carrying the `distance_bbox_m`
+column, which means a run of `run_detection.py` from this version onwards.
 
 ## Project structure
 ```
@@ -80,5 +106,5 @@ code/var/         Runtime data: uploads, job records, their outputs (gitignored)
 uni_modules/      Read-only university materials
 proposal/         Project proposal submission deliverables
 preliminary/      Preliminary report submission deliverables
-final/            Final report submission (in progress)
+final/            Final report submission (in progress), its figures, and the checking tools
 ```

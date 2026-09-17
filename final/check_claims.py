@@ -77,7 +77,7 @@ def check_test_counts(c, report):
                   report)
     if not m:
         c.fail("test counts", "the sentence stating them was not found; has it been reworded?")
-        return
+        return {}
     total, pipe, back, front = (int(x.replace(",", "")) for x in m.groups())
     if pipe + back + front != total:
         c.fail("test counts add up", f"{pipe}+{back}+{front} = {pipe+back+front}, not {total}")
@@ -97,6 +97,49 @@ def check_test_counts(c, report):
             c.skip(f"{name} test count", "suite did not report a count")
         else:
             c.equal(f"{name} tests", got, want)
+    return {k: v[0] for k, v in actual.items()}
+
+
+def check_readme_counts(c, counted):
+    """The README quotes its own test counts, and they drift too.
+
+    It had 320, 163 and 41 against actuals of 426, 185 and 126, which is the
+    first file anyone opens. `counted` is what the live run found, passed in so
+    the suites are not run twice.
+    """
+    readme = read("README.md")
+    pairs = [("pipeline", r"pytest -q\s+# pipeline: (\d+)"),
+             ("backend", r'not slow"\s+# API: (\d+)'),
+             ("frontend", r"npm test\s+# interface: (\d+)")]
+    for name, pattern in pairs:
+        m = re.search(pattern, readme)
+        if not m:
+            c.skip(f"README {name} count", "not found; has the block been reworded?")
+            continue
+        got = counted.get(name)
+        if got is None:
+            c.skip(f"README {name} count", "no live count to compare against")
+        elif name == "backend":
+            # The README quotes the fast run, which deselects the slow tests.
+            if abs(got - int(m.group(1))) > 3:
+                c.fail(f"README {name} count",
+                       f"README says {m.group(1)}, full run is {got}; the gap should be "
+                       f"only the slow tests")
+            else:
+                c.ok(f"README {name} count {m.group(1)}, full run {got}")
+        else:
+            c.equal(f"README {name} count", got, int(m.group(1)))
+
+
+def check_readme_commands(c):
+    """Every script the README tells the reader to run must exist."""
+    readme = read("README.md")
+    missing = [n for n in sorted(set(re.findall(r"python3 (\w+)\.py", readme)))
+               if not os.path.exists(os.path.join(ROOT, "code/prototype", f"{n}.py"))]
+    if missing:
+        c.fail("README commands", f"documented but absent: {missing}")
+    else:
+        c.ok("every script the README names exists")
 
 
 def check_constants(c, report):
@@ -243,6 +286,8 @@ def main(argv=None):
         check_csv_schema(c, report)
         check_model_results(c, report)
         check_word_count(c, path)
+    print("\nREADME")
+    check_readme_commands(c)
 
     if args.skip_tests:
         print("\ntest counts: skipped")
@@ -250,11 +295,13 @@ def main(argv=None):
         print("\ntest counts (running the suites, this takes a minute)")
         # Counted once: both documents state the same numbers, and checking the
         # first document that states them is enough.
+        counted = {}
         for path in REPORTS:
             report = read(path)
             if "automated tests" in report:
-                check_test_counts(c, report)
+                counted = check_test_counts(c, report)
                 break
+        check_readme_counts(c, counted or {})
 
     print(f"\n{c.passes} passed, {len(c.failures)} failed, {c.skipped} skipped")
     for label, detail in c.failures:
