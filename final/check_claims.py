@@ -244,11 +244,46 @@ def check_model_results(c, report):
         c.skip("separation ablation", "the sentence stating it was not found")
 
 
-# The full document is deliberately over the 9,500 total: it exists so that if
-# the cap turns out not to be real, the material trimmed for it can be restored
-# in one move. Failing on it every run would train the reader to ignore this
-# tool, which is the only way a checker like this actually goes wrong.
+# submission_report_full.md is the WORKING document and is deliberately over the
+# 9,500 total, because that cap is not established (TODO C-CAP). Failing on it
+# every run would train the reader to ignore this tool, which is the only way a
+# checker like this actually goes wrong.
 OVER_CAP_BY_DESIGN = {"final/submission_report_full.md"}
+
+# submission_report.md is a DERIVED snapshot, re-cut only if the cap turns out to
+# be real. That creates a trap this tool would otherwise walk into: once it stops
+# being edited it goes stale, and every check here would keep passing on it,
+# because a stale document is perfectly self-consistent. Green on the wrong
+# document is worse than red on the right one.
+WORKING = "final/submission_report_full.md"
+DERIVED = "final/submission_report.md"
+
+
+def last_commit(path):
+    """Unix time of the last commit touching `path`, or None."""
+    out = subprocess.run(["git", "log", "-1", "--format=%ct", "--", path],
+                         cwd=ROOT, capture_output=True, text=True)
+    t = out.stdout.strip()
+    return int(t) if t.isdigit() else None
+
+
+def check_derived_is_current(c):
+    """Warn when the derived snapshot is behind the working document."""
+    if not all(os.path.exists(os.path.join(ROOT, p)) for p in (WORKING, DERIVED)):
+        c.skip("derived snapshot", "only one report document is present")
+        return
+    w, d = last_commit(WORKING), last_commit(DERIVED)
+    if w is None or d is None:
+        c.skip("derived snapshot", "no commit history for one of the documents")
+        return
+    if w > d:
+        days = (w - d) / 86400.0
+        c.fail("derived snapshot",
+               f"{DERIVED} was last committed {days:.1f} days before {WORKING}. It is a "
+               f"snapshot, not a second copy: re-derive it before submitting anything from "
+               f"it, or delete it if the word cap turns out not to exist (TODO C-CAP)")
+    else:
+        c.ok("derived snapshot is level with the working document")
 
 
 def check_word_count(c, path):
@@ -288,6 +323,8 @@ def main(argv=None):
         check_word_count(c, path)
     print("\nREADME")
     check_readme_commands(c)
+    print("\ndocuments")
+    check_derived_is_current(c)
 
     if args.skip_tests:
         print("\ntest counts: skipped")
