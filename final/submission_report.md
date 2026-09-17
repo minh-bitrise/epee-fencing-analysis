@@ -1059,9 +1059,6 @@ https://www.athleteanalyzer.com/video-analysis-fencing (Accessed: 5 September 20
 AI FencingMeter (no date) *AI FencingMeter*. Available at: https://aifencingmeter.com/
 (Accessed: 5 September 2026).
 
-Fencing Manager (2026) *Fencing Manager* [Mobile application]. Apple App Store. Available at:
-https://apps.apple.com/us/app/fencing-manager/id6760303574 (Accessed: 17 August 2026).
-
 ---
 
 ## Appendices
@@ -1104,9 +1101,23 @@ from; the stance and hip-height columns are what lunge proposals calibrate on.
 
 ### C. Footage attribution
 
-*To be completed before submission with per-clip source URLs, uploaders and access dates.* All
-four clips are publicly available video used solely for non-commercial academic evaluation and
-are not redistributed with this report.
+All four clips are publicly available video, used solely for non-commercial academic evaluation
+and not redistributed with this report. Each was trimmed to approximately three minutes; no clip
+is reproduced in full.
+
+| Clip | Title | Uploader | URL |
+|---|---|---|---|
+| 1 | *Men's Div1 T16 Bida vs Lawson* (2023 January NAC) | HJH Fencing | https://www.youtube.com/watch?v=YNxuyeNL40M |
+| 2 | *Berne Men's Epee World Cup 2026, Mencarelli vs Kanok* | Fencing Database | https://www.youtube.com/watch?v=Heim7zIE6ME |
+| 3 | *15 Touch Epee Bout* | Paul Sise | https://www.youtube.com/watch?v=m3_DFZtGAyc |
+| 4 | *Junior Epee Team, Basel 2024, Final, Hungary vs Kazakhstan* | Zoltan Somody | https://www.youtube.com/watch?v=KDJ65dPtlwQ |
+
+All four accessed 17 September 2026.
+
+Clip 3's uploader identifies the fencers in the video description as John Linscott on the left
+and Paul Sise on the right. That is recorded here because the report's per-fencer figures refer
+to Fencer 1 and Fencer 2 as tracking slots, and nothing in this project attempts to identify
+anyone by name; the labels are positional and the naming is the uploader's, not the system's.
 
 ### D. Measurement investigations
 
