@@ -123,4 +123,32 @@ describe('ScorePanel', () => {
     expect(screen.getByText('4.00')).toBeInTheDocument()
     expect(screen.getByText(/split between the two fencers is not known/)).toBeInTheDocument()
   })
+
+  it('does not print 0-0 when no touch has been attributed', () => {
+    // Three confirmed touches and no scorers is an unknown score, not a draw.
+    // The module computing it already says so in a comment; the panel did not.
+    render(<ScorePanel score={score({
+      final: { fencer_1: 0, fencer_2: 0 }, unattributed: 3,
+    })} />)
+    expect(screen.getByText(/score not known/)).toBeInTheDocument()
+  })
+
+  it('still shows a partial scoreline', () => {
+    // 2-1 with one touch unattributed is a real scoreline as far as it goes,
+    // and suppressing it would hide what IS known along with what is not.
+    render(<ScorePanel score={score({
+      final: { fencer_1: 2, fencer_2: 1 }, unattributed: 1,
+    })} />)
+    expect(screen.getByText('2')).toBeInTheDocument()
+    expect(screen.queryByText(/score not known/)).not.toBeInTheDocument()
+  })
+
+  it('shows a genuine nil-nil when every touch is attributed', () => {
+    // Not reachable in epee, but the rule must key on attribution rather than
+    // on the numbers being zero, or a real result would be hidden.
+    render(<ScorePanel score={score({
+      final: { fencer_1: 0, fencer_2: 0 }, unattributed: 0,
+    })} />)
+    expect(screen.queryByText(/score not known/)).not.toBeInTheDocument()
+  })
 })

@@ -39,11 +39,23 @@ export default function ScorePanel({ score, zones, pace }) {
 
   return (
     <>
-      <div className="scoreline">
-        <span className="s1">{score.final.fencer_1}</span>
-        <span className="dash">-</span>
-        <span className="s2">{score.final.fencer_2}</span>
-      </div>
+      {/* A scoreline of 0-0 over touches nobody has attributed is not a
+          measured draw, and printing it large with the explanation three lines
+          below is printing the wrong thing first. score_progression has carried
+          a comment since it was written saying an unattributed touch "is not a
+          zero-zero event, it is an unknown one"; this is where that stopped
+          being true on the screen. A partial attribution still shows: 2-1 with
+          one touch unattributed is a real scoreline as far as it goes. */}
+      {score.final.fencer_1 === 0 && score.final.fencer_2 === 0
+       && score.unattributed > 0
+        ? <div className="scoreline unknown">
+            <span className="dash">score not known</span>
+          </div>
+        : <div className="scoreline">
+            <span className="s1">{score.final.fencer_1}</span>
+            <span className="dash">-</span>
+            <span className="s2">{score.final.fencer_2}</span>
+          </div>}
 
       {/* Time ahead as one bar rather than two rows reading "F1 ahead" and
           "F2 ahead". The quantity is a split of a whole, so a split of a whole

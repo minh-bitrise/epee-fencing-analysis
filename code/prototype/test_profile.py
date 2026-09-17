@@ -444,3 +444,24 @@ def test_pace_keeps_a_real_zero_for_a_fencer_who_was_outscored():
     p = fp.pace(t, 60.0)
     assert p["fencer_1_per_min"] == 2.0
     assert p["fencer_2_per_min"] == 0.0
+
+
+def test_scoring_share_is_absent_when_nothing_is_attributed():
+    """Three confirmed touches with no scorer is not two fencers on 0 per cent.
+    Drawn as 0 and 0 the radar puts them at parity, which reads as a measured
+    balance rather than as an unanswered question. Found by opening the app."""
+    rows = [{"time_s": str(i), "distance_smooth_m": "2.0"} for i in range(30)]
+    t = [{"time_s": 5}, {"time_s": 10}, {"time_s": 15}]
+    ta = fp.touch_axes(rows, t)
+    assert ta[1]["scoring_share_pct"] is None
+    assert ta[2]["scoring_share_pct"] is None
+
+
+def test_scoring_share_survives_a_partial_attribution():
+    """One known scorer among three touches IS a measurement of what is known,
+    and must not be suppressed along with the unknown part."""
+    rows = [{"time_s": str(i), "distance_smooth_m": "2.0"} for i in range(30)]
+    t = [{"time_s": 5, "scorer": "left"}, {"time_s": 10}, {"time_s": 15}]
+    ta = fp.touch_axes(rows, t)
+    assert ta[1]["scoring_share_pct"] is not None
+    assert ta[1]["scoring_share_pct"] > ta[2]["scoring_share_pct"]

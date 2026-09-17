@@ -425,6 +425,10 @@ label.opt input { padding:0; }
   .scoreline .s1 { color:var(--f1); }
   .scoreline .s2 { color:var(--f2); }
   .scoreline .dash { color:var(--muted); font-size:26px; font-weight:400; }
+  /* The unknown case is a sentence, not a number, so it must not inherit the
+     40px numeral sizing. It stays in the scoreline's slot rather than being
+     hidden, because the absence of a score is itself worth showing. */
+  .scoreline.unknown .dash { font-size:15px; font-style:italic; }
   /* Time ahead as a split of the bout, because that is what it is. Two rows of
      percentages made the reader reconstruct that the two shares plus the level
      time add up to the whole. */
