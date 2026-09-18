@@ -1,0 +1,26 @@
+{
+  "bout_id": "results_current:fencing_clip3",
+  "touch_states": {
+    "p0": {
+      "state": "confirmed",
+      "updated": 1789721752.5431879
+    },
+    "p1": {
+      "state": "confirmed",
+      "updated": 1789721753.510456
+    },
+    "p2": {
+      "state": "confirmed",
+      "updated": 1789721754.510445
+    },
+    "p3": {
+      "state": "confirmed",
+      "updated": 1789721755.526826
+    }
+  },
+  "added_touches": [],
+  "unreliable_segments": [],
+  "reanchors": [],
+  "lunges": [],
+  "sessions": []
+}

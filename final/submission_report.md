@@ -631,8 +631,8 @@ would have understated the system in its own evaluation.
 
 ### Testing
 
-The system is supported by 744 automated tests: 428 over the pipeline, 187 over the application
-layer and 129 over the interface, plus two end-to-end tests driving the real pipeline on a
+The system is supported by 755 automated tests: 437 over the pipeline, 187 over the application
+layer and 131 over the interface, plus two end-to-end tests driving the real pipeline on a
 synthetic video. The end-to-end pair exists for what unit tests structurally cannot reach: the
 stages are joined by filename conventions rather than return values, and a bout identifier is
 assembled in one module and taken apart in another. It found two defects on its first run.
