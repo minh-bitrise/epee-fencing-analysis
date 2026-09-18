@@ -120,8 +120,11 @@ identification of individual athletes, which the system avoids by tracking anony
 multi-camera or three-dimensional reconstruction, which would resolve several measurement
 limitations and is treated as further work.
 
-This project corresponds to the CM3020 template "Orchestrating AI Models to Achieve a Goal",
-which expects an integrated system built around at least three pre-trained models.
+This project follows **CM3020 Artificial Intelligence, Project Idea 1, "Orchestrating AI models
+to achieve a goal"**, which expects an integrated system built around at least three pre-trained
+models.
+
+**Source code:** https://github.com/minh-bitrise/epee-fencing-analysis
 
 ### Structure of this report
 
