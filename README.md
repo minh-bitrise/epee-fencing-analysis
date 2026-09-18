@@ -54,7 +54,7 @@ interrupts a running job.
 cd code/prototype && python3 -m pytest -q                  # pipeline: 438
 cd code/backend   && python3 -m pytest -q -m "not slow"   # API: 185
 cd code/backend   && python3 -m pytest -q test_end_to_end.py  # slow, loads models: 2
-cd code/frontend  && npm test                             # interface: 135
+cd code/frontend  && npm test                             # interface: 136
 ```
 
 The end-to-end tests are marked slow and excluded from the fast run. They drive

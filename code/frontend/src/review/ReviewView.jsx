@@ -310,11 +310,17 @@ export default function ReviewView({ initialBoutId }) {
         v.currentTime = Math.max(0, v.currentTime + (k === '.' ? FRAME_S : -FRAME_S))
       }
       else if ((k === '1' || k === '2') && v) {
+        // Say so on screen. The lunge list lives on the Tools tab, so labelling
+        // from any other tab produced a keystroke, a network request and no
+        // visible change whatsoever, which is indistinguishable from the
+        // shortcut not working at all.
         await guard(async () => {
+          const at = +v.currentTime.toFixed(3)
           await api(`${boutPath(boutId)}/lunges`, postJSON({
-            time_s: +v.currentTime.toFixed(3), slot: k === '1' ? 0 : 1,
+            time_s: at, slot: k === '1' ? 0 : 1,
           }))
           await reload()
+          setSessionNote(`Lunge recorded for Fencer ${k} at ${at.toFixed(2)}s.`)
         })
       }
       else return
@@ -520,7 +526,16 @@ export default function ReviewView({ initialBoutId }) {
           the previous layout put six of them at equal weight down the page. */}
       <div className="work">
         <div className="boutbar">
-          <select value={boutId} onChange={(e) => setBoutId(e.target.value)}>
+          {/* Blur after choosing. The shortcut handler ignores every key while
+              an input, select or textarea has focus, which is right for a text
+              box and wrong here: picking a bout is the FIRST thing anyone does,
+              focus stays on the select afterwards, and the entire keyboard
+              interface then does nothing with no indication why. Reported as
+              "nothing happens if I press 1 or 2, and frame step doesn't work".
+              The select keeps its own keyboard handling while it is focused;
+              this only gives focus back once a choice has been made. */}
+          <select value={boutId}
+                  onChange={(e) => { setBoutId(e.target.value); e.target.blur() }}>
             {bouts.map((b) => {
               const tags = []
               if (!b.has_touches) tags.push('no touches')

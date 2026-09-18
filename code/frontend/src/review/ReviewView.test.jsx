@@ -54,7 +54,13 @@ const metrics = () => ({
 
 let posted
 
-function stubFetch({ failTouchDecision = false, touchesBody = null } = {}) {
+// A second bout, so a test can actually CHANGE the dropdown. React fires no
+// change event when the chosen value is the one already selected, and with a
+// single-bout list there is nothing else to pick.
+const OTHER_BOUT = 'results_current:fencing_clip2'
+
+function stubFetch({ failTouchDecision = false, touchesBody = null,
+                     twoBouts = false } = {}) {
   posted = []
   global.fetch = vi.fn((url, opts) => {
     const method = opts?.method || 'GET'
@@ -67,8 +73,13 @@ function stubFetch({ failTouchDecision = false, touchesBody = null } = {}) {
     })
 
     if (url === '/api/bouts') {
-      return ok({ bouts: [{ bout_id: BOUT, label: BOUT, has_touches: true,
-                            has_video: true, progress: {} }] })
+      const list = [{ bout_id: BOUT, label: BOUT, has_touches: true,
+                      has_video: true, progress: {} }]
+      if (twoBouts) {
+        list.push({ bout_id: OTHER_BOUT, label: OTHER_BOUT, has_touches: true,
+                    has_video: true, progress: {} })
+      }
+      return ok({ bouts: list })
     }
     if (url.includes('/decision')) {
       return failTouchDecision ? fail('the store rejected that state') : ok({ ok: true })
@@ -236,5 +247,29 @@ describe('ReviewView', () => {
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: 'Bout' }))
         .toHaveAttribute('aria-selected', 'true'))
+  })
+})
+
+describe('the keyboard loop survives choosing a bout', () => {
+  it('gives up focus when a bout is chosen', async () => {
+    // The shortcut handler ignores every key while an input, select or textarea
+    // has focus, which is right for a text box. Picking a bout is the first
+    // thing anyone does and it left focus on the select, so every shortcut
+    // afterwards did nothing and said nothing. Reported from real use as
+    // "nothing happens if I press 1 or 2, and frame step doesn't work".
+    //
+    // Asserted through the element's own blur, rather than through
+    // document.activeElement, because jsdom does not model focus faithfully
+    // enough for the latter to mean anything here.
+    stubFetch({ twoBouts: true })
+    const { container } = render(<ReviewView initialBoutId={BOUT} />)
+    const select = await waitFor(() => {
+      const s = container.querySelector('select')
+      expect(s.options.length).toBe(2)
+      return s
+    })
+    const blur = vi.spyOn(select, 'blur')
+    fireEvent.change(select, { target: { value: OTHER_BOUT } })
+    expect(blur).toHaveBeenCalled()
   })
 })
