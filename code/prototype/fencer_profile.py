@@ -170,7 +170,15 @@ def touch_axes(rows, touches):
     Doubles count as half a touch to each fencer, which is what they are: in epee
     both lights mean both scored.
     """
-    scorers = [t.get("scorer") for t in touches if t.get("scorer")]
+    # ONLY the three real attributions count. "unknown" is a placeholder the
+    # store supplies for a touch nobody has attributed, and it is truthy, so a
+    # plain filter on truthiness let a bout of twelve unattributed touches read
+    # as a measured longest run of zero for both fencers. Third instance of this
+    # shape in one day, after the pace figure and the scoreline: absence
+    # rendered as a measured zero. The other two were fixed where they surfaced;
+    # this is the assumption underneath all three.
+    SIDES = ("left", "right", "double")
+    scorers = [t.get("scorer") for t in touches if t.get("scorer") in SIDES]
     # Whether ANY touch carries an attribution. With none, every share below is
     # 0 of n, and two fencers drawn at 0 per cent apiece sit at parity on the
     # radar and read as a bout in which neither scored. The touches happened and
@@ -178,7 +186,7 @@ def touch_axes(rows, touches):
     # opening the application rather than by any test: `score_progression` has
     # carried a comment saying "it is not a zero-zero event, it is an unknown
     # one" since it was written, and the interface displayed a zero anyway.
-    any_attributed = any(sc in ("left", "right", "double") for sc in scorers)
+    any_attributed = bool(scorers)
     out = {}
     for slot, side in ((1, "left"), (2, "right")):
         own = [t for t in touches if t.get("scorer") == side]

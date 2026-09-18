@@ -465,3 +465,25 @@ def test_scoring_share_survives_a_partial_attribution():
     ta = fp.touch_axes(rows, t)
     assert ta[1]["scoring_share_pct"] is not None
     assert ta[1]["scoring_share_pct"] > ta[2]["scoring_share_pct"]
+
+
+def test_unknown_is_not_an_attribution():
+    """The store supplies "unknown" for a touch nobody has attributed, and it is
+    truthy. A bout of twelve unattributed touches read as a measured longest run
+    of zero for both fencers, which says they each failed to string two together
+    rather than that nobody has said who scored. Seen live on clip 3."""
+    rows = [{"time_s": str(i), "distance_smooth_m": "2.0"} for i in range(30)]
+    t = [{"time_s": 5, "scorer": "unknown"}, {"time_s": 10, "scorer": "unknown"}]
+    ta = fp.touch_axes(rows, t)
+    assert ta[1]["longest_streak"] is None
+    assert ta[2]["longest_streak"] is None
+    assert ta[1]["scoring_share_pct"] is None
+
+
+def test_a_real_streak_still_counts_alongside_unknowns():
+    rows = [{"time_s": str(i), "distance_smooth_m": "2.0"} for i in range(30)]
+    t = [{"time_s": 5, "scorer": "left"}, {"time_s": 8, "scorer": "left"},
+         {"time_s": 12, "scorer": "unknown"}, {"time_s": 15, "scorer": "right"}]
+    ta = fp.touch_axes(rows, t)
+    assert ta[1]["longest_streak"] == 2
+    assert ta[2]["longest_streak"] == 1

@@ -173,7 +173,48 @@
       "slot": 1,
       "note": "",
       "created": 1789748236.680972
+    },
+    {
+      "id": "l16",
+      "time_s": 119.25,
+      "slot": 1,
+      "note": "",
+      "created": 1789748967.936785
+    },
+    {
+      "id": "l17",
+      "time_s": 163.25,
+      "slot": 1,
+      "note": "",
+      "created": 1789749005.135514
+    },
+    {
+      "id": "l18",
+      "time_s": 166.25,
+      "slot": 1,
+      "note": "",
+      "created": 1789749009.539605
+    },
+    {
+      "id": "l19",
+      "time_s": 170.75,
+      "slot": 1,
+      "note": "",
+      "created": 1789749017.235452
     }
   ],
-  "sessions": []
+  "sessions": [
+    {
+      "id": "s0",
+      "mode": "assisted",
+      "elapsed_s": 123.0,
+      "decisions": 7,
+      "seconds_per_decision": 17.6,
+      "touches_after": 12,
+      "lunges_after": 20,
+      "note": "",
+      "created": 1789749032.3313658
+    }
+  ],
+  "green_is": "right"
 }

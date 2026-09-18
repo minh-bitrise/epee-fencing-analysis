@@ -1,0 +1,97 @@
+{
+  "cache_key": "9a90d3613100e56e2d8f5223f4d56f95b096978d2f138b67b095903653bbbf88",
+  "model": "claude-opus-4-8",
+  "stats": {
+    "duration_s": 180.0,
+    "frames_total": 10790,
+    "coverage_pct": 88.2,
+    "pose_method_pct": 30.4,
+    "distance_m": {
+      "mean": 2.55,
+      "min": 0.33,
+      "max": 7.4,
+      "std": 0.82
+    },
+    "time_in_zone_pct": {
+      "close_infighting_under_1.5m": 9.8,
+      "lunge_distance_1.5_to_2.6m": 41.5,
+      "advance_lunge_2.6_to_3.5m": 37.1,
+      "out_of_distance_over_3.5m": 11.6
+    },
+    "movement_basis": {
+      "source": "raw per-frame positions",
+      "closing_share_is_window_dependent": true,
+      "closing_share_note": "Measured on unsmoothed positions. A 1-to-121 frame median smoothing sweep moved this figure from 52.4 to 60.9 per cent on one clip, so read it as approximate to a few points rather than exact."
+    },
+    "fencer_1": {
+      "net_displacement_m": 1.15,
+      "closing_share_pct": 50.7
+    },
+    "fencer_2": {
+      "net_displacement_m": 0.41,
+      "closing_share_pct": 49.9
+    },
+    "data_quality_warnings": [
+      "the two tracked slots exchanged sides of the piste 15 time(s), and slot 1 held the left-hand fencer in only 69 per cent of frames. Fencers do not cross on a piste, so this is the tracker changing which fencer each slot follows, not a fencing event. PER-SLOT FIGURES ARE NOT ATTRIBUTABLE TO A PARTICULAR FENCER on this recording: net_displacement_m in particular is a first-to-last difference and measures the swaps. The two came within 0.13 m in the measured position, which is where the matcher cannot tell them apart."
+    ],
+    "touches": {
+      "count": 12,
+      "times_s": [
+        5.4,
+        11.7,
+        16.7,
+        30.0,
+        61.8,
+        72.0,
+        78.1,
+        82.2,
+        100.8,
+        103.8,
+        122.0,
+        171.5
+      ],
+      "provenance": "automatic_detector",
+      "reset_excluded_s": 6.0
+    },
+    "in_play_only": {
+      "share_of_recording_pct": 63.3,
+      "mean_distance_m": 2.5,
+      "fencer_1": {
+        "net_forward_movement_m": -3.78,
+        "closing_share_pct": 49.8
+      },
+      "fencer_2": {
+        "net_forward_movement_m": 12.78,
+        "closing_share_pct": 52.3
+      }
+    },
+    "tempo": {
+      "touches": 12,
+      "duration_s": 180.0,
+      "touches_per_minute": 4.0,
+      "time_between_touches_s": {
+        "mean": 15.1,
+        "median": 10.24,
+        "min": 2.98,
+        "max": 49.42,
+        "std": 13.6
+      },
+      "exchange_duration_s": {
+        "mean": 12.38,
+        "median": 7.31,
+        "min": 0.1,
+        "max": 43.42,
+        "std": 13.25
+      },
+      "reset_assumed_s": 6.0,
+      "tempo_trend": {
+        "first_half_mean_gap_s": 13.34,
+        "second_half_mean_gap_s": 16.57,
+        "change_s": 3.23,
+        "direction": "slowing"
+      },
+      "scorer_counts": null,
+      "note": "touch source has no scorer column, so per-scorer tempo metrics are omitted rather than inferred"
+    }
+  }
+}
