@@ -1,6 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { formatTime } from './time.js'
 
+// Buttons, in the order the two fencers appear on screen.
+const SIDES = [['left', 'F1', 'Fencer 1 scored'],
+               ['right', 'F2', 'Fencer 2 scored'],
+               ['double', 'both', 'both scored, a double']]
+
 /**
  * The proposals, with what each one rests on.
  *
@@ -20,7 +25,7 @@ import { formatTime } from './time.js'
  * words of heading for a number that is self-describing once labelled inline.
  */
 export default function TouchTable({ rows, selIdx, onSelect, onDecide, onDelete,
-                                     scorerProposals }) {
+                                     scorerProposals, onScorer }) {
   // Proposed scorers, keyed by the time they belong to. Matched on time rather
   // than id because the proposal is made against the CONFIRMED touch list, which
   // merges detector proposals and hand-added touches under different ids.
@@ -56,17 +61,41 @@ export default function TouchTable({ rows, selIdx, onSelect, onDecide, onDelete,
 
             <span className={`pill ${state}`}>{state}</span>
 
+            {/* WHO SCORED, AND HOW IT GETS RECORDED. The lamp reading was
+                previously shown and then stranded: a proposal appeared in
+                italics and there was nothing to press, so a touch could never
+                be attributed at all and the three scoring figures on the
+                profile could never be populated from the interface. The
+                backend had accepted a scorer on a decision all along; the
+                client simply never sent one.
+
+                The suggestion stays visibly a suggestion. Pressing it accepts
+                it, which is the same one-press economy as confirming a touch,
+                and the three buttons are there for when it is wrong or absent. */}
             <span className="who">
-              {added ? r.scorer
-                : r.scorer ?? (scorer && scorer.proposed !== 'unknown'
-                    // A suggestion, visibly distinct from a decision the user
-                    // has made. The lamp reading is evidence, not an answer.
-                    ? <span className="suggest"
-                            title={`green delta ${scorer.green_delta}, `
-                                   + `red delta ${scorer.red_delta}`}>
+              {added ? r.scorer : state !== 'confirmed'
+                ? <span className="none">-</span>
+                : (
+                  <>
+                    {SIDES.map(([value, label, hint]) => (
+                      <button key={value} type="button"
+                              className={`sc${r.scorer === value ? ' on' : ''}`}
+                              title={r.scorer === value ? `${hint}. Press to clear.` : hint}
+                              onClick={() => onScorer(r.id, r.scorer === value ? null : value)}>
+                        {label}
+                      </button>
+                    ))}
+                    {!r.scorer && scorer && scorer.proposed !== 'unknown' && (
+                      <button type="button" className="suggest"
+                              title={`green delta ${scorer.green_delta}, `
+                                     + `red delta ${scorer.red_delta}. `
+                                     + 'Press to accept.'}
+                              onClick={() => onScorer(r.id, scorer.proposed)}>
                         {scorer.proposed}?
-                      </span>
-                    : <span className="none">no scorer</span>)}
+                      </button>
+                    )}
+                  </>
+                )}
             </span>
 
             {/* What the proposal rests on. The user is adjudicating the

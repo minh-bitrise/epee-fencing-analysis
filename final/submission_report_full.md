@@ -665,8 +665,8 @@ The pipeline also writes a per-frame CSV (Appendix B), the proposed-touch CSV an
 
 ### Testing
 
-The system is supported by 773 automated tests: 440 over the pipeline, 191 over the application
-layer and 142 over the interface, plus two end-to-end tests driving the real pipeline on a
+The system is supported by 777 automated tests: 440 over the pipeline, 191 over the application
+layer and 146 over the interface, plus two end-to-end tests driving the real pipeline on a
 synthetic video. The end-to-end pair exists for what unit tests structurally cannot reach: the
 stages are joined by filename conventions rather than return values, and a bout identifier is
 assembled in one module and taken apart in another. It found two defects on its first run.

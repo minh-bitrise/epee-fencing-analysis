@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TouchTable from './TouchTable.jsx'
 
 /**
@@ -50,7 +50,10 @@ describe('TouchTable', () => {
   it('marks a proposed scorer as a suggestion, not a decision', () => {
     // The lamp reading is evidence. Showing it identically to a scorer the user
     // confirmed would let the system's guess be mistaken for their judgement.
-    render(<TouchTable rows={[proposed()]} selIdx={0} {...handlers}
+    // Confirmed, because the lamp is only read for touches the user has
+    // confirmed, so that is the only state a suggestion can appear in.
+    render(<TouchTable rows={[proposed({ state: 'confirmed' })]} selIdx={0}
+                       {...handlers}
                        scorerProposals={[{ time_s: 43.9, proposed: 'left',
                                            green_delta: 12, red_delta: 400 }]} />)
     const cell = screen.getByText('left?')
@@ -86,5 +89,50 @@ describe('TouchTable', () => {
                   selIdx={1} {...handlers} />)
     const selected = container.querySelectorAll('.touch.sel')
     expect(selected.length).toBe(1)
+  })
+})
+
+describe('recording who scored', () => {
+  const onScorer = vi.fn()
+  const confirmed = (over = {}) => ({
+    id: 'p0', at: 19.0, kind: 'proposed', state: 'confirmed',
+    confidence: 0.9, separation_m: 2.1, scorer: null, ...over,
+  })
+
+  beforeEach(() => onScorer.mockClear())
+
+  it('lets a confirmed touch be attributed, which nothing did before', () => {
+    // The lamp reading used to be shown in italics with nothing to press, so a
+    // touch could never be attributed from the interface at all and the three
+    // scoring figures on the profile could never be populated. Confirm and
+    // reject answer whether the touch happened, not who scored it.
+    render(<TouchTable rows={[confirmed()]} selIdx={0} onSelect={() => {}}
+                       onDecide={() => {}} onScorer={onScorer} />)
+    fireEvent.click(screen.getByTitle(/Fencer 2 scored/))
+    expect(onScorer).toHaveBeenCalledWith('p0', 'right')
+  })
+
+  it('accepts the lamp suggestion on one press', () => {
+    render(<TouchTable rows={[confirmed()]} selIdx={0} onSelect={() => {}}
+                       onDecide={() => {}} onScorer={onScorer}
+                       scorerProposals={[{ time_s: 19.0, proposed: 'left',
+                                           green_delta: 9, red_delta: 1 }]} />)
+    fireEvent.click(screen.getByText('left?'))
+    expect(onScorer).toHaveBeenCalledWith('p0', 'left')
+  })
+
+  it('clears an attribution when the same side is pressed again', () => {
+    // Mis-clicking must be undoable, or a wrong attribution is permanent and
+    // silently wrong, which is worse than an absent one.
+    render(<TouchTable rows={[confirmed({ scorer: 'left' })]} selIdx={0}
+                       onSelect={() => {}} onDecide={() => {}} onScorer={onScorer} />)
+    fireEvent.click(screen.getByTitle(/Fencer 1 scored/))
+    expect(onScorer).toHaveBeenCalledWith('p0', null)
+  })
+
+  it('offers nothing to attribute on a touch that was rejected', () => {
+    render(<TouchTable rows={[confirmed({ state: 'rejected' })]} selIdx={0}
+                       onSelect={() => {}} onDecide={() => {}} onScorer={onScorer} />)
+    expect(screen.queryByTitle(/scored/)).not.toBeInTheDocument()
   })
 })

@@ -417,6 +417,22 @@ label.opt input { padding:0; }
                     font-size:14px; }
   .effort-verdict b { font-size:20px; color:var(--ok); }
 
+  /* Who scored: three small toggles per confirmed touch, plus the lamp's
+     suggestion when there is one. Deliberately quiet, because attributing is a
+     second pass over work already done and must not compete with confirm and
+     reject, which are the primary decisions on the same row. */
+  .who .sc { font-size:11px; padding:2px 7px; margin-right:4px; border-radius:999px;
+             border:1px solid var(--line); background:transparent; color:var(--muted);
+             cursor:pointer; }
+  .who .sc:hover { color:var(--fg); border-color:var(--muted); }
+  .who .sc.on { background:var(--accent); border-color:var(--accent); color:#0b0e14;
+                font-weight:600; }
+  .who .suggest { font-size:11px; font-style:italic; padding:2px 7px; border-radius:999px;
+                  border:1px dashed var(--warn); background:transparent;
+                  color:var(--warn); cursor:pointer; margin-left:2px; }
+  .who .suggest:hover { background:var(--warn); color:#0b0e14; font-style:normal; }
+  .who .none { color:var(--muted); font-size:12px; }
+
 /* ---- the scoreline, and where the touches landed ---- */
 
   .scoreline { display:flex; align-items:baseline; justify-content:center;

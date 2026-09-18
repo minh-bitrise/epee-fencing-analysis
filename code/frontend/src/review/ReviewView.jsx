@@ -125,6 +125,24 @@ export default function ReviewView({ initialBoutId }) {
 
   // --- the four annotation actions ---------------------------------------
 
+  // Record who scored a confirmed touch. Separate from `decide`, which says
+  // whether the touch happened at all: confirming a touch and attributing it
+  // are two different judgements and the user makes them at different moments,
+  // often on a second pass once the lamp proposals are in.
+  const setScorer = useCallback(async (touchId, scorer) => {
+    if (busy.current) return
+    busy.current = true
+    try {
+      await api(`${boutPath(boutId)}/touches/${touchId}/decision`,
+                postJSON({ state: 'confirmed', scorer }))
+      await reload()
+    } catch (e) {
+      setListError(e.message)
+    } finally {
+      busy.current = false
+    }
+  }, [boutId, reload])
+
   const decide = useCallback(async (touchId, state, advance = false) => {
     if (busy.current) return
     busy.current = true
@@ -629,7 +647,8 @@ export default function ReviewView({ initialBoutId }) {
           )}
           <TouchTable rows={visibleRows} selIdx={selIdx} onSelect={select}
                       onDecide={decide} onDelete={removeAdded}
-                      scorerProposals={scorers?.proposals} />
+                      scorerProposals={scorers?.proposals}
+                      onScorer={setScorer} />
           <form className="row addrow" onSubmit={addTouchByTime}>
             <input name="time" type="number" step="0.1" placeholder="time (s)"
                    required style={{ width: 100 }} />
