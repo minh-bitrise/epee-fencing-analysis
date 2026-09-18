@@ -46,3 +46,14 @@ describe('LungePanel', () => {
     expect(screen.getByRole('button', { name: 'Fencer 2' })).toBeInTheDocument()
   })
 })
+
+describe('lunge times read on the video clock', () => {
+  it('writes a labelled lunge the way the player writes it', () => {
+    // Reported from use: the player read 1:51 and this list read 111.75s, so
+    // every item had to be converted in the head to be found in the video.
+    render(<LungePanel boutId="b" lunges={[lunge(111.75)]} touchTimes={[]}
+                       onChanged={() => {}} />)
+    expect(screen.getByText(/1:51\.7/)).toBeInTheDocument()
+    expect(screen.queryByText(/111\.75s/)).not.toBeInTheDocument()
+  })
+})

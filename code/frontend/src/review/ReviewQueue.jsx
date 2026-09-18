@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { formatTime } from './time.js'
 
 /**
  * Walks the user through pending proposals one at a time, seeking the video to
@@ -157,7 +158,7 @@ export default function ReviewQueue({ items, kind, onDecide, onExit, onSeek,
       </div>
 
       <div className="queue-item">
-        <span className="queue-time">{item.time_s.toFixed(2)}s</span>
+        <span className="queue-time">{formatTime(item.time_s)}</span>
         {item.detail && <span className="queue-detail">{item.detail}</span>}
       </div>
 

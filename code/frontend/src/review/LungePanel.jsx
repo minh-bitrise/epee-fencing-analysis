@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { formatTime } from './time.js'
 import { api, boutPath, del } from '../api.js'
 
 // Scored or missed is derived, not asked for. A lunge that scored is one whose
@@ -65,7 +66,7 @@ export default function LungePanel({ boutId, lunges, touchTimes, onChanged,
           <div className="mini" style={{ marginTop: 5 }}>
             {proposed.proposals.slice(0, 12).map((p) => (
               <span key={p.time_s} style={{ marginRight: 9 }}>
-                {p.time_s.toFixed(1)}s ({p.margin}x)
+                {formatTime(p.time_s)} ({p.margin}x)
               </span>
             ))}
             {proposed.proposals.length > 12
@@ -84,7 +85,7 @@ export default function LungePanel({ boutId, lunges, touchTimes, onChanged,
       )}
       {lunges.map((l) => (
         <div className="stat" key={l.id}>
-          <span>{l.time_s.toFixed(2)}s - F{l.slot + 1} {label(l)}</span>
+          <span>{formatTime(l.time_s)} - F{l.slot + 1} {label(l)}</span>
           <button onClick={async () => {
             // Guarded here rather than left to bubble: this is a delete, and a
             // silent failure looks exactly like a successful one until the list
