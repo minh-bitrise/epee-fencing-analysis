@@ -30,7 +30,7 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REPORTS = ["final/submission_report.md", "final/submission_report_full.md"]
+REPORTS = ["final/submission_report_full.md"]
 
 
 def read(path):
@@ -286,11 +286,10 @@ def check_model_results(c, report):
 # checker like this actually goes wrong.
 OVER_CAP_BY_DESIGN = {"final/submission_report_full.md"}
 
-# submission_report.md is a DERIVED snapshot, re-cut only if the cap turns out to
-# be real. That creates a trap this tool would otherwise walk into: once it stops
-# being edited it goes stale, and every check here would keep passing on it,
-# because a stale document is perfectly self-consistent. Green on the wrong
-# document is worse than red on the right one.
+# There is no longer a derived snapshot: the real limit turned out to be 10,500,
+# not the 9,500 that was assumed, so the cut-down version was deleted rather than
+# maintained. These constants stay because the staleness check below is cheap and
+# the situation could recur.
 WORKING = "final/submission_report_full.md"
 DERIVED = "final/submission_report.md"
 

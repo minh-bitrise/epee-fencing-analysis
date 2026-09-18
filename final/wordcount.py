@@ -18,11 +18,14 @@ CAPS = {
     "1. Introduction": 1000,
     "2. Literature Review": 2500,
     "3. Design": 2000,
-    "4. Implementation": 2000,
+    "4. Implementation": 2500,
     "5. Evaluation": 2500,
     "6. Conclusion": 1000,
 }
-TOTAL_CAP = 9500
+# Verified 18 Sep 2026 against uni_modules/final_report_instructions.md, the
+# coursework page itself. The per-chapter limits sum to 11,500; the total is the
+# strict one and the spread between chapters is deliberately flexible.
+TOTAL_CAP = 10500
 
 # Not counted: everything after this heading, plus the two below it.
 UNCOUNTED = ("References", "Appendices")
