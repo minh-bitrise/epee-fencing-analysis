@@ -51,7 +51,7 @@ export default function TouchTable({ rows, selIdx, onSelect, onDecide, onDelete,
         const ref = sel ? selRef : null
         const added = r.kind === 'added'
         const state = added ? 'added' : r.state
-        const scorer = added ? r.scorer : r.scorer ?? proposedFor(r.at)
+        const lamp = added ? null : proposedFor(r.at)
 
         return (
           <div key={`${r.kind}-${r.id}`} ref={ref}
@@ -61,41 +61,47 @@ export default function TouchTable({ rows, selIdx, onSelect, onDecide, onDelete,
 
             <span className={`pill ${state}`}>{state}</span>
 
-            {/* WHO SCORED, AND HOW IT GETS RECORDED. The lamp reading was
-                previously shown and then stranded: a proposal appeared in
-                italics and there was nothing to press, so a touch could never
-                be attributed at all and the three scoring figures on the
-                profile could never be populated from the interface. The
-                backend had accepted a scorer on a decision all along; the
-                client simply never sent one.
+            {/* THE LAMP'S READING, ALONGSIDE THE STATE AND NOT INSTEAD OF THE
+                ANSWER. It sits here rather than inside the who cell so that it
+                stays visible after the user has decided, which is the point:
+                the two side by side show where the system agreed with the
+                person and where it did not, and that comparison is the
+                evidence behind the attribution figures in the evaluation.
+                Folding it away once answered would hide exactly the cases
+                worth looking at.
 
-                The suggestion stays visibly a suggestion. Pressing it accepts
-                it, which is the same one-press economy as confirming a touch,
-                and the three buttons are there for when it is wrong or absent. */}
+                While nothing is recorded it is also the fastest way to record
+                something, since pressing it accepts it. */}
+            {!added && state === 'confirmed' && lamp && lamp.proposed !== 'unknown' && (
+              <button type="button"
+                      className={`lamp${r.scorer
+                        ? (r.scorer === lamp.proposed ? ' agrees' : ' differs') : ''}`}
+                      disabled={!!r.scorer}
+                      title={r.scorer
+                        ? (r.scorer === lamp.proposed
+                            ? 'the lamp agrees with you'
+                            : `the lamp read ${lamp.proposed}, you recorded ${r.scorer}`)
+                        : `green delta ${lamp.green_delta}, red delta `
+                          + `${lamp.red_delta}. Press to accept.`}
+                      onClick={() => !r.scorer && onScorer(r.id, lamp.proposed)}>
+                lamp {lamp.proposed}
+              </button>
+            )}
+
+            {/* Who scored, as the user has it. Confirm and reject answer
+                whether the touch happened; these answer who it belongs to, and
+                until they existed a touch could not be attributed at all. */}
             <span className="who">
               {added ? r.scorer : state !== 'confirmed'
                 ? <span className="none">-</span>
-                : (
-                  <>
-                    {SIDES.map(([value, label, hint]) => (
-                      <button key={value} type="button"
-                              className={`sc${r.scorer === value ? ' on' : ''}`}
-                              title={r.scorer === value ? `${hint}. Press to clear.` : hint}
-                              onClick={() => onScorer(r.id, r.scorer === value ? null : value)}>
-                        {label}
-                      </button>
-                    ))}
-                    {!r.scorer && scorer && scorer.proposed !== 'unknown' && (
-                      <button type="button" className="suggest"
-                              title={`green delta ${scorer.green_delta}, `
-                                     + `red delta ${scorer.red_delta}. `
-                                     + 'Press to accept.'}
-                              onClick={() => onScorer(r.id, scorer.proposed)}>
-                        {scorer.proposed}?
-                      </button>
-                    )}
-                  </>
-                )}
+                : SIDES.map(([value, label, hint]) => (
+                    <button key={value} type="button"
+                            className={`sc${r.scorer === value ? ' on' : ''}`}
+                            title={r.scorer === value ? `${hint}. Press to clear.` : hint}
+                            onClick={() => onScorer(r.id, r.scorer === value ? null : value)}>
+                      {label}
+                    </button>
+                  ))}
             </span>
 
             {/* What the proposal rests on. The user is adjudicating the

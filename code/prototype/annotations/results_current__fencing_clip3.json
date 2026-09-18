@@ -3,19 +3,23 @@
   "touch_states": {
     "p0": {
       "state": "confirmed",
-      "updated": 1789752999.9954402
+      "updated": 1789754275.938036,
+      "scorer": "right"
     },
     "p1": {
       "state": "confirmed",
-      "updated": 1789721753.510456
+      "updated": 1789754283.1509912,
+      "scorer": "left"
     },
     "p2": {
       "state": "confirmed",
-      "updated": 1789721754.510445
+      "updated": 1789754284.093899,
+      "scorer": "right"
     },
     "p3": {
       "state": "confirmed",
-      "updated": 1789721755.526826
+      "updated": 1789754285.0198379,
+      "scorer": "left"
     },
     "p4": {
       "state": "confirmed",
@@ -23,7 +27,8 @@
     },
     "p5": {
       "state": "confirmed",
-      "updated": 1789746960.952728
+      "updated": 1789754286.750564,
+      "scorer": "right"
     },
     "p6": {
       "state": "rejected",
@@ -35,27 +40,33 @@
     },
     "p8": {
       "state": "confirmed",
-      "updated": 1789746883.688797
+      "updated": 1789754288.435709,
+      "scorer": "left"
     },
     "p9": {
       "state": "confirmed",
-      "updated": 1789746886.0049741
+      "updated": 1789754289.293728,
+      "scorer": "right"
     },
     "p10": {
       "state": "confirmed",
-      "updated": 1789746898.991621
+      "updated": 1789754291.3508968,
+      "scorer": "double"
     },
     "p11": {
       "state": "confirmed",
-      "updated": 1789746900.678314
+      "updated": 1789754292.4347231,
+      "scorer": "double"
     },
     "p12": {
       "state": "confirmed",
-      "updated": 1789746902.3762078
+      "updated": 1789754293.189496,
+      "scorer": "double"
     },
     "p13": {
       "state": "confirmed",
-      "updated": 1789746903.7331278
+      "updated": 1789754293.8041239,
+      "scorer": "double"
     }
   },
   "added_touches": [],

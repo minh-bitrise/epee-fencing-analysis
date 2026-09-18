@@ -56,9 +56,9 @@ describe('TouchTable', () => {
                        {...handlers}
                        scorerProposals={[{ time_s: 43.9, proposed: 'left',
                                            green_delta: 12, red_delta: 400 }]} />)
-    const cell = screen.getByText('left?')
+    const cell = screen.getByText(/lamp left/)
     expect(cell).toBeInTheDocument()
-    expect(cell.className).toContain('suggest')
+    expect(cell.className).toContain('lamp')
   })
 
   it('does not attach a proposal to a different touch', () => {
@@ -117,7 +117,7 @@ describe('recording who scored', () => {
                        onDecide={() => {}} onScorer={onScorer}
                        scorerProposals={[{ time_s: 19.0, proposed: 'left',
                                            green_delta: 9, red_delta: 1 }]} />)
-    fireEvent.click(screen.getByText('left?'))
+    fireEvent.click(screen.getByText(/lamp left/))
     expect(onScorer).toHaveBeenCalledWith('p0', 'left')
   })
 
@@ -134,5 +134,39 @@ describe('recording who scored', () => {
     render(<TouchTable rows={[confirmed({ state: 'rejected' })]} selIdx={0}
                        onSelect={() => {}} onDecide={() => {}} onScorer={onScorer} />)
     expect(screen.queryByTitle(/scored/)).not.toBeInTheDocument()
+  })
+})
+
+describe('the lamp reading stays visible after the user answers', () => {
+  const onScorer = vi.fn()
+  const row = (over = {}) => ({
+    id: 'p0', at: 19.0, kind: 'proposed', state: 'confirmed',
+    confidence: 0.9, separation_m: 2.1, scorer: null, ...over,
+  })
+  const lamp = [{ time_s: 19.0, proposed: 'left', green_delta: 9, red_delta: 1 }]
+
+  it('marks agreement', () => {
+    render(<TouchTable rows={[row({ scorer: 'left' })]} selIdx={0} onSelect={() => {}}
+                       onDecide={() => {}} onScorer={onScorer} scorerProposals={lamp} />)
+    expect(screen.getByText(/lamp left/).className).toContain('agrees')
+  })
+
+  it('marks disagreement, which is the case worth finding', () => {
+    // These rows are the evidence behind the attribution figures: where the
+    // lamp reading and the person's judgement part company. Hiding the reading
+    // once answered would hide exactly the cases worth looking at.
+    render(<TouchTable rows={[row({ scorer: 'right' })]} selIdx={0} onSelect={() => {}}
+                       onDecide={() => {}} onScorer={onScorer} scorerProposals={lamp} />)
+    const chip = screen.getByText(/lamp left/)
+    expect(chip.className).toContain('differs')
+    expect(chip.title).toMatch(/you recorded right/)
+  })
+
+  it('cannot be pressed once the user has answered', () => {
+    // Otherwise a stray click silently overwrites a judgement with a guess.
+    render(<TouchTable rows={[row({ scorer: 'right' })]} selIdx={0} onSelect={() => {}}
+                       onDecide={() => {}} onScorer={onScorer} scorerProposals={lamp} />)
+    fireEvent.click(screen.getByText(/lamp left/))
+    expect(onScorer).not.toHaveBeenCalled()
   })
 })

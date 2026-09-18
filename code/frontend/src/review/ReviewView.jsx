@@ -378,7 +378,7 @@ export default function ReviewView({ initialBoutId }) {
   // fencer the green lamp belongs to has to come from the user: nothing in the
   // image says it, and guessing would be wrong half the time in a way that looks
   // authoritative.
-  const proposeScorers = async (greenIs) => {
+  const proposeScorers = useCallback(async (greenIs) => {
     setScorers({ loading: true })
     try {
       const r = await api(`${boutPath(boutId)}/propose-scorers`,
@@ -387,7 +387,23 @@ export default function ReviewView({ initialBoutId }) {
     } catch (e) {
       setScorers({ error: e.message })
     }
-  }
+  }, [boutId])
+
+  // Read the lamps again when returning to a bout whose green side is already
+  // recorded. The readings themselves are not stored, only the side, so
+  // without this the comparison between what the lamp said and what the user
+  // recorded vanished on every reload, which is the half of it worth keeping.
+  //
+  // Guarded per bout rather than per render: this decodes a few frames for each
+  // confirmed touch, so it must happen once on arrival and not again.
+  const lampsAsked = useRef(null)
+  useEffect(() => {
+    if (!boutId || !data?.green_is) return
+    if (lampsAsked.current === boutId) return
+    if (!rows.some((r) => r.kind === 'proposed' && r.state === 'confirmed')) return
+    lampsAsked.current = boutId
+    proposeScorers(data.green_is)
+  }, [boutId, data, rows, proposeScorers])
 
   // --- the review queue and the manual control condition ------------------
 

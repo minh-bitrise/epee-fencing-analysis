@@ -427,10 +427,16 @@ label.opt input { padding:0; }
   .who .sc:hover { color:var(--fg); border-color:var(--muted); }
   .who .sc.on { background:var(--accent); border-color:var(--accent); color:#0b0e14;
                 font-weight:600; }
-  .who .suggest { font-size:11px; font-style:italic; padding:2px 7px; border-radius:999px;
-                  border:1px dashed var(--warn); background:transparent;
-                  color:var(--warn); cursor:pointer; margin-left:2px; }
-  .who .suggest:hover { background:var(--warn); color:#0b0e14; font-style:normal; }
+  /* The lamp reading, next to the state. Dashed while it is only a suggestion
+     and solid once the user has answered, so the eye can find the rows where
+     the two disagree without reading any of them. */
+  .lamp { font-size:11px; font-style:italic; padding:2px 8px; border-radius:999px;
+          border:1px dashed var(--warn); background:transparent; color:var(--warn);
+          cursor:pointer; white-space:nowrap; }
+  .lamp:hover:not(:disabled) { background:var(--warn); color:#0b0e14; font-style:normal; }
+  .lamp:disabled { cursor:default; font-style:normal; border-style:solid; }
+  .lamp.agrees { border-color:var(--ok); color:var(--ok); opacity:.75; }
+  .lamp.differs { border-color:var(--no); color:var(--no); font-weight:600; }
   .who .none { color:var(--muted); font-size:12px; }
 
 /* ---- the scoreline, and where the touches landed ---- */
