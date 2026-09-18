@@ -158,7 +158,7 @@ class AnnotationStore:
         if not os.path.exists(p):
             return {"bout_id": bout_id, "touch_states": {}, "added_touches": [],
                     "unreliable_segments": [], "reanchors": [], "lunges": [],
-                    "sessions": []}
+                    "sessions": [], "green_is": None}
         with open(p) as f:
             data = json.load(f)
         # tolerate files written by an earlier version
@@ -168,12 +168,30 @@ class AnnotationStore:
         data.setdefault("reanchors", [])
         data.setdefault("lunges", [])
         data.setdefault("sessions", [])
+        data.setdefault("green_is", None)
         return data
 
     def save(self, bout_id, data):
         with open(self._path(bout_id), "w") as f:
             json.dump(data, f, indent=2)
         return data
+
+    def set_green_is(self, bout_id, side):
+        """Remember which side the green lamp belongs to on this bout.
+
+        WHY THIS IS STORED. It is a fact about the recording, not about a
+        session: nothing in the image reveals it, it never changes for a given
+        bout, and every attributed touch depends on it. It was previously sent
+        with each request and discarded, so it had to be re-entered after every
+        reload, and a misremembered answer silently inverts who scored every
+        touch in the bout. The report describes it as confirmed once per bout,
+        which was only true of the intent.
+        """
+        if side not in ("left", "right"):
+            raise ValueError(f"green_is must be left or right, got {side!r}")
+        data = self.load(bout_id)
+        data["green_is"] = side
+        return self.save(bout_id, data)
 
     # --- action 1: confirm or correct a proposed touch ------------------
 

@@ -314,6 +314,10 @@ def get_touches(bout_id: str):
         "unreliable_segments": data["unreliable_segments"],
         "reanchors": data["reanchors"],
         "lunges": sorted(data["lunges"], key=lambda l: l["time_s"]),
+        # Which side the green lamp is on, remembered per bout. Nothing in the
+        # image reveals it and every attribution depends on it, so it must
+        # survive a reload rather than being asked for again each time.
+        "green_is": data.get("green_is"),
         "progress": store.review_progress(bout_id, proposed),
     }
 
@@ -992,6 +996,8 @@ def propose_scorers(bout_id: str, body: ScorerRequest):
     # Calibrate on whatever the user has already attributed by hand. With none,
     # fall back to fitting on the responses themselves, which is weaker and is
     # reported as such rather than presented as the same thing.
+    store.set_green_is(bout_id, body.green_is)
+
     labelled = [(r, c["scorer"]) for r, c in zip(responses, confirmed)
                 if c.get("scorer") in ("left", "right", "double")]
     if labelled:

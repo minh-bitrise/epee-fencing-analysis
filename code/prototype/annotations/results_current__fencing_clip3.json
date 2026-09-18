@@ -61,6 +61,42 @@
   "added_touches": [],
   "unreliable_segments": [],
   "reanchors": [],
-  "lunges": [],
+  "lunges": [
+    {
+      "id": "l0",
+      "time_s": 12.032,
+      "slot": 0,
+      "note": "",
+      "created": 1789747574.188212
+    },
+    {
+      "id": "l1",
+      "time_s": 18.961,
+      "slot": 1,
+      "note": "",
+      "created": 1789747636.361098
+    },
+    {
+      "id": "l2",
+      "time_s": 24.661,
+      "slot": 1,
+      "note": "",
+      "created": 1789747666.031683
+    },
+    {
+      "id": "l3",
+      "time_s": 34.733,
+      "slot": 0,
+      "note": "",
+      "created": 1789747708.1983721
+    },
+    {
+      "id": "l4",
+      "time_s": 41.949,
+      "slot": 0,
+      "note": "",
+      "created": 1789747734.224135
+    }
+  ],
   "sessions": []
 }

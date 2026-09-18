@@ -914,3 +914,40 @@ class TestReviewSessions:
     def test_sessions_survive_a_file_written_before_they_existed(self, store):
         store.add_touch("b", 10.0)
         assert store.load("b")["sessions"] == []
+
+
+class TestGreenLampSide:
+    """Which side the green lamp is on is a fact about the RECORDING.
+
+    Nothing in the image reveals it, it never changes for a given bout, and
+    every attributed touch depends on it. It used to be sent with each request
+    and thrown away, so it had to be re-entered after every reload, and a
+    misremembered answer silently inverts who scored every touch. The report
+    describes it as confirmed once per bout, which was true of the intention
+    and not of the system.
+    """
+
+    def test_it_survives_a_reload(self, tmp_path):
+        s = AnnotationStore(str(tmp_path / "ann"))
+        assert s.load("b")["green_is"] is None
+        s.set_green_is("b", "right")
+        assert AnnotationStore(str(tmp_path / "ann")).load("b")["green_is"] == "right"
+
+    def test_it_can_be_corrected(self, tmp_path):
+        s = AnnotationStore(str(tmp_path / "ann"))
+        s.set_green_is("b", "left")
+        s.set_green_is("b", "right")
+        assert s.load("b")["green_is"] == "right"
+
+    def test_it_refuses_anything_but_a_side(self, tmp_path):
+        s = AnnotationStore(str(tmp_path / "ann"))
+        with pytest.raises(ValueError, match="left or right"):
+            s.set_green_is("b", "green")
+        assert s.load("b")["green_is"] is None
+
+    def test_a_file_from_before_this_existed_still_loads(self, tmp_path):
+        """Older annotation files have no such key and must not break."""
+        root = tmp_path / "ann"
+        os.makedirs(root)
+        (root / "b.json").write_text('{"bout_id": "b", "touch_states": {}}')
+        assert AnnotationStore(str(root)).load("b")["green_is"] is None

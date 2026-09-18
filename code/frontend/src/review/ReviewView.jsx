@@ -683,11 +683,25 @@ export default function ReviewView({ initialBoutId }) {
           Tools: () => (
             <>
               <Section title="Who scored">
+                {/* The remembered answer is shown as selected. It is a fact
+                    about the recording rather than about this visit, and it
+                    used to be discarded after each request, so it had to be
+                    re-entered on every reload and a misremembered answer
+                    silently inverted every attribution in the bout. */}
                 <div className="row">
                   <span className="mini">green belongs to</span>
-                  <button onClick={() => proposeScorers('left')}>Fencer 1</button>
-                  <button onClick={() => proposeScorers('right')}>Fencer 2</button>
+                  <button className={data?.green_is === 'left' ? 'primary' : undefined}
+                          onClick={() => proposeScorers('left')}>Fencer 1</button>
+                  <button className={data?.green_is === 'right' ? 'primary' : undefined}
+                          onClick={() => proposeScorers('right')}>Fencer 2</button>
                 </div>
+                {data?.green_is && !scorers && (
+                  <div className="mini">
+                    Recorded for this bout: green is Fencer{' '}
+                    {data.green_is === 'left' ? '1' : '2'}. Press it again to
+                    re-read the lamps.
+                  </div>
+                )}
                 {scorers?.loading && <div className="mini">reading the lamps...</div>}
                 {scorers?.error && <div className="note err">{scorers.error}</div>}
                 {scorers?.proposals && (
