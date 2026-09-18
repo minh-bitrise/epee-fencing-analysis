@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import ErrorBoundary from './ErrorBoundary.jsx'
 import UploadView from './upload/UploadView.jsx'
 import ReviewView from './review/ReviewView.jsx'
 
@@ -38,8 +39,12 @@ export default function App() {
         </nav>
       </header>
       {view === 'upload'
-        ? <UploadView onOpenBout={openInReview} />
-        : <ReviewView initialBoutId={openBoutId} />}
+        ? <ErrorBoundary label="The upload view">
+            <UploadView onOpenBout={openInReview} />
+          </ErrorBoundary>
+        : <ErrorBoundary label="The review view">
+            <ReviewView initialBoutId={openBoutId} />
+          </ErrorBoundary>}
     </>
   )
 }

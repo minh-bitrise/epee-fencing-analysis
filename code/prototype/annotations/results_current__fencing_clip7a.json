@@ -1,0 +1,19 @@
+{
+  "bout_id": "results_current:fencing_clip7a",
+  "touch_states": {},
+  "added_touches": [],
+  "unreliable_segments": [],
+  "reanchors": [
+    {
+      "id": "a0",
+      "time_s": 118.197,
+      "slot": 1,
+      "x": 800.0,
+      "y": 375.0,
+      "applied": true,
+      "created": 1789732384.421843
+    }
+  ],
+  "lunges": [],
+  "sessions": []
+}

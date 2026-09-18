@@ -104,3 +104,26 @@ describe('JobCard', () => {
     expect(screen.getByText(/without a piste region/)).toBeInTheDocument()
   })
 })
+
+describe('JobCard piste region', () => {
+  it('does not crash when the region was carried over rather than measured', () => {
+    // A reprocess records `polygon: true`, a flag meaning "there is one",
+    // rather than the polygon itself. Indexing it threw and blanked the app.
+    render(<JobCard job={{
+      job_id: 'x', state: 'done', kind: 'processing', filename: 'rerun',
+      stages_done: [], progress: { done: 1, total: 1, pct: 100 },
+      piste: { needed: true, polygon: true, decision: 'carried over from the original run' },
+    }} />)
+    expect(screen.getByText(/carried over from the original run/)).toBeInTheDocument()
+  })
+
+  it('still prints the rows when it has a real polygon', () => {
+    render(<JobCard job={{
+      job_id: 'x', state: 'done', kind: 'processing', filename: 'f',
+      stages_done: [], progress: { done: 1, total: 1, pct: 100 },
+      piste: { needed: true, polygon: [[0, 120], [10, 120], [10, 400], [0, 400]],
+               decision: 'measured' },
+    }} />)
+    expect(screen.getByText(/rows 120 to 400/)).toBeInTheDocument()
+  })
+})

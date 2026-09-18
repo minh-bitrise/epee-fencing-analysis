@@ -115,12 +115,21 @@ export default function JobCard({ job, onChanged, onOpenBout }) {
 
       {job.state === 'done' && job.piste && (
         <div className="note">
-          {job.piste.polygon
+          {/* `polygon` is USUALLY the polygon and sometimes just a flag. A
+              reprocess carries the region over from the original run rather
+              than re-measuring it, and records `polygon: true` to say one
+              exists without repeating it. Indexing that boolean threw, and with
+              no error boundary above it the whole application went blank: the
+              page rendered, then vanished. Reported as "the UI flashes for a
+              second then goes black". */}
+          {Array.isArray(job.piste.polygon)
             ? `Piste region ${job.piste.decision || 'measured'}: rows `
               + `${Math.round(job.piste.polygon[0][1])} to `
               + `${Math.round(job.piste.polygon[2][1])} of the frame.`
-            : 'Processed without a piste region. '
-              + (job.piste.reason || '')}
+            : job.piste.polygon
+              ? `Piste region ${job.piste.decision || 'measured'}.`
+              : 'Processed without a piste region. '
+                + (job.piste.reason || '')}
         </div>
       )}
 

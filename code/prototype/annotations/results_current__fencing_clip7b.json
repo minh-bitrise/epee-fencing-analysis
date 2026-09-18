@@ -1,0 +1,18 @@
+{
+  "bout_id": "results_current:fencing_clip7b",
+  "touch_states": {
+    "p0": {
+      "state": "confirmed",
+      "updated": 1789731785.753651
+    },
+    "p1": {
+      "state": "confirmed",
+      "updated": 1789731787.489768
+    }
+  },
+  "added_touches": [],
+  "unreliable_segments": [],
+  "reanchors": [],
+  "lunges": [],
+  "sessions": []
+}
