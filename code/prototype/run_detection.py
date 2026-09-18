@@ -99,7 +99,29 @@ NET_SIGN_FLOOR_M = 1.0
 PUSH_PULL_SMOOTH_WINDOW = 5
 
 # fencer colours (BGR)
-COLOURS = [(0, 200, 255), (0, 255, 100)]
+# Fencer colours, BGR, and they are NOT a free choice.
+#
+# The first version used amber and green. Green is one of the two scoring lamps,
+# so the overlay competed with the thing the user is reading the lamps for, and
+# a reviewer judging who scored had a green box and a green light on screen at
+# once. Red is unusable for the same reason.
+#
+# They also have to match the interface, which had drifted: Fencer 1 was blue in
+# the sidebar and amber in the video, so the same fencer wore two colours
+# depending on which half of the screen you looked at.
+#
+# Blue and amber avoid both lamps, and these are the exact values of --f1 and
+# --f2 in the stylesheet. Change one and change the other.
+F1_HEX, F2_HEX = "#4da3ff", "#ffc857"
+
+
+def _bgr(hex_colour):
+    h = hex_colour.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return (b, g, r)
+
+
+COLOURS = [_bgr(F1_HEX), _bgr(F2_HEX)]
 
 # MediaPipe landmark indices
 LM_LEFT_ANKLE     = 27

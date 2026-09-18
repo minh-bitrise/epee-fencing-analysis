@@ -1849,3 +1849,29 @@ class TestLoadReanchors:
 
     def test_an_empty_file_yields_no_corrections(self, tmp_path):
         assert load_reanchors(self._write(tmp_path, []), 30.0) == {}
+
+
+def test_fencer_colours_avoid_the_scoring_lamps_and_match_the_interface():
+    """The overlay must not use red or green: those are the scoring lamps, and a
+    green box beside a green light is exactly the judgement the user is making.
+    It must also agree with the stylesheet, which it had drifted from, leaving
+    Fencer 1 blue in the sidebar and amber in the video.
+    """
+    import os
+    import re
+
+    import run_detection as rd
+
+    css = os.path.join(os.path.dirname(os.path.abspath(rd.__file__)),
+                       "..", "frontend", "src", "styles.css")
+    text = open(css).read()
+    f1 = re.search(r"--f1:\s*(#[0-9a-fA-F]{6})", text).group(1).lower()
+    f2 = re.search(r"--f2:\s*(#[0-9a-fA-F]{6})", text).group(1).lower()
+    assert rd.F1_HEX.lower() == f1, "overlay Fencer 1 disagrees with the interface"
+    assert rd.F2_HEX.lower() == f2, "overlay Fencer 2 disagrees with the interface"
+
+    for hexcol in (rd.F1_HEX, rd.F2_HEX):
+        b, g, r = rd._bgr(hexcol)
+        # Not dominated by red or by green, which is what a lamp looks like.
+        assert not (r > 150 and g < 110 and b < 110), f"{hexcol} reads as the red lamp"
+        assert not (g > 150 and r < 110 and b < 110), f"{hexcol} reads as the green lamp"
