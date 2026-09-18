@@ -1,0 +1,21 @@
+{
+  "_comment": "Piste polygon DERIVED BY MEASUREMENT from fencing_clip7a.mp4 by derive_piste.py, not placed by eye. Frame 1280x720. Sampled 540 frames; 75 of them contain people besides the two fencers. Fencer feet y measured in [454.1, 719.8], p1=470.8, p99=717.5. Edges are those percentiles plus a margin of 32.6 px, which is 0.1 of the median fencer height of 325.6 px.",
+  "polygon": [
+    [
+      0,
+      438.2
+    ],
+    [
+      1280,
+      438.2
+    ],
+    [
+      1280,
+      720.0
+    ],
+    [
+      0,
+      720.0
+    ]
+  ]
+}
