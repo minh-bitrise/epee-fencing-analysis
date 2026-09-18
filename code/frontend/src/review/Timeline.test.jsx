@@ -89,9 +89,11 @@ describe('Timeline', () => {
     const long = setup({ duration: 180 })
     const short = setup({ duration: 60 })
     const ticks = (c) => [...c.querySelectorAll('.ax span')].map((s) => s.textContent)
-    expect(ticks(long.container)).toContain('30s')
-    expect(ticks(long.container)).not.toContain('15s')
-    expect(ticks(short.container)).toContain('15s')
+    // Written as the video player writes them, so a tick can be matched against
+    // the picture without converting seconds in your head.
+    expect(ticks(long.container)).toContain('0:30')
+    expect(ticks(long.container)).not.toContain('0:15')
+    expect(ticks(short.container)).toContain('0:15')
   })
 
   it('renders without dividing by zero before the duration is known', () => {

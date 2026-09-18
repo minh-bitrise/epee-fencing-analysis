@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { formatClock, formatTime } from './time.js'
 
 /**
  * The whole bout on one strip: every proposed touch as a marker, every excluded
@@ -48,7 +49,7 @@ export default function Timeline({ duration, rows, segments, selIdx,
           <div key={`${r.kind}-${r.id}`}
                className={`mk ${r.kind === 'added' ? 'added' : r.state}`}
                style={{ left: `${(100 * r.at) / duration}%` }}
-               title={`${r.at.toFixed(1)}s ${r.state}`}
+               title={`${formatTime(r.at)} ${r.state}`}
                onClick={(e) => { e.stopPropagation(); onSelect(i) }} />
         ))}
         <div className="cur" ref={cursorRef} />
@@ -57,7 +58,7 @@ export default function Timeline({ duration, rows, segments, selIdx,
             page. */}
         <div className="ax">
           {ticks.map((s) => (
-            <span key={s} style={{ left: `${(100 * s) / duration}%` }}>{s}s</span>
+            <span key={s} style={{ left: `${(100 * s) / duration}%` }}>{formatClock(s)}</span>
           ))}
         </div>
       </div>

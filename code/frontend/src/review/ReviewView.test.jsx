@@ -109,13 +109,13 @@ describe('ReviewView', () => {
     // touch file at all, and opening one of those shows an empty table.
     stubFetch()
     render(<ReviewView initialBoutId={null} />)
-    await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())
   })
 
   it('shows both proposals with what each rests on', async () => {
     stubFetch()
     const { container } = render(<ReviewView initialBoutId={BOUT} />)
-    await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())
     const basis = [...container.querySelectorAll('.basis')]
       .map((el) => el.textContent).join(' | ')
     expect(basis).toContain('0.90')
@@ -127,7 +127,7 @@ describe('ReviewView', () => {
     // corrections figures in the report describe a workflow nobody would use.
     stubFetch()
     render(<ReviewView initialBoutId={BOUT} />)
-    await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())
 
     press('c')
     await waitFor(() => {
@@ -140,7 +140,7 @@ describe('ReviewView', () => {
   it('rejects on a single keystroke too', async () => {
     stubFetch()
     render(<ReviewView initialBoutId={BOUT} />)
-    await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())
 
     press('x')
     await waitFor(() => {
@@ -157,7 +157,7 @@ describe('ReviewView', () => {
      */
     stubFetch({ failTouchDecision: true })
     render(<ReviewView initialBoutId={BOUT} />)
-    await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())
 
     press('c')
     await waitFor(() =>
@@ -169,7 +169,7 @@ describe('ReviewView', () => {
     // "c" anywhere near it would confirm a touch.
     stubFetch()
     render(<ReviewView initialBoutId={BOUT} />)
-    await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())
 
     const field = screen.getByPlaceholderText('time (s)')
     field.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true }))
@@ -180,7 +180,7 @@ describe('ReviewView', () => {
   it('lists the keyboard shortcuts, since they are the whole workflow', async () => {
     stubFetch()
     const { container } = render(<ReviewView initialBoutId={BOUT} />)
-    await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())
     // Matched on the hint strip itself rather than on words: "confirm" and
     // "reject" also label buttons in the table, and the strip is now a row of
     // keys with one-word glosses rather than a sentence.
@@ -210,7 +210,7 @@ describe('ReviewView', () => {
     // used rarely and never during a review pass.
     stubFetch()
     render(<ReviewView initialBoutId={BOUT} />)
-    await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())
     await openTools()
     expect(screen.getByRole('button', { name: /Re-run with corrections/ }))
       .toBeDisabled()
@@ -221,7 +221,7 @@ describe('ReviewView', () => {
     // so it is asked rather than guessed.
     stubFetch()
     render(<ReviewView initialBoutId={BOUT} />)
-    await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())
     await openTools()
     expect(screen.getByText(/green belongs to/)).toBeInTheDocument()
   })
@@ -235,7 +235,7 @@ describe('ReviewView', () => {
      */
     stubFetch()
     render(<ReviewView initialBoutId={BOUT} />)
-    await waitFor(() => expect(screen.getByText('19.0s')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: /Re-run with corrections/ }))
       .toBeNull()
     expect(screen.queryByText(/green belongs to/)).toBeNull()

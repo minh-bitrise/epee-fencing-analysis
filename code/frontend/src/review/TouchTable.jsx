@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { formatTime } from './time.js'
 
 /**
  * The proposals, with what each one rests on.
@@ -51,7 +52,7 @@ export default function TouchTable({ rows, selIdx, onSelect, onDecide, onDelete,
           <div key={`${r.kind}-${r.id}`} ref={ref}
                className={`touch ${state}${sel ? ' sel' : ''}`}
                onClick={() => onSelect(i)}>
-            <span className="t">{r.at.toFixed(1)}s</span>
+            <span className="t">{formatTime(r.at)}</span>
 
             <span className={`pill ${state}`}>{state}</span>
 

@@ -6,6 +6,7 @@ import TouchTable from './TouchTable.jsx'
 import MetricsPanel from './MetricsPanel.jsx'
 import ProfilePanel from './ProfilePanel.jsx'
 import ReviewQueue, { formatElapsed } from './ReviewQueue.jsx'
+import { formatClock, formatTime } from './time.js'
 import EffortPanel from './EffortPanel.jsx'
 import Tabs from './Tabs.jsx'
 import Disclosure from './Disclosure.jsx'
@@ -264,7 +265,7 @@ export default function ReviewView({ initialBoutId }) {
         time_s: +v.currentTime.toFixed(3), slot,
         x: Math.round(x), y: Math.round(y),
       }))
-      setAnchorMsg(`recorded for Fencer ${slot + 1} at ${v.currentTime.toFixed(2)}s. `
+      setAnchorMsg(`recorded for Fencer ${slot + 1} at ${formatTime(v.currentTime)}. `
                    + 'Takes effect only when the pipeline is rerun.')
       await reload()
     } catch (e) {
@@ -320,7 +321,7 @@ export default function ReviewView({ initialBoutId }) {
             time_s: at, slot: k === '1' ? 0 : 1,
           }))
           await reload()
-          setSessionNote(`Lunge recorded for Fencer ${k} at ${at.toFixed(2)}s.`)
+          setSessionNote(`Lunge recorded for Fencer ${k} at ${formatTime(at)}.`)
         })
       }
       else return
@@ -548,7 +549,7 @@ export default function ReviewView({ initialBoutId }) {
               )
             })}
           </select>
-          <span className="clock">{currentTime.toFixed(1)}s</span>
+          <span className="clock">{formatTime(currentTime)}</span>
           <span className="grow" />
           {p && (
             <span className="progress-inline" title="proposals reviewed">
@@ -746,7 +747,7 @@ export default function ReviewView({ initialBoutId }) {
                         {outcomes.outcomes.filter((o) => o.outcome !== 'applied')
                           .map((o) => (
                             <div key={`${o.frame}-${o.slot}`} className="mini">
-                              {o.time_s.toFixed(2)}s, Fencer {o.slot + 1}:{' '}
+                              {formatTime(o.time_s)}, Fencer {o.slot + 1}:{' '}
                               {o.outcome}
                             </div>
                           ))}
@@ -784,7 +785,7 @@ export default function ReviewView({ initialBoutId }) {
                 </form>
                 {data?.unreliable_segments?.map((sg) => (
                   <div className="stat" key={sg.id}>
-                    <span>{sg.start_s.toFixed(1)}-{sg.end_s.toFixed(1)}s</span>
+                    <span>{formatClock(sg.start_s)}-{formatClock(sg.end_s)}</span>
                     <button onClick={() => guard(async () => {
                       await api(`${boutPath(boutId)}/segments/${sg.id}`, del)
                       await reload()
