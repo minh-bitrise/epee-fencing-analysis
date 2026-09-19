@@ -935,9 +935,30 @@ denominator, since counting them would improve the rate in proportion to unanswe
 and the rate is per decision, because assisted review answers one question per proposal while
 manual logging creates one entry per touch found.
 
-No such pass has been recorded, so this reports a method and not a result. The instrument exists
-and has been exercised end to end; the figure requires a person who can tell a lunge from a wide
-stance to sit down with a bout.
+**Measured, on two three-minute bouts neither condition had seen before.** Manual logging took
+181 s for 6 touches, 30.2 s per decision. Assisted review took 26 s for 7, 3.7 s per decision: a
+factor of 8.2. The assisted figure includes roughly four seconds the reviewer spent realising the
+run had to be ended explicitly, which inflates it, and it is kept.
+
+**The ratio is a property of the clip, so the useful figure is the crossover.** Manual review is
+bounded below by the length of the recording, because finding touches requires watching the bout;
+assisted pays only for the decisions. The two costs meet at about **16 touches per minute**,
+which is a touch every 3.7 seconds and not a rate epee produces: a five-touch pool bout and a
+fifteen-touch direct elimination both run near 1.7, and the densest clip in this set reaches 4.7.
+The advantage therefore holds across the whole range the sport generates, and widens with
+duration rather than narrowing, which is the case the tool is aimed at.
+
+**What this does and does not establish.** That assisted would win was close to guaranteed by
+that same structure, so the measurement is not a discovery about the direction. What it
+establishes is the size of the assisted cost, 3.7 s per decision, which was not guaranteed: seek
+latency, queue friction or the cost of rejecting bad proposals could each have eaten the
+advantage, and an earlier interface did exactly that by presenting proposals as a table that had
+to be scanned for the next undecided row.
+
+The limitations are severe and worth stating exactly. **One run per condition, one participant,
+and the two conditions ran on different bouts**, so bout difficulty is confounded with mode.
+The participant built the system. This is an instrument demonstrated on itself rather than a user
+study, and a second person would be worth more than a hundred further runs by the same one.
 
 ### Evaluating the models as components
 
@@ -1041,13 +1062,12 @@ holds both fencers in 93 to 98 per cent of frames on three of four clips. Attrib
 the detector could never supply, identifies whether one named fencer was involved in all
 twenty-seven labelled touches. These are the claims the project can defend.
 
-The central claim is not among them. That assisted review is faster than manual review has
-never been measured. The corrections figures standing in for it weight a rejection and a manual
-addition equally, which is known to be false: rejecting a proposal is one keystroke on an event
-already located, while adding a missed touch requires scrubbing to find it, which is exactly
-the labour the system exists to remove. The instrument that would settle it now exists and has
-not yet been used. This remains the largest gap between what the design argues and what the
-evidence supports.
+The central claim is now measured, late and thinly. Assisted review cost 3.7 s per decision
+against 30.2 s for manual logging, and the two costs cross at a touch density the sport does not
+produce. It rests on one run per condition by the system's author on two different bouts, which
+is an instrument demonstrated on itself rather than a user study, and the honest description of
+the gap has changed rather than closed: from a claim with no measurement behind it to a claim
+with one participant behind it.
 
 ### What the project learned about its own method
 

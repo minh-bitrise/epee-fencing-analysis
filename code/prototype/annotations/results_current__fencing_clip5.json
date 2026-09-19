@@ -1,0 +1,71 @@
+{
+  "bout_id": "results_current:fencing_clip5",
+  "touch_states": {},
+  "added_touches": [
+    {
+      "id": "u0",
+      "time_s": 31.9,
+      "scorer": "unknown",
+      "note": "",
+      "origin": "user",
+      "created": 1789827895.749753
+    },
+    {
+      "id": "u1",
+      "time_s": 51.7,
+      "scorer": "unknown",
+      "note": "",
+      "origin": "user",
+      "created": 1789827915.594301
+    },
+    {
+      "id": "u2",
+      "time_s": 80.6,
+      "scorer": "unknown",
+      "note": "",
+      "origin": "user",
+      "created": 1789827944.495434
+    },
+    {
+      "id": "u3",
+      "time_s": 107.3,
+      "scorer": "unknown",
+      "note": "",
+      "origin": "user",
+      "created": 1789827971.178457
+    },
+    {
+      "id": "u4",
+      "time_s": 141.7,
+      "scorer": "unknown",
+      "note": "",
+      "origin": "user",
+      "created": 1789828005.602905
+    },
+    {
+      "id": "u5",
+      "time_s": 179.0,
+      "scorer": "unknown",
+      "note": "",
+      "origin": "user",
+      "created": 1789828042.917944
+    }
+  ],
+  "unreliable_segments": [],
+  "reanchors": [],
+  "lunges": [],
+  "sessions": [
+    {
+      "id": "s0",
+      "mode": "manual",
+      "elapsed_s": 181.2,
+      "decisions": 6,
+      "seconds_per_decision": 30.2,
+      "touches_after": 6,
+      "lunges_after": 0,
+      "note": "",
+      "created": 1789828050.879318
+    }
+  ],
+  "green_is": null
+}

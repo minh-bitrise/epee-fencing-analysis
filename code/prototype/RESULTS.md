@@ -327,6 +327,41 @@ model ranks local minima and does not find touches in video. And 27 positives
 is small enough that the per-clip numbers are noisy, which is why only the
 pooled figures are quoted.
 
+## The effort measurement, finally taken (19 Sep 2026)
+
+The project's central claim, that confirming proposals costs less than labelling from scratch,
+had no measurement behind it until now. Two three-minute bouts, neither seen before the run,
+recorded by the app itself.
+
+| condition | bout | elapsed | decisions | per decision |
+|---|---|---|---|---|
+| manual | `fencing_clip5` | 181.2 s | 6 | **30.2 s** |
+| assisted | `fencing_clip6` | 26.0 s | 7 | **3.7 s** |
+
+A factor of **8.2**. The assisted figure includes about four seconds the reviewer spent working
+out that the run ends explicitly; it inflates the assisted side and is kept.
+
+**Quote the crossover, not the ratio.** The ratio is a property of the clip. Manual is bounded
+below by the length of the recording, since finding touches means watching the bout, while
+assisted pays only per decision, so the two costs meet at 60 / 3.7 = **16.2 touches per minute**.
+That is a touch every 3.7 seconds. A five-touch pool bout and a fifteen-touch direct elimination
+both sit near 1.7; the densest clip in this set is 4.7. The advantage widens with duration and
+narrows with density, and the sport does not generate densities anywhere near the crossover.
+
+**What it establishes, and what it does not.** The direction was close to guaranteed by that same
+structure. The size of the assisted cost was not: seek latency, queue friction, or the cost of
+rejecting bad proposals could each have eaten the advantage, and the first interface did exactly
+that by making the user scan a table for the next undecided row.
+
+**Limitations, which are severe.** One run per condition, one participant, and the two conditions
+ran on DIFFERENT bouts, so bout difficulty is confounded with mode. The participant built the
+system. A second person would be worth more than a hundred further runs by this one.
+
+**Clip 6 is spent as ground truth** by this run: its touch states came from looking at proposals,
+so they are not independent of the detector. Its value is the tracking evidence, which needs no
+touch labels. The reviewer also reported mixing up which key did what, which does not affect a
+timing measured per decision.
+
 ## Reproducing any of them
 
 ```
