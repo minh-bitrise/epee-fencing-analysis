@@ -20,7 +20,7 @@ ByteTrack, MediaPipe Pose and a large language model, into a pipeline that turns
 epee bout into a distance series, proposed touches, per-fencer measurements and a written
 summary, which a user then confirms or corrects through a browser interface. Touch detection
 reaches F1 0.85 across three clips against hand-labelled ground truth, and reading the scoring
-machine's lamps identifies whether one named fencer was involved in all twenty-seven labelled
+machine's lamps identifies whether one named fencer was involved in 48 of 49 labelled
 touches. The project's most transferable outcome is methodological: five separate metrics
 passed every test written for them while measuring something other than what they claimed, and
 each was exposed by measurement against an external constraint rather than by further
@@ -862,13 +862,22 @@ new labelling:
 | 2 | 2/4 | 4/4 |
 | 3 | 9/14 | 14/14 |
 | 4 | 4/6 | 6/6 |
-| **all** | **18/27 (67%)** | **27/27 (100%)** |
+| 7a | 5/9 | 9/9 |
+| 7b | 10/13 | 12/13 |
+| **all** | **33/49 (67%)** | **48/49 (98%)** |
 
 Nearly every three-way error is a red-lamp error, red being contaminated by everything
-permanently red in frame. The claim is therefore narrower than "the system says who scored":
-**it always identifies whether one named fencer was involved**, which settles the 11 touches of
-27 where they were not and reduces the other 16 to a two-way decision. The colour-to-side mapping
-is confirmed once per bout by the user, since nothing in the image indicates it.
+permanently red in frame. The claim is therefore narrower than "the system says who scored": it
+identifies whether one named fencer was involved in 48 of 49 touches, settling those where they
+were not and reducing the rest to a two-way decision. The colour-to-side mapping is confirmed
+once per bout by the user, since nothing in the image indicates it.
+
+**The green lamp read 27 of 27 on the first four clips and 48 of 49 on six.** The earlier figure
+was not wrong; describing it as "always" would have been. A failure rate of one in forty-nine is
+entirely consistent with having seen twenty-seven successes, and only more footage could
+distinguish the two. The same two clips also removed the significance from the pose comparison
+and reversed which features the learned proposer depends on: three headline claims weakened by
+one afternoon of additional labelling.
 
 ### Lunge detection works per bout and does not transfer
 
@@ -1070,8 +1079,8 @@ The measurable outcomes are strongest where the evidence is strongest. Touch det
 F1 0.85 across the three 720p clips against hand-labelled ground truth, and confirming its
 proposals costs six corrections where labelling from scratch would cost twenty-one. Tracking
 holds both fencers in 93 to 98 per cent of frames on three of four clips. Attribution, which
-the detector could never supply, identifies whether one named fencer was involved in all
-twenty-seven labelled touches. These are the claims the project can defend.
+the detector could never supply, identifies whether one named fencer was involved in 48 of 49
+labelled touches. These are the claims the project can defend.
 
 The central claim is now measured, late and thinly. Assisted review cost 3.7 s per decision
 against 30.2 s for manual logging, and the two costs cross at a touch density the sport does not
