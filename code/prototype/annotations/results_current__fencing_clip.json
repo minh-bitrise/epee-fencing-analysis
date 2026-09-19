@@ -1,13 +1,13 @@
 {
-  "bout_id": "results_current:fencing_clip7b",
+  "bout_id": "results_current:fencing_clip",
   "touch_states": {
     "p0": {
       "state": "confirmed",
-      "updated": 1789731785.753651
+      "updated": 1789828919.7484128
     },
     "p1": {
       "state": "confirmed",
-      "updated": 1789829039.197599
+      "updated": 1789828932.040909
     }
   },
   "added_touches": [],

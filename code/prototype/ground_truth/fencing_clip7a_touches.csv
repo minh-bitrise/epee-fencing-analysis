@@ -1,0 +1,21 @@
+# Hand-labelled ground truth for fencing_clip7a.mp4 (War of the Roses final, 0:05 to 3:05 of the source video).
+# Labelled by the author, a competitive epee fencer, from the video file
+# itself rather than from the system's proposals, so the labels are
+# independent of what the detector can find.
+# time_s   = awarded touch, to the nearest second
+# scorer   = left | right | double  (double = both fencers score, legal in epee)
+# annulled = 1 if a hit was registered but no point was awarded
+# notes    = labeller's observations
+#
+# 7a and 7b are two windows of ONE recording and must never be held out
+# separately in a leave-one-out protocol. See code/prototype/clips.py.
+time_s,scorer,annulled,notes
+8,left,0,
+22,right,0,
+37,left,0,
+60,left,0,
+71,left,0,
+97,right,1,
+119,right,0,
+158,left,0,
+171,left,0,

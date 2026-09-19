@@ -1,0 +1,27 @@
+{
+  "bout_id": "results_current:fencing_clip4",
+  "touch_states": {
+    "p0": {
+      "state": "confirmed",
+      "updated": 1789828985.050473
+    }
+  },
+  "added_touches": [],
+  "unreliable_segments": [],
+  "reanchors": [],
+  "lunges": [],
+  "sessions": [
+    {
+      "id": "s0",
+      "mode": "assisted",
+      "elapsed_s": 60.0,
+      "decisions": 2,
+      "seconds_per_decision": 30.0,
+      "touches_after": 0,
+      "lunges_after": 0,
+      "note": "",
+      "created": 1789828973.3463528
+    }
+  ],
+  "green_is": "right"
+}

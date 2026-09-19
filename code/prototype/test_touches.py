@@ -399,3 +399,34 @@ class TestWindowIsTimeNotFrames:
         import numpy as np
         from detect_touches import local_minima
         assert local_minima(np.array([0.0, 0.1]), np.array([2.0, 2.0])) == []
+
+
+class TestAnnulledTouches:
+    """An annulled hit is one the apparatus registered and the referee then
+    disallowed. The physical event happened, so the geometry the detector looks
+    for was there; the scoring evaluations exclude them because a touch awarding
+    no point cannot appear in a scoreline. Both are right for their own
+    question. The disagreement was accidental until clip 7a became the first
+    clip with an annulled touch: load_truth read the column and ignored it.
+    """
+
+    def _file(self, tmp_path):
+        p = tmp_path / "gt.csv"
+        p.write_text("# comment\ntime_s,scorer,annulled,notes\n"
+                     "10,left,0,\n20,right,1,\n30,left,,\n")
+        return str(p)
+
+    def test_annulled_counts_by_default(self, tmp_path):
+        import evaluate_touches as et
+        assert len(et.load_truth(self._file(tmp_path))) == 3
+
+    def test_it_can_be_excluded_on_request(self, tmp_path):
+        import evaluate_touches as et
+        t = et.load_truth(self._file(tmp_path), exclude_annulled=True)
+        assert [x["time_s"] for x in t] == [10.0, 30.0]
+
+    def test_an_empty_cell_means_not_annulled(self, tmp_path):
+        """The labeller left the column blank for a normal touch."""
+        import evaluate_touches as et
+        t = et.load_truth(self._file(tmp_path))
+        assert t[2]["annulled"] is False

@@ -1,6 +1,11 @@
 {
   "bout_id": "results_current:fencing_clip2",
-  "touch_states": {},
+  "touch_states": {
+    "p0": {
+      "state": "confirmed",
+      "updated": 1789828885.805609
+    }
+  },
   "added_touches": [],
   "unreliable_segments": [],
   "reanchors": [],
@@ -89,5 +94,7 @@
       "note": "",
       "created": 1787087901.504288
     }
-  ]
+  ],
+  "sessions": [],
+  "green_is": "right"
 }

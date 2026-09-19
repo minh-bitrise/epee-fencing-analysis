@@ -38,14 +38,33 @@ import csv
 DEFAULT_TOLERANCE_S = 2.0
 
 
-def load_truth(path):
-    """Read ground-truth touches, skipping comment lines."""
+def load_truth(path, exclude_annulled=False):
+    """Read ground-truth touches, skipping comment lines.
+
+    ANNULLED TOUCHES ARE COUNTED BY DEFAULT, AND THAT IS DELIBERATE. An annulled
+    hit is one the apparatus registered and the referee then disallowed, for a
+    corps-a-corps or a covered target or some other non-valid action. The
+    physical event happened: the fencers closed, contact was made and they
+    separated, which is exactly the geometry this detector looks for. Scoring it
+    as a false positive would penalise the detector for finding something that
+    was really there.
+
+    The scoring evaluations take the opposite view and exclude them, because a
+    touch that awarded no point cannot appear in a scoreline. Both are right for
+    their own question, and the disagreement was accidental until clip 7a became
+    the first clip in the set to contain an annulled touch: this function read
+    the column and then ignored it.
+
+    Pass exclude_annulled to score detection against awarded touches only, which
+    is the stricter reading.
+    """
     with open(path) as f:
         rows = [r for r in csv.DictReader(
             line for line in f if not line.startswith("#"))]
-    return [{"time_s": float(r["time_s"]),
-             "scorer": r["scorer"],
-             "annulled": r.get("annulled", "0") == "1"} for r in rows]
+    out = [{"time_s": float(r["time_s"]),
+            "scorer": r["scorer"],
+            "annulled": (r.get("annulled") or "0").strip() == "1"} for r in rows]
+    return [t for t in out if not t["annulled"]] if exclude_annulled else out
 
 
 def load_candidates(path, min_confidence=0.0):
@@ -156,8 +175,15 @@ def main():
     p.add_argument("--candidates", required=True)
     p.add_argument("--truth", required=True)
     p.add_argument("--tolerance", type=float, default=DEFAULT_TOLERANCE_S)
+    p.add_argument("--exclude-annulled", action="store_true",
+                   help="score against awarded touches only. By default an "
+                        "annulled hit counts, because the physical event the "
+                        "detector looks for did happen; the scoring "
+                        "evaluations take the opposite view for their own "
+                        "reasons. See load_truth.")
     args = p.parse_args()
-    report(load_truth(args.truth), args.candidates, tolerance=args.tolerance)
+    report(load_truth(args.truth, args.exclude_annulled),
+           args.candidates, tolerance=args.tolerance)
 
 
 if __name__ == "__main__":

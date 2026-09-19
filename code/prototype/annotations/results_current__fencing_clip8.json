@@ -1,0 +1,39 @@
+{
+  "bout_id": "results_current:fencing_clip8",
+  "touch_states": {
+    "p0": {
+      "state": "rejected",
+      "updated": 1789829060.154335
+    },
+    "p1": {
+      "state": "rejected",
+      "updated": 1789829065.416831
+    },
+    "p2": {
+      "state": "rejected",
+      "updated": 1789829069.9858491
+    },
+    "p3": {
+      "state": "rejected",
+      "updated": 1789829082.913713
+    },
+    "p4": {
+      "state": "rejected",
+      "updated": 1789829090.810623
+    },
+    "p5": {
+      "state": "rejected",
+      "updated": 1789829100.427234
+    },
+    "p6": {
+      "state": "confirmed",
+      "updated": 1789829101.101726
+    }
+  },
+  "added_touches": [],
+  "unreliable_segments": [],
+  "reanchors": [],
+  "lunges": [],
+  "sessions": [],
+  "green_is": "right"
+}
