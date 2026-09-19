@@ -97,6 +97,16 @@ the shipped detector is the hand-set rule, because the comparison found the rule
 better. `evaluate_pose.py` needs a results directory carrying the `distance_bbox_m`
 column, which means a run of `run_detection.py` from this version onwards.
 
+### The `results_*` directories
+
+`code/prototype/` holds fourteen of them and they are deliberately kept. Each is the output of
+one pipeline version or one experiment, and `code/prototype/RESULTS.md` says which numbers come
+from which and why. **`results_current` is the reference set**: all nine clips from one version,
+and the source of every figure quoted in the report. The others are the before-and-after evidence
+for changes the evaluation discusses, including the resolution ablation and the cropping and
+masking experiments that made coverage worse. They are not clutter left behind; deleting them
+would remove the evidence for claims the report makes.
+
 ## Project structure
 ```
 code/prototype/   The AI pipeline: detection, tracking, pose, distance, touches, summary

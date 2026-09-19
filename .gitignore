@@ -59,3 +59,9 @@ code/prototype/fencing_raw*
 code/prototype/fencing_clip*.mp4
 # Exception: deliverable demo video must be committed
 !preliminary/prelim_demo_video.mp4
+
+# Working notes, kept locally and out of the published repository. They are for
+# the author and the assistant, not for a reader of the project.
+/TODO.md
+/MY_TASKS.md
+/PROJECT_CONTEXT.md
