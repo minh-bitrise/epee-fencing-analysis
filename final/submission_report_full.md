@@ -758,25 +758,32 @@ each training set, so the held-out clip is not consulted until the figure is fin
 out, with the four per-clip folds drawn over the pooled bar. Right, the change in the boosted
 model's F1 when each feature group is removed.](figures/fig_touch_model.png)
 
-**The rule wins**, F1 0.78 against 0.68 for gradient boosted trees and 0.48 for logistic
-regression, micro-averaged over the 27 touches. The per-clip folds in the left panel are the
-reason the gap should not be read as decisive: they span 0.59 to 0.89 for the rule alone, so a
-difference of 0.10 between methods sits inside the variation between recordings.
+**The rule still leads, by less than the folds vary.** F1 0.73 against 0.70 for gradient boosted
+trees and 0.46 for logistic regression, micro-averaged over 48 touches. The per-clip folds span
+0.57 to 0.89 for the rule alone, so a gap of 0.03 is not a result. The two are indistinguishable
+on this evidence and they fail on different clips: the rule scores 0.57 on clip 7b where the
+model reaches 0.77, and 0.86 on clip 3 where the model reaches 0.70.
 
-The ablation is the more useful half. Removing the separation features costs the model 0.19 F1
-and nothing else costs it more than 0.05, so a model offered fifteen alternatives puts its weight
-on the same quantity the rule thresholds. Two groups have positive deltas, meaning the model
-scores better without them, which is what redundant correlated features do when there are 27
-positive examples. The defensible reading is narrow and worth stating exactly: **the rule's
-choice of feature is not arbitrary**, because a model free to choose differently did not. It says
-nothing about whether 0.4 and 0.8 are the right values.
+**This measurement was first made on four clips, and adding two changed its conclusions.** The
+earlier run gave the rule 0.78 against 0.68, and its ablation put the model's performance on the
+separation features, at 0.19 F1 with nothing else above 0.05. That supported a tidy claim: a
+model free to choose differently had independently put its weight on the same quantity the rule
+thresholds. **On six clips the claim is gone.** Separation now costs 0.03 when removed, and the
+group that matters is context, at 0.20: where in the bout a candidate falls, where on the strip,
+and how long since the previous one.
 
-Nor does it show that learning cannot help here. The learning curve has two usable points, 0.54
-and 0.73 for the boosted model, against a fold-to-fold standard deviation of 0.22: the spread is
-as large as the gap, so it cannot distinguish a model starved of data from one at its ceiling.
-That is a statement about the evidence base rather than about the method, and it is the
-quantitative form of the argument for more labelled footage. Candidate generation also remains a
-domain rule throughout; the model ranks minima, it does not find touches in video.
+That is worth more than the claim it replaced. A model leaning on context is learning the rhythm
+of these particular recordings rather than what a touch looks like, which is what a model given
+48 positive examples across six recordings should be expected to do, and none of it is visible in
+the headline F1. It also means **the earlier ablation did not reproduce**, so no claim about
+which feature carries the model survives at this sample size, in either direction.
+
+**The learning curve is now readable, and it rises.** The boosted model scores 0.58, 0.65 and
+0.71 as the training set grows from two recordings to four, monotone across all three points,
+where four clips gave two points that contradicted each other. The fold-to-fold spread is still
+0.22 and three points justify no extrapolation, but the direction is consistent where it was not:
+the model is data-limited rather than at a ceiling. Candidate generation remains a domain rule
+throughout; the model ranks minima, it does not find touches in video.
 
 Two defects in the protocol were found while building it, both of which flattered the result
 before being fixed, and neither of which would have been visible in the output (Appendix D).
@@ -976,11 +983,15 @@ quantity from different landmarks, so wherever pose succeeded both exist and can
 recording both on every frame is what makes the pairing possible, since otherwise they are
 compared on disjoint frames, which measures which frames pose copes with rather than what pose
 adds. Judged on the decision distance exists to serve, separating the two-second windows holding
-a labelled touch from the rest, the bounding box scores 0.805 against pose's 0.759 over 361
-windows and 39 touches, a gap of 0.046 whose interval, -0.091 to -0.006, excludes zero. Pose
-leads on one clip of four and is weakest on the 360p footage, where its jitter is three times the
+a labelled touch from the rest, the bounding box scores 0.821 against pose's 0.807 over 535
+windows and 67 touches, a gap of 0.014 whose interval, -0.040 to +0.011, spans zero. **An earlier
+run on four clips put that interval at -0.091 to -0.006, which excludes zero**, and the firmer
+conclusion it supported did not survive two more recordings: pose leads on three clips of six,
+including both new ones, and is weakest on the 360p footage where its jitter is three times the
 bounding box's. Which estimate is closer to the true distance is not measured and no ground truth
-here could settle it. The refinement simply does not reach the decision it was meant to serve.
+here could settle it. What survives is that the refinement does not reach the decision it was
+meant to serve, and that the version of this finding which looked significant was an artefact of
+having four clips.
 
 **The language model was not evaluated at all**, the weakest point in the original strategy. Its
 documented failure is fabrication: fluent prose containing figures never in the input, the

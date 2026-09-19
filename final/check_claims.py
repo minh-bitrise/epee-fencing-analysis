@@ -258,8 +258,13 @@ def check_model_results(c, report):
         return
     with open(p) as f:
         d = json.load(f)
-    m = re.search(r"\*\*The rule wins\*\*,? F1 ([\d.]+) against ([\d.]+)"
-                  r"(?: for gradient boosted trees)? and ([\d.]+)", report)
+    # Matches the figures wherever the sentence around them is reworded. The
+    # first version keyed on the exact phrase "The rule wins", which stopped
+    # matching the moment the rule stopped clearly winning, and the check then
+    # SKIPPED rather than failing: it reported nothing wrong about a passage
+    # whose numbers were entirely stale.
+    m = re.search(r"F1 ([\d.]+) against ([\d.]+) for gradient boosted\s+"
+                  r"trees and ([\d.]+) for logistic", report)
     if not m:
         c.skip("model results", "the sentence stating them was not found")
         return
@@ -272,8 +277,7 @@ def check_model_results(c, report):
     # and an EXPLICIT skip because the first version used a bare `if` and
     # silently checked nothing on one of them. A check that quietly does nothing
     # is worse than no check: it reports a pass it never performed.
-    m2 = re.search(r"removing\s+the separation features costs the model ([\d.]+) F1",
-                   report, re.I)
+    m2 = re.search(r"[Ss]eparation now costs ([\d.]+) when\s+removed", report)
     if m2:
         c.equal("separation ablation", abs(sep), float(m2.group(1)))
     else:

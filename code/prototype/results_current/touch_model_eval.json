@@ -3,7 +3,7 @@
     "folds": [
       {
         "clip": "fencing_clip2",
-        "n_train": 3,
+        "n_train": 5,
         "threshold": 0.0,
         "touches": 4,
         "tp": 4,
@@ -16,7 +16,7 @@
       },
       {
         "clip": "fencing_clip3",
-        "n_train": 3,
+        "n_train": 5,
         "threshold": 0.0,
         "touches": 14,
         "tp": 12,
@@ -29,7 +29,7 @@
       },
       {
         "clip": "fencing_clip4",
-        "n_train": 3,
+        "n_train": 5,
         "threshold": 0.0,
         "touches": 6,
         "tp": 5,
@@ -41,8 +41,34 @@
         "corrections": 7
       },
       {
+        "clip": "fencing_clip7a",
+        "n_train": 4,
+        "threshold": 0.0,
+        "touches": 8,
+        "tp": 5,
+        "fp": 0,
+        "fn": 3,
+        "precision": 1.0,
+        "recall": 0.625,
+        "f1": 0.7692307692307693,
+        "corrections": 3
+      },
+      {
+        "clip": "fencing_clip7b",
+        "n_train": 4,
+        "threshold": 0.0,
+        "touches": 13,
+        "tp": 6,
+        "fp": 2,
+        "fn": 7,
+        "precision": 0.75,
+        "recall": 0.46153846153846156,
+        "f1": 0.5714285714285714,
+        "corrections": 9
+      },
+      {
         "clip": "fencing_clip",
-        "n_train": 3,
+        "n_train": 5,
         "threshold": 0.0,
         "touches": 3,
         "tp": 2,
@@ -55,21 +81,21 @@
       }
     ],
     "pooled": {
-      "tp": 23,
-      "fp": 9,
-      "fn": 4,
-      "precision": 0.71875,
-      "recall": 0.8518518518518519,
-      "f1": 0.7796610169491525,
-      "corrections": 13
+      "tp": 34,
+      "fp": 11,
+      "fn": 14,
+      "precision": 0.7555555555555555,
+      "recall": 0.7083333333333334,
+      "f1": 0.7311827956989247,
+      "corrections": 25
     }
   },
   "logistic": {
     "folds": [
       {
         "clip": "fencing_clip2",
-        "n_train": 3,
-        "threshold": 0.9888190621210561,
+        "n_train": 5,
+        "threshold": 0.9737565388151871,
         "touches": 4,
         "tp": 4,
         "fp": 3,
@@ -81,99 +107,151 @@
       },
       {
         "clip": "fencing_clip3",
-        "n_train": 3,
-        "threshold": 0.9982699437073217,
+        "n_train": 5,
+        "threshold": 0.9702493378080598,
         "touches": 14,
-        "tp": 8,
-        "fp": 4,
-        "fn": 6,
-        "precision": 0.6666666666666666,
-        "recall": 0.5714285714285714,
-        "f1": 0.6153846153846153,
-        "corrections": 10
+        "tp": 11,
+        "fp": 13,
+        "fn": 3,
+        "precision": 0.4583333333333333,
+        "recall": 0.7857142857142857,
+        "f1": 0.5789473684210527,
+        "corrections": 16
       },
       {
         "clip": "fencing_clip4",
-        "n_train": 3,
-        "threshold": 0.6652354510033266,
+        "n_train": 5,
+        "threshold": 0.9993553085688431,
         "touches": 6,
         "tp": 4,
-        "fp": 10,
+        "fp": 17,
         "fn": 2,
-        "precision": 0.2857142857142857,
+        "precision": 0.19047619047619047,
         "recall": 0.6666666666666666,
-        "f1": 0.4,
-        "corrections": 12
+        "f1": 0.2962962962962963,
+        "corrections": 19
+      },
+      {
+        "clip": "fencing_clip7a",
+        "n_train": 4,
+        "threshold": 0.999078950771778,
+        "touches": 8,
+        "tp": 4,
+        "fp": 5,
+        "fn": 4,
+        "precision": 0.4444444444444444,
+        "recall": 0.5,
+        "f1": 0.47058823529411764,
+        "corrections": 9
+      },
+      {
+        "clip": "fencing_clip7b",
+        "n_train": 4,
+        "threshold": 0.999078950771778,
+        "touches": 13,
+        "tp": 7,
+        "fp": 3,
+        "fn": 6,
+        "precision": 0.7,
+        "recall": 0.5384615384615384,
+        "f1": 0.608695652173913,
+        "corrections": 9
       },
       {
         "clip": "fencing_clip",
-        "n_train": 3,
-        "threshold": 0.982862600066644,
+        "n_train": 5,
+        "threshold": 0.9609168009068284,
         "touches": 3,
-        "tp": 2,
-        "fp": 13,
-        "fn": 1,
-        "precision": 0.13333333333333333,
-        "recall": 0.6666666666666666,
-        "f1": 0.2222222222222222,
-        "corrections": 14
+        "tp": 3,
+        "fp": 22,
+        "fn": 0,
+        "precision": 0.12,
+        "recall": 1.0,
+        "f1": 0.21428571428571425,
+        "corrections": 22
       }
     ],
     "pooled": {
-      "tp": 18,
-      "fp": 30,
-      "fn": 9,
-      "precision": 0.375,
-      "recall": 0.6666666666666666,
-      "f1": 0.4800000000000001,
-      "corrections": 39
+      "tp": 33,
+      "fp": 63,
+      "fn": 15,
+      "precision": 0.34375,
+      "recall": 0.6875,
+      "f1": 0.4583333333333333,
+      "corrections": 78
     }
   },
   "boosted": {
     "folds": [
       {
         "clip": "fencing_clip2",
-        "n_train": 3,
-        "threshold": 0.9503502587534648,
+        "n_train": 5,
+        "threshold": 0.7279191352388135,
         "touches": 4,
         "tp": 4,
-        "fp": 0,
+        "fp": 3,
         "fn": 0,
-        "precision": 1.0,
+        "precision": 0.5714285714285714,
         "recall": 1.0,
-        "f1": 1.0,
-        "corrections": 0
+        "f1": 0.7272727272727273,
+        "corrections": 3
       },
       {
         "clip": "fencing_clip3",
-        "n_train": 3,
-        "threshold": 0.9594270378403249,
+        "n_train": 5,
+        "threshold": 0.9456185462770971,
         "touches": 14,
         "tp": 8,
-        "fp": 0,
+        "fp": 1,
         "fn": 6,
-        "precision": 1.0,
+        "precision": 0.8888888888888888,
         "recall": 0.5714285714285714,
-        "f1": 0.7272727272727273,
-        "corrections": 6
+        "f1": 0.6956521739130435,
+        "corrections": 7
       },
       {
         "clip": "fencing_clip4",
-        "n_train": 3,
-        "threshold": 0.9640229924426957,
+        "n_train": 5,
+        "threshold": 0.9504279954615837,
         "touches": 6,
         "tp": 3,
-        "fp": 6,
+        "fp": 0,
         "fn": 3,
-        "precision": 0.3333333333333333,
+        "precision": 1.0,
         "recall": 0.5,
-        "f1": 0.4,
-        "corrections": 9
+        "f1": 0.6666666666666666,
+        "corrections": 3
+      },
+      {
+        "clip": "fencing_clip7a",
+        "n_train": 4,
+        "threshold": 0.8948557176636209,
+        "touches": 8,
+        "tp": 4,
+        "fp": 2,
+        "fn": 4,
+        "precision": 0.6666666666666666,
+        "recall": 0.5,
+        "f1": 0.5714285714285715,
+        "corrections": 6
+      },
+      {
+        "clip": "fencing_clip7b",
+        "n_train": 4,
+        "threshold": 0.8948557176636209,
+        "touches": 13,
+        "tp": 10,
+        "fp": 3,
+        "fn": 3,
+        "precision": 0.7692307692307693,
+        "recall": 0.7692307692307693,
+        "f1": 0.7692307692307693,
+        "corrections": 6
       },
       {
         "clip": "fencing_clip",
-        "n_train": 3,
-        "threshold": 0.9404498471316299,
+        "n_train": 5,
+        "threshold": 0.8467923668482723,
         "touches": 3,
         "tp": 2,
         "fp": 0,
@@ -185,53 +263,59 @@
       }
     ],
     "pooled": {
-      "tp": 17,
-      "fp": 6,
-      "fn": 10,
-      "precision": 0.7391304347826086,
-      "recall": 0.6296296296296297,
-      "f1": 0.68,
-      "corrections": 16
+      "tp": 31,
+      "fp": 9,
+      "fn": 17,
+      "precision": 0.775,
+      "recall": 0.6458333333333334,
+      "f1": 0.7045454545454546,
+      "corrections": 26
     }
   },
   "curve": {
     "logistic": {
       "sizes": [
         2,
-        3
+        3,
+        4
       ],
       "mean_f1": [
-        0.5505411255411256,
-        0.4912198912198912
+        0.442046187444074,
+        0.39982459602267434,
+        0.48268099895730354
       ],
       "sd_f1": [
-        0.22669082782171254,
-        0.19481955408520818
+        0.23369431789939496,
+        0.20624128193634675,
+        0.1788358378645756
       ]
     },
     "boosted": {
       "sizes": [
         2,
-        3
+        3,
+        4
       ],
       "mean_f1": [
-        0.5408684416527553,
-        0.7318181818181818
+        0.5797377946219947,
+        0.6519565537947891,
+        0.7050418180852964
       ],
       "sd_f1": [
-        0.2198154780392698,
-        0.21604062978756627
+        0.21890983494133226,
+        0.19205339931967233,
+        0.07421231752123626
       ]
     }
   },
   "ablation": {
-    "base": 0.68,
-    "distance": 0.7272727272727273,
-    "prominence": 0.72,
-    "separation": 0.49056603773584906,
-    "rates": 0.6774193548387097,
-    "dwell": 0.6792452830188679,
-    "pose": 0.6440677966101694,
-    "context": 0.6923076923076923
+    "base": 0.7045454545454546,
+    "distance": 0.6666666666666666,
+    "prominence": 0.6526315789473683,
+    "separation": 0.6719999999999999,
+    "rates": 0.6521739130434783,
+    "dwell": 0.7096774193548386,
+    "pose": 0.7047619047619048,
+    "context": 0.5
   }
 }

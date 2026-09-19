@@ -260,6 +260,8 @@ ground truth in this project could provide one. Both could be wrong in the same 
 this would not see it. The claim is only that the refinement does not reach the decision distance
 exists to serve.
 
+## SUPERSEDED by the six-clip run below. Kept because the change is the point.
+
 ## A learned touch proposer loses to the hand rule (17 Sep 2026)
 
 ```bash
@@ -361,6 +363,67 @@ system. A second person would be worth more than a hundred further runs by this 
 so they are not independent of the detector. Its value is the tracking evidence, which needs no
 touch labels. The reviewer also reported mixing up which key did what, which does not affect a
 timing measured per decision.
+
+## Re-run on six clips, and two conclusions did not survive (19 Sep 2026)
+
+The author labelled `fencing_clip7a` and `fencing_clip7b`, taking the set from 27 touches over
+four recordings to 48 over five. Both model-level measurements were re-run unchanged. **Both
+conclusions weakened, and one reversed.**
+
+### The learned proposer
+
+| model | 4 clips | 6 clips |
+|---|---|---|
+| hand rule | 0.78 | **0.73** |
+| boosted trees | 0.68 | **0.70** |
+| logistic | 0.48 | 0.46 |
+
+The gap between the rule and the model fell from 0.10 to 0.03, against per-clip folds spanning
+0.57 to 0.89. **They are indistinguishable now**, and they fail on different clips: the rule
+scores 0.57 on 7b where the model reaches 0.77, and 0.86 on clip 3 where the model reaches 0.70.
+
+### The ablation did not reproduce, which matters more
+
+| group removed | 4 clips | 6 clips |
+|---|---|---|
+| separation | **-0.19** | -0.03 |
+| context | +0.01 | **-0.20** |
+| everything else | within 0.05 | within 0.05 |
+
+On four clips the model leaned on separation, which is what the rule thresholds, and that
+supported a tidy claim about the rule's choice of feature being independently arrived at. On six
+it leans on CONTEXT: where in the bout the candidate falls, where on the strip, and how long
+since the previous one.
+
+**Do not quote the four-clip ablation.** A model leaning on context is learning the rhythm of
+these particular recordings rather than what a touch looks like, which is what 48 positives
+across six recordings should be expected to produce, and none of it shows in the headline F1.
+The honest statement is that no claim about which feature carries the model survives at this
+sample size, in either direction.
+
+### The learning curve became readable
+
+| training recordings | 2 | 3 | 4 | spread |
+|---|---|---|---|---|
+| boosted | 0.58 | 0.65 | 0.71 | 0.22 |
+| logistic | 0.44 | 0.40 | 0.48 | 0.23 |
+
+Monotone across three points for the boosted model, where four clips gave two points that
+contradicted each other. The spread is unchanged and three points justify no extrapolation, but
+the direction is now consistent: data-limited rather than at a ceiling.
+
+### Pose against the bounding box
+
+| | 4 clips | 6 clips |
+|---|---|---|
+| pose | 0.759 | 0.807 |
+| bounding box | 0.805 | 0.821 |
+| difference | -0.046, CI **[-0.091, -0.006]** | -0.014, CI **[-0.040, +0.011]** |
+
+**The interval excluded zero and now spans it.** Pose leads on three clips of six, including both
+new ones. The earlier result was not wrong so much as premature: it was an artefact of four
+recordings, and it is the clearest instance in this project of a borderline finding evaporating
+under more evidence. Quote the six-clip figures.
 
 ## Reproducing any of them
 
