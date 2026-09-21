@@ -271,6 +271,17 @@ def _bout_label(bout_id):
     return name
 
 
+# The bout the interface opens on when it is present. RESULTS_DIRS already puts
+# results_current first because it is the reference set; this does the same one
+# level down. Clip 3 is the club recording the evaluation quotes most, it is
+# hand-labelled, and its tracking holds throughout, so it is the bout that shows
+# what the system does rather than what it does when the footage fights it.
+#
+# It is a display preference and nothing else: no figure, no evaluation and no
+# stored annotation depends on the order bouts are listed in.
+REFERENCE_BOUT = "results_current:fencing_clip3"
+
+
 @app.get("/api/bouts")
 def list_bouts():
     """Processed bouts available for review, with review progress for each.
@@ -286,7 +297,11 @@ def list_bouts():
     a bout is reachable and all of them were.
     """
     out = []
-    for bout_id, b in _bouts().items():
+    found = _bouts()
+    order = ([REFERENCE_BOUT] if REFERENCE_BOUT in found else []) + [
+        k for k in found if k != REFERENCE_BOUT]
+    for bout_id in order:
+        b = found[bout_id]
         proposed = load_proposed_touches(b.touches_csv)
         out.append({
             "bout_id": bout_id,

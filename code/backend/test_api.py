@@ -1017,3 +1017,48 @@ class TestPlaybackSurvivesALostRender:
         import app as app_module
         monkeypatch.setattr(app_module, "WEB_VIDEO_DIR", str(tmp_path))
         assert app_module._cached_playable("no-colon-here") == ""
+
+
+class TestTheInterfaceOpensOnTheReferenceBout:
+    """RESULTS_DIRS puts results_current first because it is the reference set;
+    the same reasoning applies one level down. The client opens the first bout
+    with touches and a video, so the order of this list decides what a user sees
+    on arrival, and alphabetically that was clip 2 rather than the clip the
+    evaluation actually quotes.
+
+    A display preference only: no figure, evaluation or stored annotation
+    depends on it.
+    """
+
+    def test_the_reference_bout_is_listed_first(self, tmp_path, monkeypatch):
+        import app as app_module
+        d = tmp_path / "results_current"
+        d.mkdir()
+        for base in ("fencing_clip2", "fencing_clip3", "fencing_clip4"):
+            (d / f"{base}_distance.csv").write_text(
+                "frame,time_s,distance_raw_m,distance_smooth_m,method\n0,0.0,2.0,2.0,pose\n")
+        monkeypatch.setattr(app_module, "RESULTS_DIRS", [str(d)])
+        # Also the uploads root, or real uploaded bouts leak into the fixture.
+        monkeypatch.setattr(app_module, "UPLOAD_RESULTS_ROOT",
+                            str(tmp_path / "no_uploads"))
+        monkeypatch.setattr(app_module, "store",
+                            AnnotationStore(str(tmp_path / "ann_ref")))
+        app_module._bouts_cache["key"] = None
+        ids = [b["bout_id"] for b in app_module.list_bouts()["bouts"]]
+        assert ids[0] == "results_current:fencing_clip3"
+        assert len(ids) == 3, "no bout may be dropped by the reordering"
+
+    def test_nothing_breaks_when_it_is_absent(self, tmp_path, monkeypatch):
+        import app as app_module
+        d = tmp_path / "results_current"
+        d.mkdir()
+        (d / "fencing_clip2_distance.csv").write_text(
+            "frame,time_s,distance_raw_m,distance_smooth_m,method\n0,0.0,2.0,2.0,pose\n")
+        monkeypatch.setattr(app_module, "RESULTS_DIRS", [str(d)])
+        monkeypatch.setattr(app_module, "UPLOAD_RESULTS_ROOT",
+                            str(tmp_path / "no_uploads2"))
+        monkeypatch.setattr(app_module, "store",
+                            AnnotationStore(str(tmp_path / "ann_ref2")))
+        app_module._bouts_cache["key"] = None
+        ids = [b["bout_id"] for b in app_module.list_bouts()["bouts"]]
+        assert ids == ["results_current:fencing_clip2"]
