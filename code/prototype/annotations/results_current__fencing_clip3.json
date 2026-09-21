@@ -146,6 +146,18 @@
       "created": 1789749017.235452
     }
   ],
-  "sessions": [],
+  "sessions": [
+    {
+      "id": "s0",
+      "mode": "assisted",
+      "elapsed_s": 62.0,
+      "decisions": 8,
+      "seconds_per_decision": 7.8,
+      "touches_after": 6,
+      "lunges_after": 20,
+      "note": "",
+      "created": 1789994765.424208
+    }
+  ],
   "green_is": null
 }
