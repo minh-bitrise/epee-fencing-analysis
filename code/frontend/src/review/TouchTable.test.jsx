@@ -2,11 +2,9 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TouchTable from './TouchTable.jsx'
 
-/**
- * The touch table is where the user adjudicates the system's guesses, so its
- * duty is to show what each guess rests on and to keep the system's suggestions
- * visibly separate from the user's own decisions.
- */
+/* The touch table is where the user adjudicates the system's guesses, so its duty is to show
+   what each guess rests on and to keep the system's suggestions visibly separate from the
+   user's own decisions. */
 
 const proposed = (over = {}) => ({
   id: 'p0', kind: 'proposed', at: 43.9, time_s: 43.9,

@@ -178,15 +178,14 @@ class TestProtocol:
 
     def test_threshold_selection_never_sees_the_test_clip(self, monkeypatch):
         """The protocol's load-bearing claim, asserted rather than trusted.
-        Choosing the operating point on the held-out clip is the error the audio
-        detector was diagnosed with and it would be invisible in the output.
+        Choosing the operating point on the held-out clip is the error the
+        audio detector was diagnosed with and it would be invisible in the
+        output.
 
         An earlier version of this test spied on `fit_predict`, which
-        pick_threshold stopped calling when the inner loop was rewritten to fold
-        over recordings. It kept passing while watching a function nobody
-        called. This one tags each clip's features with a value unique to it and
-        checks what the model was actually asked to score, which cannot go stale
-        the same way."""
+        pick_threshold stopped calling when the inner loop was rewritten to
+        fold over recordings.
+        """
         tag = {c: float(i + 1) for i, c in enumerate("abcd")}
         data = {}
         for c, v in tag.items():

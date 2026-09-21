@@ -1,68 +1,12 @@
 """
-Epee Fencing Bout Analysis - Touch Candidate Detection
-=======================================================
-Proposes probable touch events in a bout for the user to confirm or reject.
-This is the "event-segment proposal" stage of the designed pipeline.
+Propose probable touches for the user to confirm or reject.
 
-WHY THIS PROPOSES RATHER THAN DECIDES.
-A scoring machine registers a valid electrical contact; a referee awards a
-point. These differ whenever a touch is annulled, for corps-a-corps, for
-covering target, or for another non-valid action, and in those cases the hit
-occurred, the machine fired, and no point was awarded. The information
-separating those outcomes is absent from the video and audio entirely, because
-it is a refereeing judgement rather than a physical event. No model can recover
-it. This stage therefore cannot be correct in principle, only useful, which is
-why it emits ranked candidates for confirmation rather than a verdict. Because
-the user confirms, recall matters more than precision: a missed touch is
-invisible to them, whereas a false candidate costs one click.
-
-HOW IT WORKS: GEOMETRY, NOT AUDIO.
-A touch has a purely geometric signature. The fencers must close to scoring
-distance, and afterwards the referee halts the action and they walk back to
-their guard lines, so they separate. The detector therefore looks for a local
-minimum in inter-fencer distance followed by sustained separation. Both come
-from the existing tracking pipeline, so no additional model is required, and
-distance is robust to camera panning because a pan shifts both fencers together.
-
-WHY NOT AUDIO (a negative result worth keeping).
-The first implementation of this stage detected the scoring-machine buzzer by
-band-pass energy, following Mo (2022), who uses audio for fencing analysis. It
-scored precision 0.79 and recall 0.79 on the clip it was tuned on, and collapsed
-to precision 0.21 on a held-back clip, needing 15 corrections against a manual
-baseline of 4. Diagnosis established that the approach cannot be rescued by
-retuning:
-
-  - The noise floor differs by an order of magnitude between recordings. A quiet
-    club hall gives a touch-to-noise ratio of 114x to 3000x; a broadcast with
-    crowd and commentary gives 6x to 32x. Five threshold rules were tried
-    (percentile, median multiple, fraction of maximum, median plus MAD) and each
-    either floods the noisier clip or finds nothing in it.
-  - A percentile threshold flags a fixed fraction of frames rather than a number
-    of events, so candidate count follows recording length instead of how much
-    happened.
-  - Searching every band with the ground truth in hand, the best achievable
-    separation between the weakest real touch and strong background was still
-    below 1.0 on both clips. Spectral tonality was worse. On the club clip the
-    loudest tonal component at each touch sat at a different frequency every
-    time, which indicates the buzzer is not reliably present in the recording at
-    all and that what was being detected was blade contact and exchange noise.
-
-Geometry alone outperforms audio plus geometry and, unlike it, generalises:
-
-                     audio + geometry        geometry alone
-  clip 3 (tuned on)  F1 0.79, 6 corrections  F1 0.86, 4 corrections
-  clip 2 (held back) F1 0.35, 15 corrections F1 0.86, 1 correction
-
-The audio path is retained behind --use-audio for footage with a genuinely
-audible buzzer, but it is off by default because on the evidence above it does
-active harm: it generates candidates that geometry then has to filter out.
-
-Usage:
-    python3 detect_touches.py --csv results_after/fencing_clip3_distance.csv
-    python3 detect_touches.py --csv ... --video ... --use-audio   # not advised
-
-Outputs (next to the CSV):
-    <base>_touches.csv   ranked touch candidates with per-feature evidence
+A candidate is a local minimum in inter-fencer distance followed by sustained
+separation, which is a touch's geometric signature and is robust to panning. It
+proposes rather than decides: whether a hit was awarded is a refereeing judgement
+the video does not contain. Recall matters more than precision, since a missed
+touch is invisible to the user and a false one costs a click. An audio detector
+was built first and did not generalise; see RESULTS.md.
 """
 
 import argparse
@@ -86,15 +30,6 @@ from scipy.signal import butter, sosfiltfilt, stft
 MIN_PROMINENCE_M = 0.4
 
 # Half-width of the window used to establish a local minimum, IN SECONDS.
-#
-# Expressed in seconds because the quantity that matters is the timescale of a
-# fencing phrase, which does not change with the camera. It was previously 25
-# FRAMES, described in this comment as "about one second at 29 fps", and that
-# description was only true of the clip it was tuned on: the evaluation set runs
-# at 29, 30, 50 and 60 fps, so the same 25 frames was 0.86 s on clip 3 and 0.42 s
-# on clip 1. The generalisation test that held clip 2 back was therefore run with
-# a window half the intended length, which is the sort of thing that makes a
-# transfer result mean less than it appears to.
 LOCAL_MIN_WIN_S = 0.85
 
 # Required separation after the event: mean distance in the window after minus
@@ -141,13 +76,11 @@ def load_motion(csv_path):
 
 
 def separation_after(t, d, ts, back=SEPARATION_BACK_S, fwd=SEPARATION_FWD_S):
-    """
-    Metres by which the fencers separated after ts: mean distance in the window
+    """Metres by which the fencers separated after ts: mean distance in the window
     after the event minus mean distance just before it.
 
     Positive values indicate the pair moved apart, which is what a referee's
-    halt produces as they return to their guard lines. Returns None when either
-    window lacks enough tracked frames to be meaningful.
+    halt produces as they return to their guard lines.
     """
     before = d[(t > ts - back) & (t <= ts)]
     after = d[(t > ts + fwd[0]) & (t < ts + fwd[1])]
@@ -166,17 +99,11 @@ def min_distance_near(t, d, ts, win=1.0):
 
 
 def local_minima(t, d, prominence=MIN_PROMINENCE_M, win_s=LOCAL_MIN_WIN_S):
-    """
-    Times at which inter-fencer distance is a prominent local minimum.
+    """Times at which inter-fencer distance is a prominent local minimum.
 
     Prominence is required against the maximum on each side rather than the
     mean, so a candidate has to be a genuine approach out of and back into
     wider distance, not a dip inside continuous close play.
-
-    The window is given in SECONDS and converted here using the sample spacing of
-    the series it was handed, so it describes the same span of play whatever the
-    camera recorded at. Taking it in frames made it mean half as much on a 60 fps
-    clip as on a 29 fps one.
     """
     ok = ~np.isnan(d)
     tt, dd = t[ok], d[ok]
@@ -218,14 +145,10 @@ def extract_audio(video_path, sr=AUDIO_SR):
 
 
 def find_buzzer_band(x, sr):
-    """
-    Locate the most burst-like narrow band, a candidate for a scoring buzzer.
+    """Locate the most burst-like narrow band, a candidate for a scoring buzzer.
 
     Scores each band by peakiness (peak over the band's own quiet level) times
-    the absolute peak. Both terms are needed: peakiness alone prefers bands
-    holding only faint spectral leakage, because a tiny burst against
-    near-silence has a huge ratio, while absolute peak alone prefers whatever is
-    loudest, which on crowd noise is not the buzzer.
+    the absolute peak.
     """
     f, _, Z = stft(x, fs=sr, nperseg=2048, noverlap=1536)
     mag = np.abs(Z)

@@ -3,26 +3,7 @@ import { api } from '../api.js'
 import Disclosure from './Disclosure.jsx'
 import ScorePanel from './ScorePanel.jsx'
 
-/**
- * How the two fencers in one bout compare, on six axes, drawn as a radar.
- *
- * WHY THE AXES COMPARE THE PAIR AND NOT A POPULATION. A radar needs a scale, and
- * the honest one does not exist here: eight fencer-bouts from one club and one
- * broadcast is not a population, and normalising against it would invent a
- * typical epeeist. Each axis is therefore this fencer's share of the pair's
- * total, where the midpoint is parity. The measured value sits beside every
- * axis so the shape is never the only thing on offer.
- *
- * WHY AN AXIS CAN BE ABSENT. A fencer with no confirmed lunges has not been
- * measured lunging rarely, they have not been measured at all. Drawing that as
- * zero would collapse a spoke and read as a finding, so an axis with no data is
- * drawn at parity in grey and named in the legend as not yet measured.
- *
- * WHY THE WHOLE PANEL CAN REFUSE. Every axis is per-fencer and so assumes the
- * tracker kept the two apart. On the broadcast clip it did not, swapping them 14
- * times, and a radar drawn from that describes the tracker while looking exactly
- * as convincing as a real one.
- */
+/* How the two fencers in one bout compare, on six axes, drawn as a radar. */
 
 const R = 78
 const CX = 108
@@ -40,12 +21,8 @@ const point = (i, n, score) => {
 const path = (axes, side) =>
   axes.map((a, i) => point(i, axes.length, a[side].score).join(',')).join(' ')
 
-// A share and a distance are both two-decimal numbers, so the unit is what
-// stops "58.30" and "1.67" being read on the same scale.
-// Precision follows the unit rather than the value. Metres are read to the
-// centimetre because that is the scale the fencers move at; a share to one
-// decimal, because "58.30%" claims a precision the fourteen touches behind it
-// do not have.
+// A share and a distance are both two-decimal numbers, so the unit is what stops "58.30" and
+// "1.67" being read on the same scale.
 const DECIMALS = { m: 2, '%': 1, '/min': 1 }
 
 const fmt = (v, unit) => {
@@ -55,12 +32,9 @@ const fmt = (v, unit) => {
   return unit ? `${n}${unit === '%' ? '' : ' '}${unit}` : n
 }
 
-/**
- * `scoreOnly` renders the scoreline without the radar. The two are computed by
- * the same request but answer different questions, and they belong in different
- * places: the score is part of what happened in this bout, the radar is a
- * characterisation of the two fencers.
- */
+/* `scoreOnly` renders the scoreline without the radar. The two are computed by the same
+   request but answer different questions, and they belong in different places: the score is
+   part of what happened in this bout, the radar is a characterisation of the two fencers. */
 export default function ProfilePanel({ boutId, boutPath, refreshKey,
                                        scoreOnly = false }) {
   const [data, setData] = useState(null)

@@ -1,33 +1,14 @@
 """
-Measure how large the fencers are in the detector's input, per clip.
-====================================================================
-
-Figure 4.4 originally carried these numbers as four hand-typed constants. They went
-stale the moment the evaluation set grew, and because they were constants nothing
-detected it: the figure kept plotting four clips while the chapter around it had
-moved to nine. This script measures them instead, for every clip in the evaluation
-set, and writes a CSV the figure reads.
+Measure how large the fencers are in the detector's input, per clip, and split
+tracking loss into the detector's failures and the fencers' absences.
 
     python3 measure_framing.py
 
-Two quantities come out of it, and separating them is the point.
-
-  fencer_px   Median detected person height, expressed in the network's input
-              frame. The detector resizes so the longest side is 640, so source
-              resolution is invisible to it and a 360p clip is not handicapped by
-              being 360p. What can handicap it is the fencers occupying less of
-              the frame.
-
-  short_gap   Frames lost to gaps of at most one second, as a percentage of the
-              clip. This is the detector losing and regaining the fencers.
-
-  coverage    Frames where both fencers were tracked, as a percentage.
-
-Coverage alone conflates two unrelated things. A fencer who walks off after a touch
-while the referee confers is absent, not undetected, and that absence lands in the
-coverage figure identically to a detector failure. Splitting the missing frames by
-gap length separates them: breaks are long and few, detector failures are short and
-many. The distinction matters because only one of them is a defect.
+Coverage alone conflates the two. A fencer who walks off after a touch is absent,
+not undetected, and that lands in coverage identically to a detection failure.
+Gap length separates them: breaks are long and few, detector failures short and
+many. Writes results_current/framing.csv, which the figures read, because these
+numbers were four typed constants and went stale when the set grew.
 """
 
 import csv

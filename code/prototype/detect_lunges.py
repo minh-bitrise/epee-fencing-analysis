@@ -1,42 +1,11 @@
 """
-Epee Fencing Bout Analysis - Lunge Proposals
-=============================================
 Propose lunges from pose, using a threshold calibrated on the bout being watched.
 
-THE PROBLEM THIS SOLVES. B1h and B1j established that `stance_m / hip_height_m`
-separates lunges well on the clip its operating point was chosen from, and that
-the operating point does not survive a change of camera: the ratio is not
-view-invariant, so a threshold expressed in one camera's geometry means something
-else in another's. Measured, a threshold fitted on clip 3 and applied to clip 2
-reaches F1 0.22 and 0.29 for the two fencers, firing on a quarter of all windows
-to do it. That is why the project's own note says the feature must not be
-reported as a capability.
-
-WHY THIS IS NOT ANOTHER ATTEMPT AT TRANSFER. It stops trying. The threshold is
-fitted from a handful of lunges the user has already confirmed on THIS bout, and
-then proposes the rest of it. That is the same interactive-correction mechanism
-the rest of the design rests on rather than a new demand on the user: they were
-going to label some lunges anyway, and the system turns the first few into the
-calibration for the remainder.
-
-WHAT IT MEASURES. The dimensionless ratio, not either feature alone. B1j found
-raw stance reaches 43 per cent enrichment and hip drop 57, while the ratio reaches
-80, which is consistent with the design intent that the two move in opposite
-directions during a lunge: the feet go apart as the hips go down. Metres are
-unreliable per fencer because the scale is derived from an assumed fencer height,
-so a ratio of two same-scale quantities cancels the error that neither could.
-
-HOW WELL IT WORKS, honestly. Calibrating on the first five confirmed lunges of
-clip 3 and testing on the twenty-five that follow gives precision 0.70, recall
-0.80, F1 0.75, roughly nine times the rate a random window would fire at. Clip 2
-gives F1 0.75 and 1.00 for its two fencers, but on test sets of four and two
-lunges, which is too small to carry weight on its own.
-
-TWO LIMITS TO STATE WITH ANY NUMBER FROM HERE. Precision is a LOWER BOUND,
-because a fire on an unlabelled real lunge counts against it: B1h measured around
-40 wide-stance episodes a minute against roughly 10 labelled lunges, so
-lunge-like postures are common and mostly unlabelled. And this rests on two
-clips and one labeller.
+`stance_m / hip_height_m` separates lunges well on the clip its operating point
+came from, and does not survive a change of camera: fitted on clip 3 and applied
+to clip 2 it reaches F1 0.22 while firing on a quarter of all windows. So this
+stops trying to transfer, and fits the threshold from lunges the user has already
+confirmed on the bout in hand.
 """
 
 import argparse
@@ -97,13 +66,10 @@ def peak_in_window(times, ratios, centre, half=WINDOW_S):
 
 
 def calibrate(times, ratios, confirmed_times):
-    """
-    Fit this bout's firing threshold from lunges the user has confirmed.
+    """Fit this bout's firing threshold from lunges the user has confirmed.
 
-    Returns (threshold, n_used) or (None, n_used) when there is not enough to fit
-    on. Returning None rather than guessing matters: a threshold fitted on two
-    examples fires on a quarter of the bout, which is worse for the user than no
-    proposals at all because they then have to reject them all.
+    Returns (threshold, n_used) or (None, n_used) when there is not enough to
+    fit on.
     """
     peaks = [p for p in (peak_in_window(times, ratios, t) for t in confirmed_times)
              if p is not None]

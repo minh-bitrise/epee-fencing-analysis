@@ -132,14 +132,14 @@ class TestTerritory:
 
 class TestGroundUsed:
     def test_a_single_dropout_does_not_define_the_range(self, tmp_path):
-        """
-        Why the interquartile range and not the full range. One frame where
-        tracking jumped to the far end of the piste would set a full-range figure
-        entirely by itself, and that frame is the least trustworthy in the bout.
+        """Why the interquartile range and not the full range. One frame where
+        tracking jumped to the far end of the piste would set a full-range
+        figure entirely by itself, and that frame is the least trustworthy in
+        the bout.
 
         The spike stays on fencer 1's own side of the piste on purpose: a jump
         past the opponent is caught earlier and more bluntly, by the side-swap
-        refusal. This is the subtler case that no other guard sees.
+        refusal.
         """
         steady = bout(f1=lambda i: 2.0 + (i % 4) * 0.1)
         spiked = [dict(r) for r in steady]
@@ -315,14 +315,9 @@ class TestScoreSurvivesTheRefusal:
 
 
 class TestFootworkRefusal:
-    """
-    The check that stops the system answering for a sport it cannot measure.
+    """The check that stops the system answering for a sport it cannot measure.
 
-    Wheelchair fencing is fenced from frames bolted to the floor. Every axis
-    here, and the touch and lunge detectors upstream, assume distance opens and
-    closes because the fencers move their feet. Pointed at such a bout the system
-    does not fail visibly, which is worse: it returns a flat distance series, no
-    proposed touches, and a profile at parity, all of which read as a cagey bout.
+    Wheelchair fencing is fenced from frames bolted to the floor.
     """
 
     def test_refuses_when_neither_fencer_moves(self, tmp_path):

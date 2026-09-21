@@ -2,16 +2,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ReviewView from './ReviewView.jsx'
 
-/**
- * The review interface, which is where the project's central claim is cashed:
- * that confirming the system's proposals costs less effort than labelling from
- * scratch. That claim rests on a decision costing one keystroke, so most of
- * these tests are about the keyboard loop and about failures being visible.
- *
- * `fetch` is stubbed per URL rather than mocked per call, because the component
- * fetches the bout list, the touches and the metrics independently and the order
- * is not part of its contract.
- */
+/* The review interface, which is where the project's central claim is cashed: that confirming
+   the system's proposals costs less effort than labelling from scratch. */
 
 const BOUT = 'results_current:fencing_clip3'
 
@@ -150,11 +142,9 @@ describe('ReviewView', () => {
   })
 
   it('shows a failed decision instead of swallowing it', async () => {
-    /**
-     * The defect this replaced: a rejected call became an unhandled promise
-     * rejection, so pressing a key against a failing server did nothing and
-     * said nothing, which is indistinguishable from the key not being bound.
-     */
+    /* The defect this replaced: a rejected call became an unhandled promise rejection, so
+       pressing a key against a failing server did nothing and said nothing, which is
+       indistinguishable from the key not being bound. */
     stubFetch({ failTouchDecision: true })
     render(<ReviewView initialBoutId={BOUT} />)
     await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())
@@ -227,12 +217,7 @@ describe('ReviewView', () => {
   })
 
   it('keeps the review loop free of the tools that are not part of it', async () => {
-    /**
-     * The restructure this replaced a stack of six equal-weight panels with.
-     * Re-anchoring, exclusions and exports are used rarely and never during a
-     * review pass, so they must not sit in the working column competing with
-     * the decision on screen.
-     */
+    /* The restructure this replaced a stack of six equal-weight panels with. */
     stubFetch()
     render(<ReviewView initialBoutId={BOUT} />)
     await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())
@@ -252,15 +237,8 @@ describe('ReviewView', () => {
 
 describe('the keyboard loop survives choosing a bout', () => {
   it('gives up focus when a bout is chosen', async () => {
-    // The shortcut handler ignores every key while an input, select or textarea
-    // has focus, which is right for a text box. Picking a bout is the first
-    // thing anyone does and it left focus on the select, so every shortcut
-    // afterwards did nothing and said nothing. Reported from real use as
-    // "nothing happens if I press 1 or 2, and frame step doesn't work".
-    //
-    // Asserted through the element's own blur, rather than through
-    // document.activeElement, because jsdom does not model focus faithfully
-    // enough for the latter to mean anything here.
+    // The shortcut handler ignores every key while an input, select or textarea has focus,
+    // which is right for a text box.
     stubFetch({ twoBouts: true })
     const { container } = render(<ReviewView initialBoutId={BOUT} />)
     const select = await waitFor(() => {

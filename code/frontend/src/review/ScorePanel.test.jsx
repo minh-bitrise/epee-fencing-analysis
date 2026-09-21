@@ -21,11 +21,8 @@ const zones = () => ({
 
 describe('ScorePanel', () => {
   it('shows how long each fencer was ahead, not just the final score', () => {
-    // A 9-9 that one fencer led for 70 per cent of and a 9-9 that was level
-    // throughout are the same scoreline and different bouts. Shown as a split
-    // of the whole bout, so the widths must match the shares as well as the
-    // labels: a bar that says one thing and reads as another is worse than no
-    // bar.
+    // A 9-9 that one fencer led for 70 per cent of and a 9-9 that was level throughout are the
+    // same scoreline and different bouts.
     const { container } = render(<ScorePanel score={score()} zones={zones()} />)
     expect(screen.getByText(/ahead 70%/)).toBeInTheDocument()
     expect(screen.getByText(/30% ahead/)).toBeInTheDocument()

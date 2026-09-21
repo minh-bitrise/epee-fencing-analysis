@@ -1,28 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatTime } from './time.js'
 
-/**
- * Walks the user through pending proposals one at a time, seeking the video to
- * each and taking a single keystroke as the answer.
- *
- * WHY A QUEUE RATHER THAN THE TABLE. The table shows every proposal at once,
- * which is the right shape for checking work already done and the wrong shape
- * for doing it: the user has to find the next undecided row, click it, wait for
- * the seek, decide, and find the next. On a bout with a hundred lunge proposals
- * that navigation cost is most of the work, and it is precisely the cost the
- * project claims assisted annotation removes. The queue removes it by holding
- * the position itself, so the only thing left is the judgement.
- *
- * WHY IT TIMES ITSELF. The effort claim has never been measured. A queue that
- * reports seconds per decision at the end makes the measurement a by-product of
- * doing the work, rather than an experiment someone has to set up. Paired with
- * the manual mode, which is the same interface with the proposals withheld, it
- * gives the two numbers the comparison needs.
- *
- * WHY IT COUNTS SKIPS SEPARATELY. A skipped item is not a decision, and folding
- * it into the count would make the rate look better the more the user avoided
- * answering. Skips advance the queue and are excluded from the denominator.
- */
+/* Walks the user through pending proposals one at a time, seeking the video to each and taking
+   a single keystroke as the answer. */
 
 const pad = (n) => String(Math.floor(n)).padStart(2, '0')
 

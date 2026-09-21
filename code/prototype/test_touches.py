@@ -360,14 +360,11 @@ class TestWindowIsTimeNotFrames:
     """
 
     def series(self, fps, duration=20.0, dip_at=10.0, dip_width=0.6):
-        """
-        A V-shaped approach and retreat, which is what a touch looks like.
+        """A V-shaped approach and retreat, which is what a touch looks like.
 
         Deliberately not a flat-bottomed dip: every sample in a plateau is a
         local minimum, so the count would scale with the sampling rate and the
-        test would be measuring the frame rate rather than the window. Real
-        candidates arrive in clusters too, which is why the pipeline merges
-        anything within MERGE_GAP_S downstream.
+        test would be measuring the frame rate rather than the window.
         """
         import numpy as np
         t = np.arange(0, duration, 1.0 / fps)

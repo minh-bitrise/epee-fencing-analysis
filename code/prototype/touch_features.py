@@ -1,43 +1,10 @@
 """
-Epee Fencing Bout Analysis - Labelled Windows for a Learned Touch Proposer
-==========================================================================
-Turn a bout's per-frame CSV and its hand-labelled touches into a feature matrix,
-so the accept-or-reject decision currently made by two hand-set thresholds can
-be made by a trained classifier instead and the two compared on equal terms.
+Turn a bout's per-frame CSV and its labelled touches into a feature matrix, so
+the accept-or-reject decision made by two hand-set thresholds can be made by a
+trained classifier instead and the two compared on equal terms.
 
-WHY THIS EXISTS. `detect_touches.py` proposes a touch where inter-fencer
-distance has a local minimum of at least 0.4 m prominence AND the fencers then
-separate by at least 0.8 m. Both numbers were set by hand against clip 3. The
-rule works, and the project has no way of saying whether it works because the
-sport has that structure or because those two constants happen to suit four
-recordings. A learned proposer answers that by competing with it.
-
-WHAT IS LEARNED AND WHAT IS NOT. Candidate GENERATION stays a domain rule: this
-module emits every local minimum in the distance series. What the classifier
-replaces is the decision the rule makes about each candidate, accept or reject,
-and the ranking it puts them in. That is the honest boundary and it should be
-stated in the report rather than implied: this is not touch detection learned
-from video, it is the proposal decision learned from geometry.
-
-WHY THE CANDIDATE PROMINENCE IS LOWER THAN THE DETECTOR'S. Generating candidates
-at the detector's own 0.4 m would hand the classifier exactly the set the rule
-already accepts, so no model could ever recover a touch the rule missed and the
-comparison would be rigged in the rule's favour. Generating at 0.1 m makes the
-candidate set a SUPERSET of the rule's, which costs a worse class balance and
-buys a fair contest. The price is measured rather than assumed: `ceiling()`
-reports the recall available to any classifier built on this candidate set, and
-no downstream result can be read without it.
-
-WHY FEATURES COME IN RAW AND CLIP-NORMALISED PAIRS. The metre scale is derived
-per clip from fencer height, and the four clips are framed differently, so 0.7 m
-does not mean the same thing in each. A model trained on three clips and tested
-on a fourth is therefore exposed to exactly that shift. Each distance feature is
-emitted both as measured and as its percentile within its own bout, and the
-ablation is left to say which the model actually uses. Deciding that in advance
-would be a guess presented as a design.
-
-Run with:
-    python3 touch_features.py --results results_current
+Candidate GENERATION stays a domain rule: the model ranks minima, it does not
+find touches in video. What is learned is only which candidates to accept.
 """
 
 import argparse
@@ -218,23 +185,9 @@ def load_truth(path):
 def label(times, truth, tolerance=MATCH_TOLERANCE_S):
     """Label each candidate 1 positive, 0 negative, or -1 ignore.
 
-    WHY THERE IS AN IGNORE CLASS. Labelling every candidate within the match
-    tolerance as positive gave 1,326 positives for 27 touches, about 49 per
-    touch, because minima are dense at this prominence and the tolerance is two
-    seconds either side. That inflates the positive rate roughly fiftyfold and
-    makes the task look far easier than it is: a model could score well by
-    recognising "near a touch" rather than "is the touch".
-
-    So exactly one candidate per labelled touch is positive, the nearest. The
-    others inside the tolerance are neither: calling them negative would train
-    the model that a candidate half a second from a real touch is not touch-like,
-    which is false and is the one place the geometry genuinely is ambiguous.
-    They are dropped from training and kept at inference, where the merge step
-    collapses them exactly as it does for the rule.
-
-    This keeps the positive count equal to the touch count, which is the number
-    the report should quote, and it leaves `ceiling()` unchanged because the
-    nearest candidate to a reachable touch is still labelled.
+    Labelling every candidate within the match tolerance as positive gave 1,326
+    positives for 27 touches, about 49 per touch, because minima are dense at
+    this prominence and the tolerance is two seconds either side.
     """
     y = np.zeros(times.size, dtype=int)
     for g in truth:

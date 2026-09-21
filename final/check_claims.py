@@ -1,23 +1,15 @@
 """
 Check the report's mechanically verifiable claims against the code and results.
 
-WHY THIS EXISTS. The report is written as development proceeds, so its numbers
-are snapshots of a system that kept moving. Three of them had already gone stale
-without anyone noticing: the test count drifted three times, Appendix B
-described a CSV schema the pipeline no longer produced, and Appendix A listed
-the modules as they were several weeks earlier. None of those are hard to spot
-once you look; the problem is that nothing made anyone look.
+The report is written as development proceeds, so its numbers are snapshots of a
+system that kept moving. Three had already gone stale unnoticed: the test count,
+the CSV schema in Appendix B, and the module list in Appendix A. Nothing made
+anyone look.
 
-WHAT IT CAN AND CANNOT CHECK. Only claims with a single authoritative source in
-the repository: test counts against a live run, constants against the module
-that defines them, the CSV schema against the writer, figure references against
-the filesystem, figure numbering against document order, and the model results
-against the JSON the evaluation wrote. It cannot check a claim about what the
-evidence MEANS, which is most of the report and all of the interesting part.
-A clean run says the report is not stale; it says nothing about whether it is
-right.
+It checks only claims with a single authoritative source in the repository. It
+cannot check what the evidence MEANS, which is most of the report. A clean run
+says the report is not stale, not that it is right.
 
-Run before submitting, and after any change to the pipeline:
     python3 final/check_claims.py
     python3 final/check_claims.py --skip-tests    (fast, no suites run)
 """

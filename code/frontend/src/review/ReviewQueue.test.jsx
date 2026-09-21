@@ -2,12 +2,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ReviewQueue, { formatElapsed } from './ReviewQueue.jsx'
 
-/**
- * The queue is where the project's central claim is actually cashed: that a
- * decision costs one keystroke and the navigation between decisions costs
- * nothing. Most of these tests are about that loop, and about the timing figure
- * it produces being honest, since that figure is destined for the report.
- */
+/* The queue is where the project's central claim is actually cashed: that a decision costs one
+   keystroke and the navigation between decisions costs nothing. */
 
 const items = (n = 3) => Array.from({ length: n }, (_, i) => ({
   id: `p${i}`, time_s: 10 * (i + 1), detail: `confidence 0.9${i}`,
@@ -76,11 +72,8 @@ describe('ReviewQueue', () => {
   })
 
   it('stays on an item whose decision failed', async () => {
-    /**
-     * Advancing past a decision that did not persist drops it silently, and the
-     * user has no way to tell which one they lost. The failure is shown and the
-     * cursor does not move.
-     */
+    /* Advancing past a decision that did not persist drops it silently, and the user has no
+       way to tell which one they lost. */
     const onDecide = vi.fn(() => Promise.reject(new Error('the store said no')))
     const { props } = setup({ onDecide })
     press('c')

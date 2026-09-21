@@ -1,31 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, postJSON } from '../api.js'
 
-/**
- * Show the measured piste region over a frame of the video, and let the user
- * agree with it, drag its edges, or drop it.
- *
- * WHY THE USER CONFIRMS RATHER THAN DRAWS. The obvious design is an empty frame
- * and a drawing tool. This project has already established that it does not
- * work: a polygon placed by eye on the broadcast clip admitted the adjacent
- * piste and raised the count of physically impossible distance readings from 53
- * to 252, while the headline coverage figure went up, so it looked like an
- * improvement. The regions that work were measured, by sampling frames and
- * finding where the fencers' feet actually fall. The server does that
- * measurement, and this shows the result with the numbers behind it.
- *
- * WHY THE USER IS ASKED AT ALL. The measurement rests on an assumption that can
- * fail: that the two people standing closest together at the same depth are the
- * fencers. On footage with a referee standing on the strip, or a second bout in
- * shot, it can be wrong, and a person spots that instantly. Confirming takes
- * seconds. Discovering it afterwards costs the whole processing run.
- *
- * WHY ONLY THE TOP AND BOTTOM EDGES MOVE. The region the pipeline needs is a
- * horizontal band: the strip runs across the frame, and every measured polygon
- * spans the full width. Offering arbitrary vertices would offer precision the
- * measurement does not have and invite exactly the freehand placement this
- * exists to avoid.
- */
+/* Show the measured piste region over a frame of the video, and let the user agree with it,
+   drag its edges, or drop it. */
 export default function PisteConfirm({ job, onDecided }) {
   const measured = job.piste || {}
   const [top, setTop] = useState(measured.polygon?.[0]?.[1] ?? 0)

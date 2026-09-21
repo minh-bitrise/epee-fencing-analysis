@@ -1,51 +1,10 @@
 """
-Epee Fencing Bout Analysis - Who Scored
-========================================
 Attribute a touch to a fencer by reading the scoring machine's lamps.
 
-WHAT PROBLEM THIS SOLVES. The touch detector says WHEN a touch happened and never
-WHO scored, and the design's touch record needs a scoring fencer. Until now that
-was the one field the system could never propose: attribution originated entirely
-with the user, one decision per touch.
-
-WHY LAMPS RATHER THAN A SCORE OVERLAY. A broadcast usually carries a score bug and
-often the piste-side machine too, but club footage has no overlay at all - only the
-machine itself, and sometimes not even that if it is out of frame or obscured. The
-lamps are the one signal present in both settings, so reading them covers the
-project's actual target user rather than only the broadcast case.
-
-WHY THIS IS NOT A TOUCH DETECTOR. The lamps fire whenever the circuit closes,
-which includes fencers testing their weapons against the piste or each other's
-guards - routinely just after a touch and before coming back on guard, exactly
-when a naive detector would be listening. This module therefore never proposes
-touches. It is given times that touch detection already produced and asked only
-who scored at each, which sidesteps the whole class of spurious firings because it
-never looks anywhere else.
-
-WHY MEASUREMENT, NOT A FIXED REGION. The obvious implementation puts a box around
-the scoring machine. Club footage is hand-held and follows the action, so the
-machine drifts across the frame and leaves it entirely; a fixed region is empty
-half the time. Counting saturated red and green pixels over the whole frame is
-immune to that, because those colours are rare in a gym or an arena.
-
-WHY A LOCAL BASELINE. Whole-frame counts include everything that is permanently
-red: an EXIT sign in the club hall, sponsor banners on the broadcast, the piste.
-Those are constant, so what switched on is the count MINUS the count from a couple
-of seconds earlier. Measured on the club clip, that takes red at touches from
-indistinguishable to separable.
-
-WHAT IT CANNOT DO. The thresholds do not transfer between clips - a lamp is a few
-hundred pixels on one recording and a few thousand on another, depending on
-resolution and how far the machine is from the camera. So the operating point is
-calibrated per bout from a handful of touches the user has already confirmed,
-which is the same interactive-correction mechanism the rest of the design uses
-rather than a new demand on them. Which colour belongs to which fencer also has to
-come from the user, once per bout: nothing in the image says whether the green lamp
-is the fencer on the left.
-
-Run standalone with:
-    python3 detect_scorer.py --video fencing_clip3.mp4 \
-        --touches ground_truth/fencing_clip3_touches.csv --evaluate
+The touch detector says WHEN a touch happened and never WHO scored. Lamps rather
+than a score overlay, because club footage has no overlay, only the machine. This
+is not a touch detector: lamps fire whenever the circuit closes, so it attributes
+only touches that detection has already proposed.
 """
 
 import argparse
@@ -130,14 +89,11 @@ def lamp_response(video_path, times):
 
 
 def fit_thresholds(responses, labels, green_is="right"):
-    """
-    Choose a per-bout firing threshold for each lamp from confirmed touches.
+    """Choose a per-bout firing threshold for each lamp from confirmed touches.
 
-    Split at the midpoint between the highest value where the lamp should be off
-    and the lowest where it should be on, which is the widest-margin split of a
-    one-dimensional set. Falling back to half the smallest "on" value matters:
-    with three or four confirmed touches a colour may never be seen off, and a
-    threshold of zero would then call every subsequent frame a firing.
+    Split at the midpoint between the highest value where the lamp should be
+    off and the lowest where it should be on, which is the widest-margin split
+    of a one-dimensional set.
     """
     red_side = "left" if green_is == "right" else "right"
 
@@ -200,13 +156,9 @@ def read_touches(path):
 
 
 def leave_one_out(responses, labels, green_is):
-    """
-    Predict each touch from thresholds fitted WITHOUT it.
+    """Predict each touch from thresholds fitted WITHOUT it.
 
-    The only honest protocol available at this sample size. Fitting on all the
-    touches and scoring the same ones would report how well a threshold can be
-    drawn through a set of points, which is a different and much easier question
-    than whether it predicts the next touch.
+    The only honest protocol available at this sample size.
     """
     predictions = []
     for i in range(len(responses)):

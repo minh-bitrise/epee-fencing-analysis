@@ -2,12 +2,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SummaryPanel from './SummaryPanel.jsx'
 
-/**
- * The summary is MODEL OUTPUT rendered as formatted text, which makes it the one
- * place in this interface where untrusted content becomes markup. It is also the
- * one place where being out of date is more dangerous than being absent, because
- * a stale summary reads as current.
- */
+/* The summary is MODEL OUTPUT rendered as formatted text, which makes it the one place in this
+   interface where untrusted content becomes markup. */
 
 const respond = (body) => {
   global.fetch = vi.fn(() => Promise.resolve({

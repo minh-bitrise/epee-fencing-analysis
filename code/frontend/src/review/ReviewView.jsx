@@ -260,11 +260,8 @@ export default function ReviewView({ initialBoutId }) {
       disarm('the video is not visible, nothing recorded')
       return
     }
-    // The element is scaled, and the correction has to be in SOURCE pixels
-    // because that is the space the tracker works in. Letterboxing is accounted
-    // for: a video shown in a box of a different aspect ratio is centred with
-    // bars, and treating the element box as the image would offset every
-    // correction.
+    // The element is scaled, and the correction has to be in SOURCE pixels because that is the
+    // space the tracker works in.
     const scale = Math.min(r.width / v.videoWidth, r.height / v.videoHeight)
     const padX = (r.width - v.videoWidth * scale) / 2
     const padY = (r.height - v.videoHeight * scale) / 2
@@ -389,13 +386,7 @@ export default function ReviewView({ initialBoutId }) {
     }
   }, [boutId])
 
-  // Read the lamps again when returning to a bout whose green side is already
-  // recorded. The readings themselves are not stored, only the side, so
-  // without this the comparison between what the lamp said and what the user
-  // recorded vanished on every reload, which is the half of it worth keeping.
-  //
-  // Guarded per bout rather than per render: this decodes a few frames for each
-  // confirmed touch, so it must happen once on arrival and not again.
+  // Read the lamps again when returning to a bout whose green side is already recorded.
   const lampsAsked = useRef(null)
   useEffect(() => {
     if (!boutId || !data?.green_is) return

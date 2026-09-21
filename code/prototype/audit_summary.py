@@ -1,37 +1,11 @@
 """
-Epee Fencing Bout Analysis - Language Model Faithfulness Audit
-==============================================================
-Check that every number in a generated summary came from the payload it was
-given.
+Check that every number in a generated summary came from the payload it was given.
 
-WHY THIS EXISTS. Three pre-trained models carry this project and two of them are
-evaluated against ground truth. The language model was evaluated not at all,
-which is the sharpest form of the criticism that an AI project needs tests
-specific to its models. Its failure mode is also the best documented in the
-field: a model asked to summarise numbers will produce fluent prose containing
-numbers that were never in the input, and fluency is exactly what stops a reader
-noticing.
-
-WHAT THIS CAN AND CANNOT ESTABLISH. It checks GROUNDING, not truth. A summary
-every one of whose figures appears in the payload can still be misleading, by
-selecting favourable numbers, by asserting a cause the data cannot support, or
-by describing a tendency the statistics cannot resolve. Those need a reader.
-What this catches is the one failure a reader is worst at catching, because a
-fabricated figure looks exactly like a real one.
-
-WHY NUMBERS RATHER THAN CLAIMS. A claim-level audit needs a judge, which means
-either a person or another language model, and a model grading a model's
-faithfulness inherits the failure being measured. Numbers are checkable against
-the payload mechanically and without judgement, and in a summary of statistics
-they carry most of the assertions worth auditing.
-
-THE THREE OUTCOMES, AND WHY DERIVED IS NOT A FAILURE. A figure is GROUNDED if it
-appears in the payload at the precision it was written to. It is DERIVED if a
-simple arithmetic relation between payload values produces it, for example a
-difference between two means the payload holds separately. It is UNSUPPORTED
-otherwise. Derivation is legitimate and expected: a summary that could only
-repeat the payload would add nothing. What matters is that unsupported figures
-are zero, and that derived ones are identified rather than assumed.
+The language model is the one model here not scored against ground truth, and its
+documented failure is fabrication: fluent prose carrying figures never in the
+input. This checks GROUNDING, not truth. A summary whose every figure appears in
+the payload can still mislead by selecting favourable numbers or asserting a
+cause the data does not support.
 """
 import argparse
 import json
@@ -63,13 +37,11 @@ IGNORE_WORDS = {"first", "second", "third", "half", "both", "one", "two"}
 
 
 def key_numbers(payload):
-    """
-    Numbers appearing in payload KEY NAMES rather than values.
+    """Numbers appearing in payload KEY NAMES rather than values.
 
     The zone breakdown is keyed `lunge_distance_1.5_to_2.6m`, so the band
     boundaries a summary quotes are supplied by the payload but are not values
-    in it. Without this they are scored as derived, which understates grounding
-    and misattributes where the figure came from.
+    in it.
     """
     out = set()
     if isinstance(payload, dict):
@@ -119,25 +91,10 @@ def extract_numbers(markdown):
 
 
 def derivable(value, values, tol, pairs=True):
-    """
-    Whether a simple relation between payload values produces this figure.
+    """Whether a simple relation between payload values produces this figure.
 
-    MEASURED, NOT ASSUMED, AND THE RESULT CHANGED THE DESIGN. The first version
-    searched differences and sums over every pair, which seemed a conservative
-    way to avoid false alarms. Running `sensitivity` against it showed it catches
-    NONE of a sample of fabricated small integers and about a quarter of
-    fabricated one-decimal figures, because sixty payload values generate
-    thousands of pairwise combinations and those cover the small numbers densely.
-    An audit that cannot detect a fabrication is not an audit, and a clean result
-    from it would have meant nothing.
-
-    The pair search is therefore off by default. What remains is direct match and
-    percentage conversion, which raises sensitivity sharply at the cost of
-    flagging legitimate derivations. That trade is the right way round: a flagged
-    legitimate figure costs a reader ten seconds, whereas a missed fabrication is
-    the failure the audit exists to prevent. Figures the pair search WOULD have
-    explained are reported separately rather than silently accepted, so the
-    distinction stays visible.
+    The first version searched differences and sums over every pair, which
+    seemed a conservative way to avoid false alarms.
     """
     vals = list(values)
     for a in vals:
@@ -180,17 +137,10 @@ def audit(markdown, payload, pairs=False):
 
 
 def sensitivity(payload, trials=200, seed=7, pairs=False):
-    """
-    What fraction of FABRICATED figures this audit would catch, by magnitude.
+    """What fraction of FABRICATED figures this audit would catch, by magnitude.
 
     A null result is only readable alongside what the method could have
-    detected, and the same applies to a clean audit. The weakness is structural
-    rather than incidental: a payload of sixty numbers, plus every difference and
-    sum of pairs, covers the small integers densely, so a fabricated "7" is
-    likely to coincide with something. A fabricated "0.31" is not.
-
-    Reported so that a clean result is read as "no fabricated DECIMALS", which
-    is what it establishes, rather than "no fabrication", which it does not.
+    detected, and the same applies to a clean audit.
     """
     import random
     rng = random.Random(seed)

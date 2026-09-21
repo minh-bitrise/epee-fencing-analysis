@@ -1,15 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { formatClock, formatTime } from './time.js'
 
-/**
- * The whole bout on one strip: every proposed touch as a marker, every excluded
- * range shaded, and the playhead.
- *
- * This is what makes review navigable. Without it, finding the next proposal
- * means scrubbing a three-minute video by hand, and the claim that assisted
- * review costs less effort than manual review would not survive that: the
- * scrubbing is most of the manual cost.
- */
+/* The whole bout on one strip: every proposed touch as a marker, every excluded range shaded,
+   and the playhead. */
 export default function Timeline({ duration, rows, segments, selIdx,
                                    currentTime, onSelect, onSeek }) {
   const ref = useRef(null)

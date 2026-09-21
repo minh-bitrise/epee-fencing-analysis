@@ -29,13 +29,12 @@ from jobs import AWAITING_PISTE, DONE, JobStore  # noqa: E402
 
 @pytest.fixture
 def tiny_video(tmp_path):
-    """
-    A real, decodable video file, small enough to be cheap.
+    """A real, decodable video file, small enough to be cheap.
 
     Written with OpenCV rather than shipped as a fixture because the upload
     endpoint's validity check IS an OpenCV open-and-read, so a file this build
-    can decode is exactly the right test input, and a checked-in sample might not
-    be decodable by another machine's build.
+    can decode is exactly the right test input, and a checked-in sample might
+    not be decodable by another machine's build.
     """
     import cv2
     path = tmp_path / "bout.mp4"
@@ -288,13 +287,11 @@ class TestLifecycle:
 
 
 class TestReprocessAndSummary:
-    """
-    The two endpoints that replace a command line with a button.
+    """The two endpoints that replace a command line with a button.
 
-    Both existed as instructions before this: the review page told the user to go
-    and run the pipeline in a terminal to apply their tracking corrections, and
-    to run another command to generate a summary. That is the arrangement the
-    application layer exists to remove.
+    Both existed as instructions before this: the review page told the user to
+    go and run the pipeline in a terminal to apply their tracking corrections,
+    and to run another command to generate a summary.
     """
 
     @pytest.fixture

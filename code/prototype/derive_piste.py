@@ -1,41 +1,10 @@
 """
-Epee Fencing Bout Analysis - Piste Region Derivation
-====================================================
 Measure a piste polygon from a video instead of drawing one by hand.
 
-WHY THIS EXISTS. Competition footage contains people who are not the two
-fencers: a referee, spectators, and fencers on the adjacent strip. The detector
-knows what a person is and not what a fencer is, so without a spatial filter it
-will happily lock a tracker slot onto the referee. `PisteRegion` in
-run_detection.py is that filter, and it is loaded from a small JSON polygon file
-authored once per clip. Every clip in the evaluation has one. A video uploaded
-through the web interface has nothing, and the gap is not cosmetic: rebuilding
-the reference results without the configs dropped clip 2 from 98.0 per cent
-coverage to 80.1.
-
-WHY IT MEASURES RATHER THAN ASKS. The obvious answer is to let the user draw the
-strip over the first frame. That is exactly the approach that already failed on
-this project. The first clip-2 polygon was placed by eye with its top edge at
-y=230, which let the adjacent piste in and *raised* the count of physically
-implausible distance samples from 53 to 252, while the headline coverage number
-went up. The polygons that work were arrived at differently: sample every tenth
-frame, take the two tallest person detections in each, look at where their feet
-actually fall, and put the boundary just outside that band with a margin. Clip
-2's top edge of 380 comes from a measured 1st-percentile feet-y of 402; clip 4's
-260 comes from a measured cluster boundary. This module automates that
-procedure, so the interface asks the user to confirm a measurement rather than to
-produce a guess.
-
-WHAT IT CANNOT DO. It separates people by where they stand, so it cannot reject a
-referee standing on the strip, and it assumes the two tallest detections are
-usually the fencers. That assumption is the same one `calibrate_fixed_scale`
-already makes and it holds because the fencers are nearest the camera, but it
-degrades when a bystander is nearer still. The derived polygon is therefore
-reported with the measurements behind it and the caller is expected to show them,
-not to treat the output as authoritative.
-
-Run standalone with:
-    python3 derive_piste.py --video fencing_clip2.mp4 --output piste_derived.json
+Competition footage contains referees, spectators and fencers on the adjacent
+strip, and the detector knows what a person is, not what a fencer is. Every
+evaluation clip has a hand-authored polygon; an uploaded video has none, and
+running clip 2 without one dropped coverage from 98.0 to 80.1 per cent.
 """
 
 import argparse
@@ -83,11 +52,7 @@ HIGH_PCT = 99.0
 PAIR_HEIGHT_RATIO = 0.5
 
 # Feet-y values further apart than this many median fencer heights are treated as
-# belonging to different groups of people. Measured: on the broadcast clip the
-# spectator band ends at y=236 and the fencer band starts at y=400, a gap of 164
-# px against a 252 px fencer, while the widest gap inside the fencer band is
-# under 50. Any threshold between those two separates them, and half a fencer
-# sits in the middle of that range.
+# belonging to different groups of people.
 CLUSTER_GAP_HEIGHTS = 0.5
 
 # How many extra people have to be present before a piste filter is worth
@@ -133,26 +98,10 @@ def _sample_detections(video_path, sample_every=SAMPLE_EVERY,
 
 
 def select_fencer_pair(boxes):
-    """
-    Pick the two boxes in one frame most likely to be the fencers.
+    """Pick the two boxes in one frame most likely to be the fencers.
 
-    NOT the two tallest, which is what `calibrate_fixed_scale` uses and what the
-    first version of this module used. Measurement shows why: on the broadcast
-    clip the two tallest boxes have a median vertical separation of 296 px,
-    because the referee stands nearest the camera and is therefore the tallest
-    box in the frame. Taking him as a fencer put the measured band's 99th
-    percentile at y=718 and produced a polygon covering the whole frame, which
-    filters nothing. The pipeline's own documented failure mode is a bystander
-    being accepted into a tracked slot, so a piste filter derived by admitting
-    the referee would be worse than useless.
-
-    Two fencers stand on one strip, so they are at almost the same depth and
-    their feet sit at almost the same height in the image. Choosing the closest
-    pair by feet-y drops that median separation from 296 px to 7. The height
-    ratio guard stops the rule pairing two distant spectators, who are close
-    together in feet-y but much shorter than anyone on the strip.
-
-    Returns (box_a, box_b) or None when the frame has fewer than two candidates.
+    NOT the two tallest, which is what `calibrate_fixed_scale` uses and what
+    the first version of this module used.
     """
     if len(boxes) < 2:
         return None
@@ -172,16 +121,10 @@ def select_fencer_pair(boxes):
 
 
 def cluster_1d(values, gap):
-    """
-    Split a sorted set of values wherever consecutive ones differ by more than
+    """Split a sorted set of values wherever consecutive ones differ by more than
     `gap`, and return the groups largest first.
 
-    A percentile taken across a bimodal distribution describes neither mode. On
-    the broadcast clip roughly a tenth of frames contribute a spectator pair at
-    y around 220 and the rest contribute fencers at 400 to 520, so the 1st
-    percentile of everything lands at 214, in the spectators, and a band built
-    from it admits them. Separating the groups first and describing only the
-    largest is what the hand-authored polygons did by reading a histogram.
+    A percentile taken across a bimodal distribution describes neither mode.
     """
     if len(values) == 0:
         return []
@@ -198,14 +141,10 @@ def cluster_1d(values, gap):
 
 
 def derive_piste(video_path, sample_every=SAMPLE_EVERY, progress_cb=None):
-    """
-    Measure a piste polygon for a video.
+    """Measure a piste polygon for a video.
 
-    Returns a dict describing the result rather than a bare polygon, because the
-    caller has to be able to show the user what the measurement was. The
-    `needed` flag distinguishes "no polygon, because the footage has no
-    bystanders to reject" from "no polygon, because measurement failed", and
-    those two call for opposite responses from the interface.
+    Returns a dict describing the result rather than a bare polygon, because
+    the caller has to be able to show the user what the measurement was.
     """
     per_frame, frames_read = _sample_detections(
         video_path, sample_every=sample_every, progress_cb=progress_cb)
@@ -303,24 +242,8 @@ def derive_piste(video_path, sample_every=SAMPLE_EVERY, progress_cb=None):
         elif g_low > main.max():
             bottom = min(bottom, (main.max() + g_low) / 2.0)
 
-    # How many people the band will still let through.
-    #
-    # This is the check that matters, and coverage does not provide it. Measured
-    # on clip 1, a derived band and the hand-authored one give almost the same
-    # tracking coverage, 92.5 against 92.9 per cent, while physically impossible
-    # distance readings go from 1 to 37 and the largest measured separation goes
-    # from 6.44 m to 9.63 m. The cause is that the officials sit behind the far
-    # end of the strip, so their feet land at y 430-460, inside a fencer band
-    # that runs from 421 to 695 because the piste recedes from the camera. No
-    # horizontal band can separate them: the strip itself spans that depth. The
-    # hand-authored polygon resolved it by starting at y=470 and giving up the
-    # far end of the strip, which is a trade requiring the knowledge that the
-    # officials are there at all.
-    #
-    # So rather than guess, this counts the detections that fall inside the band
-    # and were NOT chosen as part of a fencer pair, and hands the number to the
-    # interface. A band the fencers share with nobody reports close to zero; one
-    # that still contains bystanders says so, and the user can drag the edge.
+    # How many people the band will still let through. This is the check that
+    # matters, and coverage does not provide it.
     inside_extra = 0
     for boxes in per_frame:
         if not boxes:
@@ -335,16 +258,7 @@ def derive_piste(video_path, sample_every=SAMPLE_EVERY, progress_cb=None):
     measurements["unselected_per_sampled_frame"] = round(per_frame_extra, 3)
 
     # Two separate ways the result can be weak, reported separately because they
-    # call for different responses. A band covering the whole frame filters
-    # nothing. A band that still contains other people filters the wrong thing.
-    #
-    # The 0.5 threshold rests on three clips and should be treated as
-    # provisional. Measured, unselected people per sampled frame come out at 0.33
-    # on clip 2, where the derived band matches the hand-authored one exactly,
-    # and at 0.59 and 1.88 on clips 4 and 1, where the derived band is measurably
-    # worse. It separates the cases available, and three points is not many. The
-    # measurement itself is reported on every result regardless, and it is the
-    # substance; this flag only decides whether to add a sentence explaining it.
+    # call for different responses.
     CROWDED_PER_FRAME = 0.5
     covers_everything = (bottom - top) >= 0.9 * height
     still_crowded = per_frame_extra >= CROWDED_PER_FRAME
@@ -377,13 +291,9 @@ def derive_piste(video_path, sample_every=SAMPLE_EVERY, progress_cb=None):
 
 
 def write_piste_file(result, path, video_path=""):
-    """
-    Write a derived polygon in the same schema the hand-authored files use.
+    """Write a derived polygon in the same schema the hand-authored files use.
 
-    The measurements are written into the file's comment. That is where the
-    hand-authored files record their reasoning, and a derived file that did not
-    would be indistinguishable from one placed by eye, which is the exact
-    distinction this project has already paid to learn.
+    The measurements are written into the file's comment.
     """
     if not result.get("polygon"):
         raise ValueError("no polygon to write")

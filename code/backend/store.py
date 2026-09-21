@@ -1,25 +1,10 @@
 """
-Epee Fencing Bout Analysis - Annotation Store
-==============================================
-Reads the artefacts the processing pipeline produces and holds the user's
-annotations alongside them.
+Read the artefacts the pipeline produces, and hold the user's annotations
+alongside them.
 
-DESIGN NOTE: why annotations are stored separately from pipeline output.
-The design chapter requires that every pipeline output be persisted as editable
-data rather than baked into the video, so the annotation interface can read it
-back for confirmation. This module keeps that separation strict. Pipeline
-artefacts (the per-frame metrics CSV, the proposed touches, the generated
-summary) are treated as read-only inputs, and the user's decisions live in a
-separate JSON file per bout. Nothing the user does destroys a pipeline result,
-so reprocessing a bout never loses their work and their work never has to be
-reconstructed from a modified artefact.
-
-The four annotation actions the design specifies are each represented here:
-confirming or correcting a proposed touch, adding a missed touch, marking a
-segment as tracking-unreliable, and re-anchoring a fencer. The first three are
-resolved entirely within this store. Re-anchoring is recorded but cannot take
-effect until the pipeline is rerun, since it changes tracking rather than
-interpretation, and that distinction is made explicit rather than hidden.
+Pipeline output is treated as read-only input and the user's decisions live in a
+separate JSON file per bout, so nothing the user does can corrupt the artefacts
+and a re-run cannot silently discard their work.
 """
 
 import csv
@@ -109,22 +94,10 @@ def load_proposed_touches(path):
 
 
 def _next_id(items, prefix):
-    """
-    An id unique among the records currently in `items`.
+    """An id unique among the records currently in `items`.
 
-    Deriving it from len() looks equivalent and is not: removing a record lowers the
-    count, so the next insert reuses an id that is still LIVE. Two records then
-    share one id and a delete takes both. Found in real data after a review session
-    that used the remove button, which left two `l1` records and a hole where `l32`
-    had been.
-
-    One past the highest number present cannot collide with anything present, which
-    is the property that prevents that bug. It is deliberately not the stronger
-    "never reuse an id at all": an id freed by a removal can come round again. That
-    would only matter if a caller held a stale id across a removal, and the
-    interface reloads after every mutation, so it does not. Making it stronger means
-    persisting a counter and migrating every existing annotation file, which is not
-    worth it for a guarantee nothing needs.
+    Deriving it from len() looks equivalent and is not: removing a record
+    lowers the count, so the next insert reuses an id that is still LIVE.
     """
     used = []
     for it in items:
@@ -135,14 +108,9 @@ def _next_id(items, prefix):
 
 
 class AnnotationStore:
-    """
-    Per-bout annotation state, persisted as JSON.
+    """Per-bout annotation state, persisted as JSON.
 
-    Kept deliberately simple: one file per bout, rewritten on each change. A
-    database is what the design specifies for the full system, but for a
-    single-user review tool a file is sufficient and makes the stored state
-    trivially inspectable, which matters while the workflow is still being
-    evaluated.
+    Kept deliberately simple: one file per bout, rewritten on each change.
     """
 
     def __init__(self, root):
@@ -179,13 +147,9 @@ class AnnotationStore:
     def set_green_is(self, bout_id, side):
         """Remember which side the green lamp belongs to on this bout.
 
-        WHY THIS IS STORED. It is a fact about the recording, not about a
-        session: nothing in the image reveals it, it never changes for a given
-        bout, and every attributed touch depends on it. It was previously sent
-        with each request and discarded, so it had to be re-entered after every
-        reload, and a misremembered answer silently inverts who scored every
-        touch in the bout. The report describes it as confirmed once per bout,
-        which was only true of the intent.
+        It is a fact about the recording, not about a session: nothing in the
+        image reveals it, it never changes for a given bout, and every
+        attributed touch depends on it.
         """
         if side not in ("left", "right"):
             raise ValueError(f"green_is must be left or right, got {side!r}")
@@ -196,14 +160,11 @@ class AnnotationStore:
     # --- action 1: confirm or correct a proposed touch ------------------
 
     def set_touch_state(self, bout_id, touch_id, state, scorer=None, time_s=None):
-        """
-        Accept, reject, or correct a proposed touch.
+        """Accept, reject, or correct a proposed touch.
 
         Correction is folded into the same action rather than being separate,
-        because in practice a user adjusting a timestamp or assigning a scorer is
-        confirming the touch at the same time. Requiring two interactions for
-        one decision would work against the design's own aim of resolving each
-        error in a single step.
+        because in practice a user adjusting a timestamp or assigning a scorer
+        is confirming the touch at the same time.
         """
         if state not in VALID_STATES:
             raise ValueError(f"state must be one of {VALID_STATES}")
@@ -252,24 +213,11 @@ class AnnotationStore:
 
     def add_session(self, bout_id, mode, elapsed_s, decisions,
                     touches_after=0, lunges_after=0, note=""):
-        """
-        Record how long one pass over a bout took, and in which mode.
+        """Record how long one pass over a bout took, and in which mode.
 
-        WHY THIS IS STORED RATHER THAN SHOWN AND FORGOTTEN. The project's central
-        claim is that confirming proposals costs less effort than labelling from
-        scratch, and there is currently no measurement of effort anywhere in it.
-        A figure that exists only in the browser until the page reloads cannot be
-        quoted in the evaluation, so the timing is durable and sits beside the
-        annotations it was produced with.
-
-        WHY MODE IS A CLOSED SET. The comparison is only meaningful between the
-        two conditions it was designed around. A free-text mode would let a
-        half-remembered third condition into a table of two.
-
-        Sessions are appended, never replaced. A second attempt at the same bout
-        is a second data point, including the ones where the user was
-        interrupted: discarding those would keep only the runs that went well,
-        which is the shape of a result that flatters itself.
+        The project's central claim is that confirming proposals costs less
+        effort than labelling from scratch, and there is currently no
+        measurement of effort anywhere in it.
         """
         if mode not in self.VALID_MODES:
             raise ValueError(f"mode must be one of {self.VALID_MODES}")
@@ -368,15 +316,12 @@ class AnnotationStore:
     # --- action 4: re-anchor a fencer -----------------------------------
 
     def add_reanchor(self, bout_id, time_s, slot, x, y):
-        """
-        Record that at time_s the tracker had fencer `slot` wrong, and that the
+        """Record that at time_s the tracker had fencer `slot` wrong, and that the
         correct position is (x, y).
 
         Unlike the other three actions this cannot take effect immediately: it
         changes tracking rather than interpretation, so the pipeline must be
-        rerun for it to matter. The record is stored with `applied: False` so the
-        interface can show the user that their correction is pending rather than
-        implying it has already been honoured.
+        rerun for it to matter.
         """
         if slot not in (0, 1):
             raise ValueError("slot must be 0 or 1")
@@ -390,15 +335,10 @@ class AnnotationStore:
         return self.save(bout_id, data)
 
     def mark_reanchors_applied(self, bout_id):
-        """
-        Record that the pipeline has been rerun with the corrections in force.
+        """Record that the pipeline has been rerun with the corrections in force.
 
-        This is the user asserting a reprocess happened, not the system observing
-        one, and the distinction is deliberate. Nothing in a rerun writes back here,
-        and inferring it from a newer CSV timestamp would be guessing. Leaving the
-        flag as the user's assertion keeps the interface honest about what it knows:
-        it can say "you told me these are applied", which is weaker and truer than
-        "these are applied".
+        This is the user asserting a reprocess happened, not the system
+        observing one, and the distinction is deliberate.
         """
         data = self.load(bout_id)
         changed = 0
@@ -412,24 +352,11 @@ class AnnotationStore:
     # --- lunge labelling (evaluation only, not one of the four actions) ---
 
     def add_lunge(self, bout_id, time_s, slot, note=""):
-        """
-        Record the peak of one lunge: the moment of maximum extension.
+        """Record the peak of one lunge: the moment of maximum extension.
 
-        WHY ONE TIMESTAMP AND NOT TWO. TODO B1h originally called for start and
-        peak, but the hypothesis under test only needs the peak: does a
-        pose-derived stance feature reach an extreme when a fencer is at full
-        extension? A start time would let the rise be measured too, and it doubles
-        the labelling cost per lunge, so it is left out until the simpler question
-        is answered.
-
-        WHY `scored` IS NOT STORED. It is derivable. A lunge that scored is one
-        whose peak sits shortly before an already-labelled touch, and the touch
-        labels exist. Asking for it again would add a decision per lunge and
-        introduce a second chance to disagree with the touch file.
-
-        These labels exist to evaluate the pose model, not to correct it, so this
-        is deliberately NOT presented as a fifth annotation action. The four
-        designed actions repair the system's output; this one grades it.
+        TODO B1h originally called for start and peak, but the hypothesis under
+        test only needs the peak: does a pose-derived stance feature reach an
+        extreme when a fencer is at full extension?
         """
         if slot not in (0, 1):
             raise ValueError("slot must be 0 or 1")

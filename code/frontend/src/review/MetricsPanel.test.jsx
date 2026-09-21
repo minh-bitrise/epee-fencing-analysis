@@ -2,12 +2,8 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import MetricsPanel from './MetricsPanel.jsx'
 
-/**
- * The metrics panel is where this project's hard-won caveats live, and every one
- * of them is a rule about what NOT to show. Those rules were each paid for by a
- * measurement that went wrong, so they are asserted here rather than trusted to
- * survive the next edit.
- */
+/* The metrics panel is where this project's hard-won caveats live, and every one of them is a
+   rule about what NOT to show. */
 
 const metrics = (over = {}) => ({
   confirmed_touches: [{ time_s: 10 }],

@@ -1,40 +1,14 @@
 """
-Epee Fencing Bout Analysis - Fencer Profile
-===========================================
-A per-fencer summary of how someone fenced in one bout, as a small set of axes
-that can be drawn as a radar and read at a glance.
+A per-fencer summary of one bout, as a few axes that can be drawn as a radar.
 
-WHY THIS IS SAFE TO BUILD AND THE PUSH / PULL TOTALS WERE NOT. The withdrawn
-push / pull figures were ACCUMULATIONS: a sum of per-frame position deltas. The
-report's appendix E.2 traces exactly why that failed. A fencer re-acquired at a
-new position after a tracking dropout contributes a one-sided step that never
-cancels, so clip 3's Fencer 2 accumulated +23.01 m of movement against an
-endpoint difference of -0.94 m. No clamp repairs it, because the truncated steps
-reach 5.4 m in a single frame.
+Every axis is either an instantaneous reading averaged over frames or a count
+over confirmed touches. None accumulates. The withdrawn push and pull totals
+were sums of per-frame deltas, and a fencer re-acquired after a dropout
+contributes a one-sided step that never cancels: clip 3's Fencer 2 accumulated
++23.01 m against an endpoint difference of -0.94 m.
 
-Every axis here is instead either an INSTANTANEOUS reading averaged over frames
-(mean position, interquartile range of position, distance at a touch) or a COUNT
-of touches the user has already confirmed. Neither accumulates error: a dropout
-displaces a handful of samples out of thousands and is absorbed by the mean,
-where the accumulator banked it permanently. That distinction is the whole reason
-this module exists rather than reviving the withdrawn metric.
-
-WHY THE AXES COMPARE THE TWO FENCERS RATHER THAN A POPULATION. A radar needs a
-scale, and the honest scale is not available: four clips is not a population, and
-normalising against them would invent a "typical epeeist" out of eight
-fencer-bouts from one club and one broadcast. So each axis is scored as this
-fencer's share of the pair's total, where 50 is parity. That answers the question
-a coach actually asks - which of these two did more of this - and it is the only
-question this much data can support. The raw measured value is carried alongside
-every score so nothing is hidden behind the shape.
-
-WHY IT REFUSES TO DRAW ON SWAPPED FOOTAGE. Every axis is per-fencer, so all of
-them assume slot identity held. On clip 4 it did not: 14 side swaps, with Fencer
-1 on the left in only 26.9 per cent of frames. A profile computed there would
-describe the tracker rather than either fencer, and would look entirely
-plausible. `count_side_swaps` already detects this exactly, so the profile is
-withheld rather than qualified: a radar with a footnote still gets read as a
-radar.
+All six axes assume slot identity held, so the profile refuses to draw where the
+swap check fails rather than captioning a shape a reader will trust anyway.
 """
 import argparse
 import csv
@@ -44,15 +18,8 @@ import statistics
 from generate_summary import count_side_swaps
 from in_play import in_play_mask, out_of_play_windows
 
-# The smallest own-position spread measured on real foot-fencing footage is 0.66 m
-# (clip 1's Fencer 1); the largest is 2.78 m. Bounding-box jitter alone produces
-# far less than either. This sits well below the smallest real value and well
-# above jitter.
-#
-# PROVISIONAL, AND ASYMMETRIC EVIDENCE. It is derived from four clips of foot
-# fencing and from NO footage of the case it exists to catch, because none was
-# available. It is calibrated from one side of the boundary only, and should be
-# re-derived if wheelchair footage is ever obtained.
+# The smallest own-position spread measured on real foot-fencing footage is 0.66
+# m (clip 1's Fencer 1); the largest is 2.78 m.
 MIN_FOOTWORK_IQR_M = 0.25
 
 # A touch is attributed to the position the fencers were at when it was awarded,
@@ -101,27 +68,21 @@ def _iqr(values):
 
 
 def footwork_range(p1, p2):
-    """
-    How much ground the more mobile of the two fencers covered, as the
+    """How much ground the more mobile of the two fencers covered, as the
     interquartile range of their own position.
 
     Used to decide whether footwork-based measurement means anything on this
-    bout at all. The larger of the two is taken rather than the mean, because one
-    fencer holding still while the other moves is ordinary foot fencing, whereas
-    NEITHER moving is the case this exists to detect.
+    bout at all.
     """
     return max(_iqr(p1), _iqr(p2))
 
 
 def territory(p_own, p_other):
-    """
-    How far up the strip a fencer lived, in metres from their own end.
+    """How far up the strip a fencer lived, in metres from their own end.
 
     Measured from the observed extent of the bout rather than an assumed piste
     length, because the metre scale is derived per clip and the fencers never
-    reach both ends of a fourteen-metre piste in a clip of this length. Both
-    fencers are measured from their OWN end, so the two numbers are comparable
-    and a larger one always means further forward.
+    reach both ends of a fourteen-metre piste in a clip of this length.
     """
     lo = min(min(p_own), min(p_other))
     hi = max(max(p_own), max(p_other))
@@ -143,16 +104,13 @@ def distance_at(rows, time_s):
 
 
 def longest_streak(scorers, who):
-    """
-    Longest run of consecutive touches scored by one fencer, or None when there
+    """Longest run of consecutive touches scored by one fencer, or None when there
     are no scored touches at all. Doubles break a run.
 
-    The None matters more than it looks. Returning 0 for a bout with no confirmed
-    touches draws a spoke at parity, and two fencers apparently tied on "best
-    run" is a finding about them rather than a statement that nothing has been
-    reviewed yet. Caught by looking at the panel on a real bout, not by a test:
-    every axis was individually correct and the picture still said something
-    false.
+    The None matters more than it looks. Returning 0 for a bout with no
+    confirmed touches draws a spoke at parity, and two fencers apparently tied
+    on "best run" is a finding about them rather than a statement that nothing
+    has been reviewed yet.
     """
     if not scorers:
         return None
@@ -173,19 +131,12 @@ def touch_axes(rows, touches):
     # ONLY the three real attributions count. "unknown" is a placeholder the
     # store supplies for a touch nobody has attributed, and it is truthy, so a
     # plain filter on truthiness let a bout of twelve unattributed touches read
-    # as a measured longest run of zero for both fencers. Third instance of this
-    # shape in one day, after the pace figure and the scoreline: absence
-    # rendered as a measured zero. The other two were fixed where they surfaced;
-    # this is the assumption underneath all three.
+    # as a measured longest run of zero for both fencers.
     SIDES = ("left", "right", "double")
     scorers = [t.get("scorer") for t in touches if t.get("scorer") in SIDES]
-    # Whether ANY touch carries an attribution. With none, every share below is
-    # 0 of n, and two fencers drawn at 0 per cent apiece sit at parity on the
-    # radar and read as a bout in which neither scored. The touches happened and
-    # nobody has said who scored them, which is an absence, not a zero. Found by
-    # opening the application rather than by any test: `score_progression` has
-    # carried a comment saying "it is not a zero-zero event, it is an unknown
-    # one" since it was written, and the interface displayed a zero anyway.
+    # Whether ANY touch carries an attribution. With none, every share below is 0
+    # of n, and two fencers drawn at 0 per cent apiece sit at parity on the radar
+    # and read as a bout in which neither scored.
     any_attributed = bool(scorers)
     out = {}
     for slot, side in ((1, "left"), (2, "right")):
@@ -207,22 +158,12 @@ def touch_axes(rows, touches):
 
 
 def score_progression(touches, duration_s):
-    """
-    How the score moved through the bout: lead changes, and how long each fencer
-    spent ahead.
+    """How the score moved through the bout: lead changes, and how long each
+    fencer spent ahead.
 
-    WHY TIME AND NOT JUST TOUCHES. A 5-4 bout where one fencer led throughout and
-    a 5-4 bout that changed hands four times are the same scoreline and different
-    bouts, and the second is the one a coach wants to talk about. Time leading is
-    the cheap way to tell them apart.
-
-    Doubles advance both scores, so they can end a lead without either fencer
-    scoring past the other. That is correct epee behaviour and not a special
-    case: at 4-4 a double is 5-5.
-
-    Everything here is derived from the touch list the user confirmed. Nothing is
-    inferred from tracking, so this section is unaffected by the swap check that
-    withholds the per-fencer axes.
+    A 5-4 bout where one fencer led throughout and a 5-4 bout that changed
+    hands four times are the same scoreline and different bouts, and the second
+    is the one a coach wants to talk about.
     """
     if not touches:
         return {"available": False,
@@ -232,11 +173,7 @@ def score_progression(touches, duration_s):
     left = right = 0
     leader = None
     # The last fencer to have HELD the lead, which is not the same as the current
-    # leader. A lead almost always changes hands by passing through level, so
-    # comparing only against the current leader counts no change at all: the
-    # sequence is 1, None, 2, and neither step is a swap between two fencers.
-    # Measured on clip 3 this reported zero lead changes for a bout where one
-    # fencer led for 87 seconds and the other for 38.
+    # leader.
     last_holder = None
     changes = 0
     leading_s = {1: 0.0, 2: 0.0}
@@ -365,23 +302,12 @@ def _share(a, b):
 
 
 def pace(touches, duration_s):
-    """
-    How often touches were scored, for the bout and for each fencer, per minute.
+    """How often touches were scored, for the bout and for each fencer, per
+    minute.
 
-    WHY THIS IS NOT A SEVENTH AXIS. Every axis scores one fencer as a share of
-    the pair, and within a single bout both fencers are divided by the SAME
-    duration, so a rate axis would reduce to exactly the scoring-share axis
-    already there. Two axes carrying one number is a radar that looks twice as
-    well evidenced as it is. The rate belongs here, as an absolute figure, where
-    it says something share cannot: whether this was a bout of fourteen touches
-    in three minutes or of three.
-
-    WHY IT SITS BESIDE THE SCORELINE RATHER THAN THE AXES. It is derived from
-    the touches the user confirmed and from the recording's length. Nothing in
-    it comes from tracking, so it survives the checks that withhold every
-    per-fencer axis, exactly as the scoreline does.
-
-    Doubles count half to each fencer, as everywhere else in this module.
+    Every axis scores one fencer as a share of the pair, and within a single
+    bout both fencers are divided by the SAME duration, so a rate axis would
+    reduce to exactly the scoring-share axis already there.
     """
     if not touches or not duration_s:
         return {"available": False,
@@ -470,19 +396,7 @@ def build(csv_path, touches, lunges=None, reset_s=None):
     # WHY THIS REFUSES RATHER THAN REPORTING NEAR-ZERO EVERYTHING. Every axis
     # here, and the touch and lunge detectors upstream of it, assume fencing done
     # on the feet: distance opens and closes because the fencers move, a touch is
-    # a local minimum in that distance, a lunge is an ankle separation. Wheelchair
-    # fencing is fenced from frames bolted to the floor, so none of that holds.
-    #
-    # Pointed at such a bout the system does not fail visibly, which is worse
-    # than failing. It returns a distance series that barely moves, proposes no
-    # touches, and draws a profile whose axes all sit at parity, and every one of
-    # those outputs looks like a legitimate reading of a cagey bout. Producing
-    # confident nonsense for a population the system was never designed for is a
-    # more serious exclusion than declining to answer.
-    #
-    # The same check catches two failures that are not about Para fencing at all:
-    # footage framed so tightly that the piste collapses in the measured space,
-    # and a tracker that has locked onto two people who are not fencing.
+    # a local minimum in that distance, a lunge is an ankle separation.
     footwork = footwork_range(p1, p2)
     if footwork < MIN_FOOTWORK_IQR_M:
         return {

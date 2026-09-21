@@ -661,17 +661,15 @@ class TestSummaryEndpoint:
 
 
 class TestRecordIdsStayUniqueAmongLiveRecords:
-    """
-    Ids were derived from list length, so removing a record lowered the count and the
-    next insert reused an id that was still live. Two records then shared one id and
-    a delete took both. Found in real data after a review session that used the
-    remove button: two `l1` records and a hole where `l32` had been. All four record
-    types had the same line, so all four are covered.
+    """Ids were derived from list length, so removing a record lowered the count
+    and the next insert reused an id that was still live. Two records then
+    shared one id and a delete took both. Found in real data after a review
+    session that used the remove button: two `l1` records and a hole where
+    `l32` had been. All four record types had the same line, so all four are
+    covered.
 
-    The guarantee asserted here is uniqueness among records PRESENT, not that an id
-    is never issued twice in the lifetime of a bout. An id freed by a removal may
-    come round again, which is harmless because the interface reloads after every
-    mutation and so never holds a stale id.
+    The guarantee asserted here is uniqueness among records PRESENT, not that
+    an id is never issued twice in the lifetime of a bout.
     """
 
     def test_no_two_live_lunges_share_an_id(self, store):
@@ -920,11 +918,7 @@ class TestGreenLampSide:
     """Which side the green lamp is on is a fact about the RECORDING.
 
     Nothing in the image reveals it, it never changes for a given bout, and
-    every attributed touch depends on it. It used to be sent with each request
-    and thrown away, so it had to be re-entered after every reload, and a
-    misremembered answer silently inverts who scored every touch. The report
-    describes it as confirmed once per bout, which was true of the intention
-    and not of the system.
+    every attributed touch depends on it.
     """
 
     def test_it_survives_a_reload(self, tmp_path):
@@ -957,11 +951,7 @@ class TestDeletingAJobDoesNotDeleteTheEvaluationSet:
     """The worst defect found on this project, and the only one that destroyed
     data rather than producing a wrong number.
 
-    A summary job sets output_dir to the directory holding the metrics CSV. For
-    an evaluation bout that is a shared results directory containing every other
-    bout, so deleting the job card ran shutil.rmtree over the whole reference
-    set: nine bouts, from one click. It was recoverable only because most of
-    those files were in version control.
+    A summary job sets output_dir to the directory holding the metrics CSV.
     """
 
     def _app(self, tmp_path, monkeypatch, out_dir):
@@ -1022,9 +1012,9 @@ class TestPlaybackSurvivesALostRender:
 class TestTheInterfaceOpensOnTheReferenceBout:
     """RESULTS_DIRS puts results_current first because it is the reference set;
     the same reasoning applies one level down. The client opens the first bout
-    with touches and a video, so the order of this list decides what a user sees
-    on arrival, and alphabetically that was clip 2 rather than the clip the
-    evaluation actually quotes.
+    with touches and a video, so the order of this list decides what a user
+    sees on arrival, and alphabetically that was clip 2 rather than the clip
+    the evaluation actually quotes.
 
     A display preference only: no figure, evaluation or stored annotation
     depends on it.

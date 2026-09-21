@@ -1,20 +1,13 @@
 import '@testing-library/jest-dom/vitest'
 
-// jsdom implements no layout, so it has no scrollIntoView. The review table
-// calls it to keep the cursor visible during a keyboard walk, which is real
-// behaviour that every browser supports and jsdom does not. Stubbed rather than
-// guarded in the component: a `typeof === 'function'` check there would be
-// carrying a test environment's limitation into production code.
+// jsdom implements no layout, so it has no scrollIntoView. The review table calls it to keep
+// the cursor visible during a keyboard walk, which is real behaviour that every browser
+// supports and jsdom does not.
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function () {}
 }
 
-// jsdom has no canvas implementation either, so getContext returns null. The
-// component now guards against that, because a real browser can also refuse a
-// context, but a null here would mean the drawing code is never exercised by any
-// test. A recording stub keeps that path covered: the calls are what matter, not
-// the pixels, and asserting on pixels would need a native canvas dependency for
-// no gain.
+// jsdom has no canvas implementation either, so getContext returns null.
 if (typeof HTMLCanvasElement !== 'undefined') {
   HTMLCanvasElement.prototype.getContext = function () {
     const noop = () => {}

@@ -1,48 +1,12 @@
 """
-Epee Fencing Bout Analysis - A Learned Touch Proposer, Against the Hand Rule
-============================================================================
-Train a classifier to make the accept-or-reject decision that two hand-set
-constants currently make, and compare the two under one protocol.
+Train a classifier to make the accept-or-reject decision two hand-set constants
+currently make, and compare the two under one protocol.
 
-WHY THIS EXISTS. `detect_touches.py` accepts a candidate when the distance
-minimum has at least 0.4 m of prominence and the fencers then separate by at
-least 0.8 m. Both numbers were set against clip 3. The rule works; the project
-cannot say whether it works because the sport has that structure or because
-those constants suit these four recordings. Putting a trained model against it
-answers that, and the answer is informative either way: if the model wins, the
-constants were leaving signal on the table, and if it loses, a rule derived from
-how fencing works beat a model given three minutes of footage per clip, which is
-a result about how much data this problem needs rather than an absence of one.
-
-THE PROTOCOL, AND WHY EACH PART OF IT IS NOT NEGOTIABLE.
-
-LEAVE ONE CLIP OUT, never a random split. Candidates a second apart describe
-overlapping stretches of the same play, so a random split puts near-duplicates
-on both sides of it and reports a number that measures memorisation. The unit
-that generalisation is claimed over is the RECORDING, so the recording is the
-unit that must be held out. This is also the error the audio detector was
-diagnosed with, in a different form: it was tuned and read on the same clip.
-
-THE THRESHOLD IS CHOSEN INSIDE THE TRAINING FOLDS. A score has to become a
-decision somewhere, and choosing where by looking at the held-out clip is the
-single easiest way to manufacture a good result. Each outer fold therefore runs
-its own inner leave-one-clip-out over the three training clips, pools those
-out-of-fold predictions, and takes the threshold that maximises F1 on them. The
-test clip is not consulted until the number is final.
-
-THE BASELINE IS EVALUATED IDENTICALLY. The rule is applied to the same candidate
-set, merged by the same rule, and scored by the same function with the same
-tolerance. Comparing a learned model against published numbers produced by a
-different pipeline would be comparing two protocols and calling it a model
-comparison.
-
-WHAT IS NOT LEARNED. Candidate generation stays a domain rule: the model ranks
-local minima, it does not find touches in video. The report should say so
-plainly. See `touch_features.py`.
-
-Run with:
-    python3 train_touch.py --results results_current
-    python3 train_touch.py --results results_current --curve --ablation
+The rule's constants were set against clip 3, and the project cannot otherwise
+say whether they work because the sport has that structure or because they suit
+these recordings. The answer is informative either way. Scoring is leave one
+RECORDING out, with the operating point chosen inside each training fold, and the
+rule scored on the same candidates by the same function.
 """
 
 import argparse
@@ -87,11 +51,7 @@ def models():
     """The two candidates, and why only these two.
 
     A small sample is the whole problem here: 27 positives across four
-    recordings. Logistic regression is the most constrained model that can use
-    these features at all, and gradient boosting the least constrained one still
-    defensible at this size. Anything with more capacity, a temporal network in
-    particular, would be fitting more parameters than there are positive
-    examples and could not be reported honestly whatever it scored.
+    recordings.
     """
     return {
         "logistic": make_pipeline(
@@ -138,9 +98,6 @@ def rule_scores(X, names):
 
     Accepted candidates are ranked by separation, which is what the rule's own
     confidence does; rejected ones score below any threshold the sweep reaches.
-    Expressing it this way rather than as a yes-or-no lets the baseline be drawn
-    on the same precision-recall axes as the model instead of as a single point
-    that cannot be compared across operating points.
     """
     prom = X[:, names.index("prominence_m")]
     sep = X[:, names.index("separation_after_m")]
@@ -221,11 +178,7 @@ def pick_threshold(model_name, data, train_clips):
 def evaluate(data, model_name, only=None, train_on=None):
     """Outer leave-one-RECORDING-out. Returns a result per held-out clip.
 
-    Folding over recordings rather than files is not a refinement. Two windows
-    of one video share a camera, a venue and both fencers, so holding out one
-    while training on the other tests the model on its own training data and
-    reports a better number with no error to show for it. `clips.folds` decides
-    what travels together; see that module.
+    Folding over recordings rather than files is not a refinement.
     """
     names = list(only or data)
     out = []
@@ -307,10 +260,7 @@ def main(argv=None):
     if args.curve:
         # WHY THE CURVE STARTS AT TWO CLIPS. Choosing the operating point needs
         # an inner leave-one-clip-out inside the training set, so one training
-        # clip has no inner fold. An earlier version silently fell back to a
-        # fixed 0.5 there, which made the one-clip point the only one whose
-        # threshold was untuned, and it duly scored HIGHER than two clips. That
-        # was the protocol changing, not the model learning less from more data.
+        # clip has no inner fold.
         n_groups = len(clipset.groups(list(data)))
         sizes = [k for k in range(2, n_groups) if k <= n_groups - 1]
         print("\nLearning curve: F1 against number of training clips")

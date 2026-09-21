@@ -1,16 +1,10 @@
 """
 Does a pose-derived stance feature mark a lunge?
-================================================
-TODO B1h tested this against awarded touches and found nothing usable. That test
-was weak in a way worth naming: touch times are a poor proxy for lunge times in
-both directions. Most lunges miss, so a random comparison window often contains
-one, and some touches are scored from infighting or a counter-attack rather than a
-lunge at all. A null result against touches therefore does not show that pose
-cannot see a lunge.
 
-This evaluates against lunge labels instead, which is the direct test. Labels come
-from the review interface (keys 1 and 2 at the frame of maximum extension) and are
-read out of the annotation store, so no separate file format is needed.
+An earlier test used awarded touches as a proxy for lunge times, which is weak in
+both directions: most lunges miss, and some touches come from infighting. This
+evaluates against lunge labels from the review interface instead, which is the
+direct test.
 
 Usage:
     python3 evaluate_lunges.py --csv results_pose/fencing_clip3_distance.csv \
@@ -102,13 +96,12 @@ def extreme(series, t, centre, pre, post, mode):
 
 
 def episode_rate(series, threshold, above, duration_s):
-    """
-    Separate excursions past the threshold per minute.
+    """Separate excursions past the threshold per minute.
 
-    Enrichment alone does not make a detector. A feature that is genuinely higher
-    at lunges is still useless if it is also high constantly, and B1h's hip-drop
-    signal failed exactly here: real at p = 0.001 and firing nine times more often
-    than touches occurred. Counting episodes rather than frames is what exposes it.
+    Enrichment alone does not make a detector. A feature that is genuinely
+    higher at lunges is still useless if it is also high constantly, and B1h's
+    hip-drop signal failed exactly here: real at p = 0.001 and firing nine
+    times more often than touches occurred.
     """
     runs, prev = 0, False
     for v in series:

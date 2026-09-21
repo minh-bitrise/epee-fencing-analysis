@@ -481,15 +481,11 @@ class TestStageCommands:
 
 
 class TestJobIdIsNotAPath:
-    """
-    Job ids arrive as URL path segments and are turned into filenames.
+    """Job ids arrive as URL path segments and are turned into filenames.
 
     `os.path.join` accepts `../` without complaint, so before the store
     validated its ids a request for `/api/jobs/../../something` resolved to a
     path outside the store, and `delete` would have handed that to os.remove.
-    Every endpoint happens to look the job up first, so an attack needed a
-    parsable JSON file waiting at the traversed path, but that was a property of
-    the callers rather than a guarantee of the store.
     """
 
     def test_a_traversing_id_cannot_name_a_path(self, store):

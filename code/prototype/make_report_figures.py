@@ -1,15 +1,14 @@
 """
-Generate the analysis figures used in the draft report's Chapter 5.
-=================================================================
-Figures are exempt from the report's word count, so a finding that reads as a table
-of numbers is usually better shown. Each figure here corresponds to a claim the
-chapter makes in text, and nothing is plotted that the chapter does not discuss.
+Generate the analysis figures the report uses.
+
+Each figure corresponds to a claim the report makes in text, and nothing is
+plotted that the text does not discuss. Numbers are read from the evaluation
+outputs rather than typed here, because typed constants went stale silently once
+already.
 
     python3 make_report_figures.py
 
-Writes into ../../final/figures/. Regenerate after any pipeline change: a figure that
-disagrees with its caption is worse than no figure, which happened once already when
-the video overlay changed and the committed frame did not.
+Writes into ../../final/figures/. Regenerate after any pipeline change.
 """
 
 import csv
@@ -55,16 +54,9 @@ def median_smooth(x, w):
 
 
 def fig_smoothing_sweep():
-    """
-    The figure that retires the cumulative totals.
+    """The figure that retires the cumulative totals.
 
-    Two panels rather than one, and the reason matters. On a single axis scaled to path
-    length, net displacement is a flat line at the bottom, which reads as exact
-    invariance. It is not exactly invariant: it moves about 30 per cent and then
-    settles. An earlier version of this figure and of the report claimed invariance,
-    which was an artefact of comparing a smoothed path length against an unsmoothed
-    net. Giving net its own axis shows both the collapse and the residual movement,
-    which is what the evidence actually supports.
+    Two panels rather than one, and the reason matters.
     """
     csv_path = "results_pose/fencing_clip3_distance.csv"
     windows = [1, 3, 5, 9, 15, 21, 31, 45, 61, 81, 101, 121]
@@ -98,15 +90,11 @@ def fig_smoothing_sweep():
 
 
 def _place_labels(fig, ax, xs, ys, names, fontsize=8):
-    """
-    Annotate each point with the first candidate offset that collides with nothing.
+    """Annotate each point with the first candidate offset that collides with
+    nothing.
 
-    Five of the nine clips sit inside a 25 px band, so a single offset stacks their
-    labels illegibly. Cycling through fixed offsets by rank in x was the first fix and
-    it was not enough: an offset chosen from x alone cannot know that a label pushed
-    right lands on top of a marker that happens to share its height, which is how the
-    label for clip 2 ended up underneath clip 7b. Measuring the drawn extents is the
-    only version that holds when the numbers move.
+    Five of the nine clips sit inside a 25 px band, so a single offset stacks
+    their labels illegibly.
     """
     candidates = [(0, -16), (0, 12), (34, 0), (-34, 0),
                   (30, -14), (-30, -14), (30, 12), (-30, 12), (0, -28), (0, 24)]
@@ -139,19 +127,10 @@ def _place_labels(fig, ax, xs, ys, names, fontsize=8):
 
 
 def fig_framing_vs_coverage():
-    """
-    The figure that retires the framing explanation.
+    """The figure that retires the framing explanation.
 
     Its first version plotted four clips and showed a clean trend: the smallest
-    fencer had the worst coverage, the rest lined up behind it. With nine clips the
-    trend is gone, and the two panels are how the figure says so rather than hiding
-    it. The left panel is the original claim tested on the full set. The right panel
-    is the same x axis against the part of the loss that is actually a detector
-    failure, which is the version of the claim that survives at all.
-
-    Numbers come from measure_framing.py rather than from constants typed here. The
-    constants are what let the first version go stale unnoticed while the chapter
-    around it moved on.
+    fencer had the worst coverage, the rest lined up behind it.
     """
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "results_current", "framing.csv")
@@ -226,14 +205,9 @@ def fig_touch_signature():
 
 
 def fig_framing_frames():
-    """
-    One frame from clip 3 beside one from clip 4, at the same printed width.
+    """One frame from clip 3 beside one from clip 4, at the same printed width.
 
-    Deliberately the SOURCE frames, not the annotated ones. The first version used
-    annotated output and the burnt-in overlay panel, which is sized as a fraction of
-    the frame, covered the fencers on the 360p clip entirely: the figure obscured the
-    exact thing it existed to show. The framing difference is the subject, so the
-    overlay is noise here.
+    Deliberately the SOURCE frames, not the annotated ones.
     """
     m = {r["clip"]: r for r in csv.DictReader(open(
         os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -263,16 +237,11 @@ def fig_framing_frames():
 
 
 def fig_architecture():
-    """
-    The system architecture, drawn rather than typed.
+    """The system architecture, drawn rather than typed.
 
-    It was ASCII art inside a code block, which reads as source rather than as a
-    diagram, split across page breaks in Word, and is weak against the marking
-    criterion on whether diagrams are appropriate and clear. The content is
-    unchanged from the design; only the presentation differs.
-
-    Heights are computed from the row counts and the axis is sized to the total, since
-    a hand-picked ylim silently pushed the last layer's text outside its box.
+    It was ASCII art inside a code block, which reads as source rather than as
+    a diagram, split across page breaks in Word, and is weak against the
+    marking criterion on whether diagrams are appropriate and clear.
     """
     from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 
@@ -423,27 +392,11 @@ def fig_architecture_components():
 
 
 def fig_touch_model(results_json="results_current/touch_model_eval.json"):
-    """
-    The learned proposer against the hand rule, and what the model leans on.
+    """The learned proposer against the hand rule, and what the model leans on.
 
-    TWO PANELS BECAUSE THERE ARE TWO CLAIMS AND ONLY ONE IS THE HEADLINE. The
-    left panel says the rule wins; on its own that is a bar chart of three
+    The left panel says the rule wins; on its own that is a bar chart of three
     numbers and invites the reader to take a 0.10 gap at face value across four
-    recordings, so the per-clip folds are drawn on top of the pooled bar. Their
-    spread is most of the story: clip 4 sits far below the others for every
-    method, and no difference between methods is large against that.
-
-    The right panel is the finding. Removing the separation features costs the
-    model 0.19 and nothing else costs it more than 0.05, so the model puts its
-    weight on the same quantity the rule thresholds. Bars run both ways because
-    two groups have POSITIVE deltas, meaning the model scores better without
-    them, which is what redundant correlated features do at this many positives.
-    Hiding that by plotting magnitudes would turn an honest oddity into a clean story.
-
-    EVERY LABEL HERE IS DERIVED FROM THE JSON. The touch count, the fold count, the
-    legend and the right panel's title were all typed once and all went stale together
-    when the set grew, and the right panel's title ended up asserting the opposite of
-    the bars under it.
+    recordings, so the per-clip folds are drawn on top of the pooled bar.
     """
     import json
     with open(results_json) as f:
@@ -458,11 +411,7 @@ def fig_touch_model(results_json="results_current/touch_model_eval.json"):
     bars = ax1.bar(xs, pooled, width=0.55,
                    color=[GREY, BLUE, BLUE], zorder=2)
     # Clip 4 is marked because it is the hardest recording in the set and the
-    # panel's point is how much of the spread is one clip. It is the lowest fold
-    # for the rule and for the boosted model; for logistic it is SECOND lowest,
-    # behind clip 1 at 0.22, and the mark is what lets a reader see that rather
-    # than take "clip 4 is always worst" on trust. An earlier version of this
-    # comment asserted the stronger claim and the plot disproves it.
+    # panel's point is how much of the spread is one clip.
     for x, (k, _) in zip(xs, names):
         for r in d[k]["folds"]:
             is4 = r["clip"].endswith("clip4")

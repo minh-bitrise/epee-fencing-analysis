@@ -1,45 +1,13 @@
 """
-Build the two clip-4 variants used in TODO B1i.
-===============================================
-Kept in the repository so a negative result stays reproducible, the same reason the
-abandoned audio detector survives behind --use-audio. Both variants made clip 4 worse,
-which is the finding.
+Build the two clip-4 variants used to separate two explanations for its coverage.
+
+Kept so a negative result stays reproducible, the same reason the abandoned audio
+detector survives behind --use-audio. Both variants made clip 4 worse, which is
+the finding.
 
     python3 make_clip4_variants.py
 
 Writes fencing_clip4_masked.mp4 and fencing_clip4_crop.mp4 beside the source clip.
-Then, for each:
-
-    python3 run_detection.py --video <variant>.mp4 --output results_clip4_<name>
-    python3 detect_touches.py --csv results_clip4_<name>/<variant>_distance.csv
-    python3 evaluate_touches.py --candidates <that>_touches.csv \
-                                --truth ground_truth/fencing_clip4_touches.csv
-
-Build the two clip-4 variants needed to separate two explanations.
-
-B1c suggested cropping clip 4 to the piste. A crop alone cannot answer the
-question, because it changes two things at once: it removes the spectators AND it
-enlarges the fencers in the model's input, since YOLO letterboxes whatever it is
-given to a fixed size. If a crop improves coverage, either could be responsible.
-
-So two variants, and the masked one is the control that matters:
-
-  masked  black above the boundary, frame size unchanged. Removes the spectators
-          while leaving the fencers exactly the same size in the model's input.
-  crop    cut to the band and nothing else. Intended to remove the spectators AND
-          enlarge the fencers.
-
-NOTE, measured after the fact: the crop does NOT enlarge the fencers. YOLO resizes so
-the longest side is 640, and both variants are 640 wide, so the fencer arrives at the
-network the same size in every condition (101.9 px, verified). The confound this control
-was built for does not exist here, and the two variants therefore test the same thing by
-two mechanisms, which is why they agree. The same fact is the reason B1c's resolution
-ablation was flat.
-
-Reading the pair: if masked recovers coverage, the spectators were the cause. If
-masked does not and crop does, the cause is how small the fencers are in the
-model's input, which would revive a resolution explanation that B1c refuted for
-touch detection but never tested for coverage.
 """
 import sys
 import numpy as np

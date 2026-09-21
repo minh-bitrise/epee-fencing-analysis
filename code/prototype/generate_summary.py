@@ -1,25 +1,14 @@
 """
-Epee Fencing Bout Analysis - LLM Tactical Summary (basic implementation)
-========================================================================
-Third pre-trained model in the pipeline: a large language model that turns
-the per-frame metrics CSV produced by run_detection.py into a short,
-human-readable tactical summary - the same idea as the AI insights in
-platforms like Garmin Connect or Strava.
+Third pre-trained model in the pipeline: a language model that turns the metrics
+CSV into a short tactical summary.
 
-NOTE: this is deliberately a BASIC first implementation. The prototype
-only produces distance and push/pull data, so the summaries are thin.
-The pipeline (stats -> prompt -> API -> cached markdown) stays the same
-as richer data arrives later (confirmed touches, in-play-only metrics,
-tempo, cross-bout profiles) - only the payload grows. See TODO.md B7.
+The payload grows as the pipeline produces more (confirmed touches, in-play
+scoping, tempo, profiles); the shape stays the same. Every figure it emits is
+checked against that payload by audit_summary.py.
 
 Usage:
     export ANTHROPIC_API_KEY=sk-ant-...
-    python3 generate_summary.py --csv results/fencing_clip_distance.csv
-    python3 generate_summary.py --csv results/fencing_clip_distance.csv --force
-
-Outputs (next to the CSV):
-    <base>_summary.md         the generated tactical summary
-    <base>_summary.meta.json  cache record so unchanged data is not re-billed
+    python3 generate_summary.py --csv results_current/fencing_clip_distance.csv
 """
 
 import argparse
@@ -66,14 +55,13 @@ NET_SIGN_FLOOR_M = 1.0
 
 
 def movement_basis(rows):
-    """
-    Say where the movement figures were derived from, so the payload records it.
+    """Say where the movement figures were derived from, so the payload records
+    it.
 
     The route matters. The raw position columns are the measurement; the
-    cumulative advance and retreat columns are written after the noise floor, the
-    movement cap and the banking buffer have been applied, so anything derived
-    from them inherits all three. On clip 3 the two routes disagreed by 3.5 m on
-    net displacement, which is why the position columns were added.
+    cumulative advance and retreat columns are written after the noise floor,
+    the movement cap and the banking buffer have been applied, so anything
+    derived from them inherits all three.
     """
     from_positions = bool(rows) and "f1_pos_m" in rows[0]
     return {
@@ -91,24 +79,10 @@ def movement_basis(rows):
 
 
 def count_side_swaps(rows):
-    """
-    How many times the two tracked slots exchange sides of the piste.
+    """How many times the two tracked slots exchange sides of the piste.
 
     A DIRECT test of whether slot identity held, and the one this project was
-    missing. Two fencers do not cross on a piste: one stays on the referee's left
-    for the whole bout and the other on the right. So a sign change in
-    `f1_pos_m - f2_pos_m` is not a fencing event, it is the tracker exchanging
-    which fencer each slot is following.
-
-    Measured over the evaluation set, this separates the clips cleanly: clips 1,
-    2 and 3 record ZERO swaps and hold one fencer on the left in 100 per cent of
-    frames, while clip 4 records 14 swaps and holds f1 on the left in only 26.9
-    per cent. That is the explanation for clip 4's otherwise inexplicable +7.08 m
-    of net displacement, which the report had recorded as a cause not yet
-    identified: a first-to-last displacement for a slot that changed fencer
-    fourteen times measures the swaps rather than the fencer.
-
-    Returns (swaps, fraction_of_frames_with_f1_on_the_left, min_separation_m).
+    missing.
     """
     pairs = [(float(r["f1_pos_m"]), float(r["f2_pos_m"])) for r in rows
              if r.get("f1_pos_m") and r.get("f2_pos_m")]
@@ -122,14 +96,10 @@ def count_side_swaps(rows):
 
 
 def movement_quality_warnings(stats, rows=None):
-    """
-    Warnings about the whole-recording movement figures, or an empty list.
+    """Warnings about the whole-recording movement figures, or an empty list.
 
-    The check applies to net displacement over the whole recording and to nothing
-    else. That figure is a genuine first-to-last displacement and so is subject to
-    the reset-to-guard-lines constraint. The in-play figure is not a displacement
-    and legitimately exceeds it, so applying the same test there would flag
-    correct data as broken.
+    The check applies to net displacement over the whole recording and to
+    nothing else.
     """
     out = []
 
@@ -196,25 +166,6 @@ def compute_stats(rows):
 
     # Movement. The headline figures are net displacement and closing share, not
     # the cumulative push and pull totals.
-    #
-    # Cumulative path length is not a measurement. Re-measuring clip 3's position
-    # series under median smoothing windows from 1 to 121 frames moved the total
-    # from 161 m to 33 m with no asymptote, while net displacement stayed at
-    # exactly +3.43 m. Path length sums the magnitude of every frame's change, so
-    # measurement noise adds to it and never cancels; net is a difference between
-    # two positions, so noise cancels. A quantity that changes fivefold with an
-    # arbitrary smoothing parameter measures the filter, not the fencer.
-    #
-    # The totals are NOT passed to the model at all. They were briefly included
-    # under names ending "_indicative", and the model handled them correctly,
-    # writing "the cumulative push and pull totals are indicative only and are not
-    # quoted as distance or aggression". They are dropped anyway, for a reason that
-    # is about the prompt rather than the model: a figure that cannot support any
-    # claim has no business in the payload, and keeping it meant spending three
-    # sentences of prompt talking the model out of a number worth nothing. B1g
-    # measured the error at 24 m on a 14 m piste, so this is not an approximation
-    # that might be useful with caveats. The totals stay in the CSV, which is the
-    # evidence artefact and where the before/after comparison lives.
     from in_play import closing_share, net_forward_movement
     import numpy as np
 
@@ -259,18 +210,11 @@ def compute_stats(rows):
 
 
 def add_in_play_scope(stats, rows, touch_path):
-    """
-    Enrich the payload with touch events and in-play-only metrics.
+    """Enrich the payload with touch events and in-play-only metrics.
 
-    Without this the figures span the whole recording, including the walk back to
-    the guard line after every touch, which on clip 3 is 43 per cent of the
-    frames. Adding both the scoped and unscoped figures lets the model say which
-    is which rather than having to hedge every number.
-
-    Note that scoping does not simply shrink the numbers. It raises the net
-    movement figure on clip 3, from +3.4 m to +7.6 m, because the resets are
-    where ground gained during a phrase is given back. See per_fencer below for
-    why the scoped figure is therefore named as movement and not displacement.
+    Without this the figures span the whole recording, including the walk back
+    to the guard line after every touch, which on clip 3 is 43 per cent of the
+    frames.
     """
     from in_play import load_touch_times, scope_metrics, touch_provenance
 
@@ -288,21 +232,10 @@ def add_in_play_scope(stats, rows, touch_path):
     }
 
     def per_fencer(prefix):
-        """
-        Movement figures for one fencer, in-play only.
+        """Movement figures for one fencer, in-play only.
 
         The scoped figure is deliberately NOT called a displacement, and the
-        distinction is not pedantry. Summed over every frame the signed movement
-        telescopes to the first-to-last position difference, so it is a true
-        displacement. Summed over a masked subset it does not, because the
-        excluded resets break the series and the sum jumps across them.
-
-        On clip 3 the in-play figure (+7.6 m) is larger than the whole-recording
-        one (+3.4 m), and correctly so: fencers gain ground during a phrase and
-        give it back walking to the guard line, so removing the resets removes
-        the giving-back. Presenting the scoped number as displacement would
-        suggest a fencer finished 7.6 m up a 14 m piste when they finished
-        roughly where they started.
+        distinction is not pedantry.
         """
         cs = ip[f"{prefix}_closing_share"]
         return {
@@ -440,13 +373,10 @@ _PROMPT_TAIL = (
 
 
 def build_system_prompt(has_touches=False):
-    """
-    Assemble the system prompt to match the payload actually supplied.
+    """Assemble the system prompt to match the payload actually supplied.
 
     The constraints are not static: whether touch data exists changes what the
-    model may say and which figures it should reason from. Keeping one fixed
-    prompt would either forbid using data that is present or permit claims the
-    data cannot support.
+    model may say and which figures it should reason from.
     """
     middle = _PROMPT_WITH_TOUCHES if has_touches else _PROMPT_NO_TOUCHES
     return _PROMPT_HEAD + middle + _PROMPT_TAIL + _PROMPT_MOVEMENT

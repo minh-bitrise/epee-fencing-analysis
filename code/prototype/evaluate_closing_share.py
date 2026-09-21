@@ -1,35 +1,11 @@
 """
-Epee Fencing Bout Analysis - What Closing Share Can Actually Resolve
-====================================================================
-Put a confidence interval on closing share, and measure what size of tendency
-it can detect on three minutes of footage.
+Put a confidence interval on closing share, and measure what size of tendency it
+can detect on three minutes of footage.
 
-WHY THIS EXISTS. Closing share is one of the two movement figures this project
-reports as reliable, on the reasoning that counting the direction of each
-movement is robust where summing magnitudes is not. That reasoning is sound and
-it says nothing about resolution. Measured across the evaluation set, all eight
-fencer-clip values fall between 48.3 and 52.8 per cent, a spread of 4.5 points
-around 50, which is what a metric dominated by noise would also look like. The
-difference between "these fencers were balanced" and "this metric cannot tell"
-is not visible in the number itself.
-
-WHY A BLOCK BOOTSTRAP. Frames are strongly autocorrelated: a fencer moving
-forward keeps moving forward for a few tenths of a second. Treating each frame as
-an independent draw gives a standard error of well under one point on a
-three-minute clip, which is wrong by a large factor and would make every one of
-these figures look highly significant. Resampling contiguous BLOCKS preserves the
-dependence, and the block length is set from how long a direction of travel
-actually persists rather than chosen for convenience.
-
-WHY A POWER ANALYSIS AND NOT JUST AN INTERVAL. An interval on one bout says
-whether that bout differed from chance. It does not say what the method could
-have detected, and without that a null result is unreadable: it could mean the
-fencers were balanced or that nothing short of a rout would register. Feeding the
-same machinery series with known biases answers that directly.
-
-Run with:
-    python3 evaluate_closing_share.py --results results_current
-    python3 evaluate_closing_share.py --power
+The reasoning behind the metric is sound and says nothing about resolution: the
+values cluster near 50 per cent, which is also what a metric dominated by noise
+looks like. A block bootstrap is used because frames are strongly autocorrelated,
+so resampling them independently would understate the interval.
 """
 
 import argparse
@@ -59,13 +35,11 @@ def closing_share(signed):
 
 
 def block_interval(signed, block_frames, n=BOOTSTRAP_N, rng=None):
-    """
-    A 95 per cent interval for closing share, resampling contiguous blocks.
+    """A 95 per cent interval for closing share, resampling contiguous blocks.
 
     Returns (low, high). The interval is mildly anti-conservative: measured
-    against series with no bias at all, it excludes 50 per cent about 11 per cent
-    of the time rather than the nominal 5. So a real interval is somewhat wider
-    than this reports, which strengthens rather than weakens any null result.
+    against series with no bias at all, it excludes 50 per cent about 11 per
+    cent of the time rather than the nominal 5.
     """
     rng = rng or np.random.default_rng(0)
     moving = signed[np.abs(signed) > MOVING_EPS]

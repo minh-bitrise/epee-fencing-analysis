@@ -2,13 +2,9 @@ import { fireEvent, render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import Timeline from './Timeline.jsx'
 
-/**
- * The timeline is what makes review navigable: without it, finding the next
- * proposal means scrubbing a three minute video by hand, and the scrubbing is
- * most of the manual cost the project claims to remove. So these tests are
- * about positions being right and about the strip surviving the states that
- * produce a division by zero.
- */
+/* The timeline is what makes review navigable: without it, finding the next proposal means
+   scrubbing a three minute video by hand, and the scrubbing is most of the manual cost the
+   project claims to remove. */
 
 const row = (over = {}) => ({
   id: 'p0', kind: 'proposed', state: 'pending', at: 30, ...over,
@@ -61,11 +57,9 @@ describe('Timeline', () => {
   })
 
   it('selects a proposal without also seeking to where the click landed', () => {
-    /**
-     * The marker sits inside the strip, so a click on it would otherwise fire
-     * both handlers: the user would select the proposal AND jump to whatever
-     * pixel they happened to hit, which is near the proposal but not on it.
-     */
+    /* The marker sits inside the strip, so a click on it would otherwise fire both handlers:
+       the user would select the proposal AND jump to whatever pixel they happened to hit,
+       which is near the proposal but not on it. */
     const { container, onSelect, onSeek } = setup()
     const strip = container.querySelector('.tl')
     strip.getBoundingClientRect = () => ({ left: 0, width: 360 })
@@ -97,12 +91,8 @@ describe('Timeline', () => {
   })
 
   it('renders without dividing by zero before the duration is known', () => {
-    /**
-     * The bout list arrives before the touch payload that carries the duration,
-     * so this renders at least once with duration 0. Every position here is a
-     * percentage of it, and NaN% is silently dropped by the browser, so the
-     * failure is markers stacked at the left edge rather than an error.
-     */
+    /* The bout list arrives before the touch payload that carries the duration, so this
+       renders at least once with duration 0. */
     const { container } = setup({ duration: 0, currentTime: 0 })
     expect(container.querySelector('.tl')).not.toBeNull()
     expect(container.querySelectorAll('.ax span').length).toBeLessThan(2)

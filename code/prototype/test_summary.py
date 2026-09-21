@@ -277,13 +277,10 @@ class TestGenerateCaching:
 
 
 class TestSideSwapDetection:
-    """
-    Whether slot identity held, which is the check this project was missing.
+    """Whether slot identity held, which is the check this project was missing.
 
     Clip 4 reported +7.08 m of net displacement for one fencer and the report
-    recorded the cause as not yet identified. It is this: the slots exchanged
-    sides 14 times, so a first-to-last displacement for a slot measures the
-    swaps rather than the fencer.
+    recorded the cause as not yet identified.
     """
 
     def rows(self, pairs):

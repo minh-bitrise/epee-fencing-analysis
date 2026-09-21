@@ -1,29 +1,16 @@
 """
-Epee Fencing Bout Analysis - Prototype v3
-==========================================
-Detects and tracks two fencers using YOLOv8 + ByteTrack, then runs
-MediaPipe Pose on each fencer crop to extract body keypoints.
+Detect and track two fencers with YOLOv8 and ByteTrack, run MediaPipe Pose on
+each fencer's crop, and write the per-frame distance series everything else
+consumes.
 
-Improvements over v2:
-  - Fencer identity is locked onto the first two persistent track IDs,
-    so "Fencer 1" / "Fencer 2" labels stay stable for the whole bout.
-  - Cumulative advance ("push") and retreat ("pull") tracked per fencer.
-  - Displayed distance is rolling-median smoothed (raw values still in CSV).
-  - Distance overlay colour-coded by tactical zone (close / medium / far).
-  - Bounding-box fallback uses bottom-centre (feet proxy), not box centre.
-  - Per-frame movement clamped at a biomechanical limit to reduce the
-    impact of camera panning on the push/pull metric.
+Distance is measured front foot to front foot where pose is available and
+bottom-of-box otherwise, scaled to metres from median bounding-box height against
+an assumed 1.75 m fencer. The scale is approximate and consistent within a bout,
+not across bouts.
 
-Outputs:
-  - annotated video (boxes, fencer IDs, pose keypoints, distance overlay,
-    live push/pull readout)
-  - CSV of frame-by-frame distance, smoothed distance, and per-fencer
-    cumulative push / pull
-  - distance-over-time plot (PNG)
+    python3 run_detection.py --video bout.mp4 --output results/
 
-Usage:
-    python3 run_detection.py --video path/to/bout.mp4
-    python3 run_detection.py --video path/to/bout.mp4 --output results/
+Outputs an annotated video, the per-frame CSV and a distance plot.
 """
 
 import argparse
@@ -59,20 +46,6 @@ DEFAULT_POSE_STRIDE = 3
 SMOOTH_WINDOW    = 5
 
 # Tactical distance bands, in metres, measured front foot to front foot.
-#
-# These follow the standard fencing taxonomy (close / lunge / advance-lunge /
-# out of distance) and are derived from weapon geometry rather than chosen by
-# eye. An epee blade is 90 cm and arm extension adds roughly 60 cm from the
-# shoulder, so reach from the front foot is about 1.2 m standing and about
-# 2.3 m through a lunge, which advances the front foot a further 0.6 to 0.9 m.
-# Subtracting the offset between the defender's front foot and their torso
-# puts a lunge-scored touch at roughly 2.0 to 2.6 m of front-foot separation.
-#
-# NOTE: an earlier version used 1.0 m for "touch range" and 1.8 m for
-# "engagement range". Both were invented rather than derived and were far too
-# tight: they placed almost every real touch outside "touch range" entirely,
-# which made the generated summaries report that close-range fencing was
-# essentially absent when it was simply mis-binned. See TODO B1a.
 DIST_CLOSE_M         = 1.5   # infighting; a touch lands without a lunge
 DIST_LUNGE_M         = 2.6   # lunge distance; a touch can land with a lunge
 DIST_ADVANCE_LUNGE_M = 3.5   # needs a step plus a lunge to reach
@@ -98,20 +71,8 @@ NET_SIGN_FLOOR_M = 1.0
 # computing frame-to-frame movement, to suppress bounding-box jitter
 PUSH_PULL_SMOOTH_WINDOW = 5
 
-# fencer colours (BGR)
-# Fencer colours, BGR, and they are NOT a free choice.
-#
-# The first version used amber and green. Green is one of the two scoring lamps,
-# so the overlay competed with the thing the user is reading the lamps for, and
-# a reviewer judging who scored had a green box and a green light on screen at
-# once. Red is unusable for the same reason.
-#
-# They also have to match the interface, which had drifted: Fencer 1 was blue in
-# the sidebar and amber in the video, so the same fencer wore two colours
-# depending on which half of the screen you looked at.
-#
-# Blue and amber avoid both lamps, and these are the exact values of --f1 and
-# --f2 in the stylesheet. Change one and change the other.
+# Fencer colours, BGR. Blue and amber survive the common red-green
+# confusions, and every state shown as a colour is also shown as a word.
 F1_HEX, F2_HEX = "#4da3ff", "#ffc857"
 
 
@@ -290,33 +251,12 @@ def get_front_foot(landmarks, fencer_ref_x, opponent_ref_x):
 
 
 def get_stance_features(landmarks, scale_px_per_m):
-    """
-    Stance geometry for one fencer, in metres, or None where unavailable.
+    """Stance geometry for one fencer, in metres, or None where unavailable.
 
-    WHY THIS EXISTS. The resolution ablation in TODO B1c found that pose success
-    can fall from 27 per cent of frames to 5.7 per cent with no effect at all on
-    touch-detection F1, which means MediaPipe is currently not load-bearing for
-    anything the system reports. Distance uses the hip midpoint but falls back to
-    the bounding box, so pose only refines a number it does not determine. Either
-    pose earns a job or it should be dropped, and a lunge is the obvious job: it is
-    the action that produces most epee touches and it is defined by stance rather
-    than by position.
-
-    Two features, both chosen to be readable off a noisy skeleton rather than to
-    be precise:
-
-    - `stance_m`, the horizontal separation of the ankles. A fencer on guard keeps
-      the feet roughly shoulder width apart and a lunge throws the front foot out,
-      so this should roughly double. Horizontal only, because a lunge extends along
-      the piste and the piste runs across the frame.
-    - `hip_height_m`, the hip midpoint above the ankle line. A lunge drops the hips
-      as the rear leg extends, so this should fall while `stance_m` rises. Having
-      two features that move in opposite directions matters: it discriminates a
-      lunge from a fencer simply being detected at a different scale, which would
-      move both the same way.
-
-    Returns a dict so callers can record what was available rather than having to
-    treat a partial skeleton as a total failure.
+    The resolution ablation in TODO B1c found that pose success can fall from
+    27 per cent of frames to 5.7 per cent with no effect at all on touch-
+    detection F1, which means MediaPipe is currently not load-bearing for
+    anything the system reports.
     """
     if not landmarks or not scale_px_per_m:
         return None
@@ -350,22 +290,11 @@ def _fmt_stance(features, key):
 # --- scale calibration ------------------------------------------------
 
 def load_reanchors(path, fps):
-    """
-    Read user re-anchor corrections and index them by frame number.
+    """Read user re-anchor corrections and index them by frame number.
 
     Annotation action 4 is the only one that changes tracking rather than
     interpretation, so it cannot be honoured in the review interface and takes
-    effect here, on a reprocess. The interface records each correction as pending
-    for exactly that reason.
-
-    Corrections are keyed to a frame, since a timestamp has no meaning to the
-    tracker. Rounding rather than truncating matters: a user pausing on the frame
-    where tracking visibly fails is identifying that frame, and truncating a
-    timestamp of 12.999 s at 30 fps would apply the fix to frame 389 instead of
-    390, one frame before the one they were looking at.
-
-    Returns {frame_number: [(slot, x, y), ...]}, several corrections on one frame
-    being legitimate when both fencers are wrong at once.
+    effect here, on a reprocess.
     """
     with open(path) as f:
         entries = json.load(f)
@@ -378,23 +307,14 @@ def load_reanchors(path, fps):
 
 
 def reanchor_outcome(clicked, box):
-    """
-    Say whether a user's re-anchor actually moved the slot onto what they clicked.
+    """Say whether a user's re-anchor actually moved the slot onto what they
+    clicked.
 
     Nothing is force-assigned. `FencerTracker.reanchor` moves the slot's
     reference point and clears its gates for one frame, then lets ordinary
-    matching resume, so a correction the matcher disagrees with leaves no trace:
-    a first real-footage attempt produced output byte-identical to its baseline.
-    That is the right failure mode, since a mis-aimed click cannot corrupt the
-    result, but silence is the wrong report. The user exported a correction and
-    re-ran a job that takes minutes, and is entitled to know it changed nothing.
-
-    Judged against the matched fencer's own apparent height rather than a fixed
-    pixel budget, because the same pixel error means different things at 360p and
-    720p. Half a fencer height is roughly a body width, so a match inside that is
-    the person who was clicked.
-
-    Returns (outcome, distance_px), distance being None when nothing matched.
+    matching resume, so a correction the matcher disagrees with leaves no
+    trace: a first real-footage attempt produced output byte-identical to its
+    baseline.
     """
     if box is None:
         return "no detection was assigned to this slot", None
@@ -408,44 +328,12 @@ def reanchor_outcome(clicked, box):
 
 def calibrate_fixed_scale(video_path, sample_every=15, max_frames=4500,
                           min_height_px=60):
-    """
-    Estimate one pixels-per-metre scale for the whole clip, from the median
+    """Estimate one pixels-per-metre scale for the whole clip, from the median
     apparent height of the two largest person detections.
 
-    WHY A FIXED SCALE RATHER THAN A PER-FRAME ONE. The pipeline originally
-    derived scale from the current frame's mean bounding-box height, on the
-    reasoning that a fencer's height is a known quantity and apparent height
-    therefore encodes depth. Measurement shows that reasoning is wrong, and
-    wrong in a way that biases the result rather than merely adding noise.
-
-    Bounding-box height tracks posture more strongly than depth. On clip 3 its
-    correlation with feet-y, the ground-plane depth cue, is +0.267, while its
-    correlation with inter-fencer distance is +0.502; fencers are 1.31 times
-    taller when in the furthest quartile of separation than in the nearest.
-    That is the sport itself: en garde is shorter than standing and a lunge
-    shorter again.
-
-    The consequence is a self-reinforcing error. Closing distance to attack
-    lowers both fencers, which shrinks the scale reference, which inflates every
-    computed metre value, and it does so exactly during the exchanges that matter
-    most. Because both fencers crouch together, the bias does not cancel between
-    them, which is why clip 3 reported both fencers net-advancing a combined 32 m
-    on a 14 m piste. Camera panning was investigated first and ruled out: pan
-    bias moves the two fencers' net displacement in opposite directions, and
-    clip 3's were both positive.
-
-    A median over the whole clip removes the frame-to-frame posture variation.
-    It does not make the absolute scale correct, since it still rests on an
-    assumed 1.75 m fencer and takes no account of perspective. Doing better
-    requires a scale reference that is not a fencer, which means calibrating
-    against the piste. Note that this cannot assume the whole piste is visible:
-    in practice a camera shows only a segment of the strip, so a four-corner
-    homography is not generally available. The strip's two long edges plus one
-    transverse line of known separation would be, and that is the route to a
-    properly metric calibration.
-
-    Returns pixels per metre, or None if too few usable detections were found,
-    in which case callers should fall back to the per-frame estimate.
+    The pipeline originally derived scale from the current frame's mean
+    bounding-box height, on the reasoning that a fencer's height is a known
+    quantity and apparent height therefore encodes depth.
     """
     model = YOLO(MODEL_NAME)
     cap = cv2.VideoCapture(video_path)
@@ -473,55 +361,12 @@ def calibrate_fixed_scale(video_path, sample_every=15, max_frames=4500,
 # --- camera motion ----------------------------------------------------
 
 class CameraMotionEstimator:
-    """
-    Estimates per-frame horizontal camera motion so it can be removed from the
+    """Estimates per-frame horizontal camera motion so it can be removed from the
     fencers' apparent movement.
 
-    WHY THIS IS NEEDED. Push and pull are accumulated from each fencer's
-    horizontal displacement in image coordinates, which conflates the fencer
-    moving with the camera moving. The existing safeguards do not catch this: the
-    per-frame clamp only rejects jumps too large to be biomechanical, and the
-    noise floor only rejects movements too small to matter, so a slow steady pan
-    passes straight through and is accumulated as fencer motion.
-
-    The consequence is measurable and it is not subtle. On hand-held footage the
-    metric reported both fencers net-advancing a combined 32 m on a 14 m piste,
-    which is impossible, while the distance record stayed flat throughout.
-    Measured pan across the evaluation clips ranges from 20 px in total on a
-    locked-off broadcast to 3,900 px with 1,070 px of net drift on a hand-held
-    club recording.
-
-    HOW IT WORKS. Good features are tracked between consecutive frames with
-    Lucas-Kanade optical flow, and the median horizontal displacement is taken as
-    the camera's motion. The median matters: the fencers also move, but they
-    occupy a small minority of tracked features, so a median is robust to them
-    where a mean would not be. Features falling inside a tracked fencer's
-    bounding box are excluded as well, which removes the bias directly rather
-    than relying on robustness alone.
-
-    WHY THIS VALIDATES ITSELF. Over a whole bout each fencer returns roughly to
-    where they started, since play resets to the guard lines after every touch.
-    Net displacement should therefore be near zero, and that physical constraint
-    gives a correctness check requiring no ground-truth labels at all.
-
-    WHY IT IS OFF BY DEFAULT. That check says this helps three of the four
-    evaluation clips slightly and harms the fourth badly. A controlled comparison
-    isolated it as the cause: on the club clip the worst net displacement is 21.88 m
-    with everything off, 21.90 m with fixed scale and movement banking enabled but
-    stabilisation off, and 37.34 m with stabilisation on.
-
-    The reason is that the club camera is hand-held and FOLLOWS the action. When an
-    operator pans to keep the fencers in frame, camera motion becomes correlated
-    with fencer motion, so subtracting it subtracts the very displacement being
-    measured. Stabilisation is therefore valid only for a camera that is
-    essentially fixed and pans incidentally, which describes the three broadcast
-    and competition clips and not the club one.
-
-    This matters beyond a default. A following camera has no fixed relationship to
-    the piste, so no amount of frame-to-frame compensation recovers world
-    coordinates from it. Measuring displacement on such footage requires a
-    reference in the scene rather than in the camera, which is the argument for
-    calibrating against the piste itself.
+    Push and pull are accumulated from each fencer's horizontal displacement in
+    image coordinates, which conflates the fencer moving with the camera
+    moving.
     """
 
     # Lucas-Kanade needs enough features to make a median meaningful; below this
@@ -605,24 +450,14 @@ class CameraMotionEstimator:
 # --- piste region -----------------------------------------------------
 
 class PisteRegion:
-    """
-    A polygon in pixel coordinates that marks the fencing strip (piste)
-    in the frame. A detection is accepted only if its feet-proxy point
-    (bounding-box bottom-centre) lies inside the polygon.
+    """A polygon in pixel coordinates that marks the fencing strip (piste) in the
+    frame. A detection is accepted only if its feet-proxy point (bounding-box
+    bottom-centre) lies inside the polygon.
 
-    This filter is applied BEFORE the FencerTracker matching stage, so
-    it can also reject bystanders on the very first frame - the case
-    where the tracker's motion / size gates have no history to work
-    with and would otherwise let anything through.
-
-    Piste polygons are loaded from a small JSON file so they can be
-    hand-authored once per clip:
-
-        { "polygon": [[x1,y1], [x2,y2], [x3,y3], [x4,y4]] }
-
-    Any convex or concave polygon is supported. cv2.pointPolygonTest
-    is used for the point-in-polygon check because OpenCV is already a
-    dependency; there is no need to reimplement it.
+    This filter is applied BEFORE the FencerTracker matching stage, so it can
+    also reject bystanders on the very first frame - the case where the
+    tracker's motion / size gates have no history to work with and would
+    otherwise let anything through.
     """
 
     def __init__(self, polygon):
@@ -677,33 +512,12 @@ class PisteRegion:
 # --- fencer identity --------------------------------------------------
 
 class FencerTracker:
-    """
-    Maintains stable Fencer 1 / Fencer 2 slots by spatial continuity
-    rather than by ByteTrack ID alone, which is unreliable across
-    occlusions and rapid motion.
+    """Maintains stable Fencer 1 / Fencer 2 slots by spatial continuity rather
+    than by ByteTrack ID alone, which is unreliable across occlusions and rapid
+    motion.
 
-    On the first frame with at least two person detections, the
-    leftmost is assigned to slot 0 (Fencer 1) and the rightmost to
-    slot 1 (Fencer 2). On subsequent frames, the top-2 most confident
-    person detections are matched to slots by minimising total
-    distance from each slot's last known position.
-
-    Each candidate assignment must additionally pass two gates,
-    designed to keep background bystanders out of the fencer slots:
-
-      * spatial gate - the candidate centre must be within
-        GATE_DISTANCE_RATIO box-heights of the slot's last known
-        centre (rejects detections that have jumped across the frame).
-      * size gate - the candidate box height must be within
-        [MIN_SIZE_RATIO, MAX_SIZE_RATIO] of the slot's last accepted
-        height (rejects much smaller background people further from
-        the camera).
-
-    If a candidate fails its gate, that slot is left empty for the
-    frame (no fake label) rather than swapping in a bystander.
-
-    select() always returns a length-2 list (slots [A, B]); a slot
-    is None if no detection was matched to it in this frame.
+    On the first frame with at least two person detections, the leftmost is
+    assigned to slot 0 (Fencer 1) and the rightmost to slot 1 (Fencer 2).
     """
 
     GATE_DISTANCE_RATIO = 3.5   # max jump from predicted position, in box-heights
@@ -725,41 +539,6 @@ class FencerTracker:
 
     def __init__(self, nearest_candidates=True):
         # `nearest_candidates` chooses which detections are eligible each frame.
-        #
-        # ON (the default since 29 Aug 2026): the two detections NEAREST each
-        # slot's predicted position, out of everything that survived the piste
-        # filter.
-        #
-        # OFF: the two most confident detections, everything else discarded
-        # before any anchor is consulted. This is how every figure in the draft
-        # report was produced, and `--confidence-candidates` still selects it so
-        # those results stay reproducible.
-        #
-        # WHY THE DEFAULT CHANGED. The confidence cut assumes the two fencers are
-        # the two most confident people in frame, and on competition footage that
-        # is measurably false. Across clip 2's six-second bystander capture there
-        # are always exactly three detections inside the piste, both fencers and
-        # the referee, who stands ON the strip so the region filter cannot remove
-        # him. The left fencer is detected in every sampled frame, and the cut
-        # discards them in 9 of 16, flickering between first and third place on
-        # confidence margins around 0.01. The tracker was choosing between three
-        # people using what is essentially noise, which is the root of both
-        # documented failure modes: bystander capture and close-range identity
-        # flicker.
-        #
-        # Confidence answers whether a person is present, which all three
-        # satisfy. It does not answer which two of them are the fencers being
-        # tracked. Proximity to where each slot is expected does.
-        #
-        # Measured over all four evaluation clips, tracking mix-ups (single-frame
-        # position jumps over 1.5 m) and touch detection F1:
-        #
-        #   clip 1:  2 -> 0 mix-ups, coverage 92.9 -> 93.5%, F1 0.80 unchanged
-        #   clip 2: 15 -> 0 mix-ups, coverage 98.0% unchanged, F1 0.86 unchanged
-        #   clip 3:  0 -> 0 mix-ups, coverage 97.4% unchanged, F1 0.86 unchanged
-        #   clip 4: 114 -> 54,       coverage 73.7 -> 79.8%,   F1 0.67 -> 0.77
-        #
-        # Nothing regressed on any clip on any measure.
         self.nearest_candidates = nearest_candidates
         self.last_pos  = [None, None]   # last (x, y) centre per slot
         self.prev_pos  = [None, None]   # centre one commit before last_pos
@@ -772,25 +551,12 @@ class FencerTracker:
         self.frame_no  = 0
 
     def reanchor(self, slot_idx, x, y):
-        """
-        Accept the user's word that slot_idx's fencer is at (x, y) on this frame.
+        """Accept the user's word that slot_idx's fencer is at (x, y) on this
+        frame.
 
-        This is annotation action 4, and it is the only one that changes tracking
-        rather than interpretation, which is why it can only take effect on a
-        reprocess. The correction is deliberately minimal: it moves the slot's
-        reference point and forgets everything that would argue with it, then lets
-        the ordinary matching resume. Nothing is force-assigned, because the click
-        says where the fencer is, not which detection box is correct.
-
-        Three pieces of state are cleared and the reason differs for each.
-        `prev_pos` and `prev_seen` go because velocity estimated across a
-        correction is meaningless: it would measure the tracker's error rather than
-        the fencer's motion, and extrapolating from it is the defect that once took
-        clip 2's coverage from 87 to 13 per cent. `last_h` goes because a click
-        carries no box height, and with it unset both gates pass for one frame,
-        which is intended: the user's correction has to be able to overrule the
-        gates that were rejecting the right fencer, otherwise the action cannot
-        repair the failure it exists for.
+        This is annotation action 4, and it is the only one that changes
+        tracking rather than interpretation, which is why it can only take
+        effect on a reprocess.
         """
         if slot_idx not in (0, 1):
             raise ValueError("slot_idx must be 0 or 1")
@@ -807,13 +573,11 @@ class FencerTracker:
         self.pending_anchor[slot_idx] = (float(x), float(y))
 
     def predicted_pos(self, slot_idx):
-        """
-        Constant-velocity prediction of where slot_idx should be this frame.
+        """Constant-velocity prediction of where slot_idx should be this frame.
 
         Velocity is estimated from the last two committed centres, but only
-        when those commits were close enough together in time to represent
-        an actual per-frame velocity. Otherwise the last known position is
-        returned unextrapolated. Returns None if the slot has no history.
+        when those commits were close enough together in time to represent an
+        actual per-frame velocity.
         """
         last = self.last_pos[slot_idx]
         if last is None:
@@ -883,11 +647,7 @@ class FencerTracker:
         order = list(np.argsort(confs)[::-1][:max_fencers])
 
         # ...or, with nearest_candidates on, the two nearest to where the slots
-        # are expected to be. Confidence says how sure the detector is that a
-        # person is there, which is not the question: every person in the piste
-        # region is a confident detection, and the question is which two of them
-        # are the fencers being tracked. Proximity to a slot's predicted position
-        # answers that; a confidence ranking separated by 0.01 does not.
+        # are expected to be.
         if self.nearest_candidates:
             anchors = [self.predicted_pos(s) or self.last_pos[s] for s in (0, 1)]
             known = [a for a in anchors if a is not None]
@@ -899,32 +659,6 @@ class FencerTracker:
 
         # A user correction names a POSITION, and the detection at that position
         # has to survive this cut or the correction cannot possibly take effect.
-        #
-        # WHY THIS IS NOT HYPOTHETICAL. Measured on clip 2 at frame 8590, the
-        # frame where the tracker visibly loses a fencer to the referee. Three
-        # detections pass the piste filter: the referee at confidence 0.899, the
-        # far fencer at 0.896, and the fencer a user would click at 0.886. The
-        # cut above keeps the first two, so the right answer was discarded by a
-        # margin of 0.010 before any anchor was consulted. A correction placed 4
-        # px from that fencer's centre, on the correct slot, at the correct
-        # frame, changed nothing at all: the run was byte-identical to its
-        # baseline. Action 4 was implemented exactly as specified, passed its
-        # unit tests, and could not repair the failure it exists for, because a
-        # stage upstream had already thrown the answer away.
-        #
-        # Surviving the cut is necessary and not sufficient. The clicked
-        # detection must then be GIVEN to the slot that was corrected. Leaving
-        # that to the ordinary cost matching was the original design, reasoning
-        # that a click says where the fencer is rather than which box is right.
-        # That reasoning is elegant, and the consequence is that the correction
-        # does not hold: in the unit test that supposedly demonstrated recovery,
-        # the straight and swapped assignments each cost 565 px and the slot got
-        # its fencer back only because `<=` happened to break the tie that way.
-        # Reordering the candidates flips it. A mechanism the project relies on
-        # cannot rest on a tie-break.
-        #
-        # Both behaviours apply only on the frame a correction lands on, so
-        # ordinary tracking is untouched and the evaluation figures reproduce.
         pending = list(self.pending_anchor)
         self.pending_anchor = [None, None]
         forced = {}
@@ -1007,19 +741,6 @@ class FencerTracker:
 
             # Ties are not a curiosity here, they are routine, and they were
             # being broken by the order the candidate list happened to be in.
-            # Three separate behaviours turned out to rest on that: the
-            # re-anchor recovery test (565 against 565), the far-bystander
-            # rejection test (1455 against 1455), and the clip-2 capture itself.
-            # Changing how candidates are ordered flipped all three, which means
-            # none of them was ever being decided by the matcher.
-            #
-            # A sum ties whenever one slot's fencer is absent, because that slot
-            # contributes a large distance to BOTH assignments and drowns the
-            # difference. The tie-break therefore asks which assignment contains
-            # the single best-explained pairing: a 5 px match beside a 1450 px
-            # one is a fencer correctly identified beside a slot whose fencer has
-            # gone, whereas 355 px beside 1100 px is two mediocre guesses. The
-            # gates then reject the unmatched half, which is the outcome wanted.
             if cost_straight == cost_swapped:
                 straight_wins = min(d_straight) <= min(d_swapped)
             else:
@@ -1047,15 +768,12 @@ class FencerTracker:
 # --- push / pull (advance / retreat) tracking -------------------------
 
 class PushPullTracker:
-    """
-    Accumulates how far each fencer has advanced (pushed forward toward
-    the opponent) and retreated (moved backward) over the bout, in metres.
+    """Accumulates how far each fencer has advanced (pushed forward toward the
+    opponent) and retreated (moved backward) over the bout, in metres.
 
-    Each fencer's reference x is first smoothed with a rolling median
-    window to suppress bounding-box jitter; movement is then computed
-    against the previous smoothed value. Per-frame movements greater
-    than MAX_FRAME_MOVEMENT_M (treated as camera motion) or smaller
-    than PUSH_PULL_NOISE_FLOOR_M (treated as noise) are ignored.
+    Each fencer's reference x is first smoothed with a rolling median window to
+    suppress bounding-box jitter; movement is then computed against the
+    previous smoothed value.
     """
 
     def __init__(self, n_fencers=2, smooth_window=PUSH_PULL_SMOOTH_WINDOW):
@@ -1068,80 +786,17 @@ class PushPullTracker:
         self.pending_m     = [0.0]  * n_fencers
         # First and last smoothed position per fencer, in pixels, from which NET
         # displacement is computed at the end of the bout.
-        #
-        # WHY NET IS REPORTED SEPARATELY FROM THE CUMULATIVE TOTALS. They differ
-        # in how much the data supports them, and the difference is large enough
-        # that presenting them together without comment would be misleading.
-        #
-        # Net displacement is a difference between two positions, so a bad frame
-        # in the middle affects it only if it is the first or last. Measured on
-        # the club clip it agrees with the sum of per-frame deltas to the
-        # centimetre, which is the arithmetic identity a correct accumulator must
-        # satisfy.
-        #
-        # Cumulative push and pull sum the magnitude of every frame's movement, so
-        # every tracking error adds to them and none cancels. On the club clip 63
-        # to 65 frames out of 5,110 carry apparent jumps averaging half a metre in
-        # a single frame, which is 15 m/s and not a fencer moving; they are
-        # tracker discontinuities, permitted because the identity gate allows a
-        # candidate to move up to 3.5 bounding-box heights between frames. How
-        # those frames are handled changes the answer by tens of metres on a 14 m
-        # piste: discarding them biases the net by about 10 m and 23 m for the two
-        # fencers, capping them by about the same, and counting them inflates the
-        # path length outright. Three defensible treatments disagreeing by that
-        # much means the cumulative total is not determined by the data.
-        #
-        # So net displacement is reported as a measurement and the cumulative
-        # totals as indicative only. Recovering a trustworthy path length needs
-        # tracking without metre-scale discontinuities, which is a tracking
-        # problem rather than an accumulation one.
         self.first_smooth = [None] * n_fencers
         self.last_smooth  = [None] * n_fencers
 
-        # Counters for the share of moving frames spent closing distance.
-        #
-        # This is the well-defined replacement for "how far did each fencer
-        # advance in total". That question, as a distance, has no answer in this
-        # data: path length sums the magnitude of every frame's change, so
-        # measurement noise adds to it and never cancels. Re-measuring clip 3's
-        # position series under median windows from 1 to 121 frames moved the path
-        # length from 161 m to 33 m for one fencer, a factor of five, with no
-        # asymptote, while net displacement stayed at exactly +3.43 m throughout.
-        # A quantity that changes fivefold with an arbitrary smoothing parameter
-        # is not a measurement of the fencer; it is a measurement of the filter.
-        #
-        # Counting the SIGN of each frame's movement rather than its magnitude
-        # avoids that, because noise contributes symmetrically to both directions.
-        # Under the same 1-to-121 window sweep the closing share moved only from
-        # 52.4 to 60.9 per cent, so it is mildly window-dependent rather than
-        # scale-free, and the window should be reported alongside it.
+        # Counters for the share of moving frames spent closing distance. This is
+        # the well-defined replacement for "how far did each fencer advance in
+        # total".
         self.closing_frames = [0] * n_fencers
         self.moving_frames  = [0] * n_fencers
 
         # Which image direction counts as "toward the opponent" for each fencer,
-        # +1 for rightward and -1 for leftward. Established once from the first
-        # frame in which both fencers are located, and then held for the bout.
-        #
-        # WHY THIS IS FIXED RATHER THAN RE-EVALUATED PER FRAME. The original
-        # implementation compared the opponent's current x against this fencer's
-        # previous x on every frame, which sounds harmless because fencers do not
-        # change ends during a bout. Measured on the club clip, that comparison
-        # returned the wrong side on 3 frames out of 5,109, a rate of 0.06 per
-        # cent. Those three frames cost 10 metres.
-        #
-        # The reason the damage is so disproportionate is that the comparison
-        # only fails when a tracked position jumps, and a jump is exactly when
-        # the frame's displacement is large. A large movement given the wrong
-        # sign contributes twice its magnitude as error, once for the value it
-        # should have had and once for the value it got. So the metric was most
-        # vulnerable at precisely the moments the rest of the pipeline is built
-        # to tolerate.
-        #
-        # With the side fixed, the accumulated net displacement matches the
-        # difference between the first and last tracked position exactly, which
-        # is the arithmetic identity any correct accumulator must satisfy. On the
-        # club clip that changed Fencer 2's net from +9.18 m to -0.88 m, the
-        # latter agreeing with the endpoint measurement to the centimetre.
+        # +1 for rightward and -1 for leftward.
         self.toward_opponent = [None] * n_fencers
 
     def update(self, idx, fencer_x, opponent_x, scale_px_per_m):
@@ -1173,68 +828,14 @@ class PushPullTracker:
         advance_m = (dx_px * direction) / scale_px_per_m
 
         # A single-frame movement this large is not biomechanically possible and
-        # indicates camera motion or a detection failure. It is CAPPED rather
-        # than discarded.
-        #
-        # Discarding it was the earlier behaviour and it biased the result for the
-        # same reason the noise floor did: what gets removed is not
-        # direction-neutral. On the club clip the cap threshold was exceeded on
-        # only 52 and 55 frames out of 5,110, about one per cent, but those frames
-        # carried a net of -9.25 m and -12.71 m, almost entirely retreat. Removing
-        # one per cent of frames therefore injected roughly ten metres of false
-        # advance.
-        #
-        # Capping keeps the sign and a plausible magnitude, which bounds the
-        # influence of a glitch without deleting the movement underneath it.
-        #
-        # It does NOT preserve the identity that accumulated net displacement
-        # equals the difference between first and last position. An earlier
-        # version of this comment claimed it did, and that was wrong. Capping
-        # discards everything above the threshold, so it breaks the identity for
-        # the same reason trimming does, just less. Measured by replaying clip 3's
-        # recorded positions through this exact logic, the cap fires on 63 and 65
-        # frames of 5,246 and destroys -9.26 m and -23.94 m of signed movement,
-        # which is the ENTIRE divergence between the cumulative totals and the
-        # endpoint measurement (F2: accumulated +23.01 m against an endpoint
-        # -0.94 m). The residue left unbanked is 0.015 m, so nothing else
-        # contributes.
-        #
-        # No cap value repairs this. The movements being capped are tracking
-        # glitches of up to 5.4 m in a single frame, so the true displacement
-        # underneath them is not recoverable from the series at all; a larger cap
-        # admits the glitch and a smaller one destroys more real retreat. That is
-        # why the cumulative totals were abandoned as measurements rather than
-        # retuned, and why the metrics that survive are the ones immune to this by
-        # construction: net displacement, which reads only the endpoints, and
-        # closing share, which counts signs.
+        # indicates camera motion or a detection failure.
         if abs(advance_m) > MAX_FRAME_MOVEMENT_M:
             advance_m = MAX_FRAME_MOVEMENT_M if advance_m > 0 else -MAX_FRAME_MOVEMENT_M
 
-        # Sub-threshold movement is BANKED, not discarded.
-        #
-        # The threshold exists to stop bounding-box jitter accumulating: an early
-        # version summed raw displacement and reported 216 m of push per fencer in
-        # a three-minute bout. Discarding small movements fixed that number and
-        # introduced a directional bias, because in fencing advances and retreats
-        # do not have the same speed. An attack is explosive and clears the
-        # threshold every frame; the recovery and walk-back are slow and clear it
-        # on none. Measured on synthetic input with a fencer returning to its
-        # exact starting position, the discarding version reported +5.25 m of net
-        # advance with pull recorded as 0.00 m, having thrown away every retreat
-        # frame. Because both fencers attack fast and recover slowly, the bias
-        # does not cancel between them, which is why clip 3 reported both fencers
-        # net-advancing a combined 32 m on a 14 m piste.
-        #
-        # Banking keeps the jitter rejection and removes the bias. Jitter
-        # oscillates around zero, so the buffer rarely reaches the threshold and
-        # commits only the true net when it does. Genuine slow movement is
-        # one-directional, so the buffer fills and commits at the correct
-        # magnitude. Nothing real is lost; it is only delayed.
-        #
-        # Camera panning and per-frame scale variation were both investigated as
-        # causes of the same symptom before this was found, and neither was it.
-        # Both "fixes" made clip 3 worse, because each reduced the noise that had
-        # been accidentally pushing some slow retreats over the threshold.
+        # Sub-threshold movement is BANKED, not discarded. The threshold exists
+        # to stop bounding-box jitter accumulating: an early version summed raw
+        # displacement and reported 216 m of push per fencer in a three-minute
+        # bout.
         self.pending_m[idx] += advance_m
         if abs(self.pending_m[idx]) < PUSH_PULL_NOISE_FLOOR_M:
             return
@@ -1250,32 +851,23 @@ class PushPullTracker:
             self.retreat_m[idx] += -committed
 
     def closing_share(self, idx):
-        """
-        Share of committed movements that were toward the opponent, in [0, 1].
+        """Share of committed movements that were toward the opponent, in [0, 1].
 
         Answers "who pressed forward more" without depending on distance
-        magnitudes, which is what makes it usable where the push and pull totals
-        are not. Returns None before any movement has been committed.
-
-        The magnitude-independence holds for movements that clear
-        PUSH_PULL_NOISE_FLOOR_M. Below it the banking buffer decides when a
-        movement commits, so magnitude does influence the count. The metric is
-        therefore scale-insensitive in the regime that matters rather than
-        universally, and it should be quoted with the smoothing window, since a
-        1-to-121 frame sweep moved it from 52.4 to 60.9 per cent on clip 3.
+        magnitudes, which is what makes it usable where the push and pull
+        totals are not.
         """
         if self.moving_frames[idx] == 0:
             return None
         return self.closing_frames[idx] / self.moving_frames[idx]
 
     def net_displacement_m(self, idx, scale_px_per_m):
-        """
-        Net movement toward the opponent, from first to last tracked position.
+        """Net movement toward the opponent, from first to last tracked position.
 
-        This is the reliable movement figure. Unlike the cumulative push and pull
-        totals it is a difference between two positions rather than a sum over
-        every frame, so a tracking discontinuity in the middle of the bout does
-        not accumulate into it. See the note in __init__.
+        This is the reliable movement figure. Unlike the cumulative push and
+        pull totals it is a difference between two positions rather than a sum
+        over every frame, so a tracking discontinuity in the middle of the bout
+        does not accumulate into it.
         """
         if (self.first_smooth[idx] is None or self.last_smooth[idx] is None
                 or self.toward_opponent[idx] is None or not scale_px_per_m):
@@ -1318,31 +910,11 @@ TRAIL_LENGTH = 30
 def draw_overlay(frame, slots, pose_data, dist_display_m, dist_raw_m,
                  dist_method, push_pull, frame_idx, fps, net_scale=None,
                  trails=None):
-    """
-    Draw bounding boxes, pose keypoints, the distance readout and per-fencer
+    """Draw bounding boxes, pose keypoints, the distance readout and per-fencer
     movement.
 
     The movement columns show net displacement and closing share, not the
-    cumulative push and pull totals they used to show. The totals are wrong rather
-    than approximate: B1g traced their error to the per-frame movement cap and
-    measured it at 24 m on a 14 m piste. Burning them into the video was the last
-    place they still appeared as though they were measurements, and an annotated
-    clip is the most quotable artefact the project produces, so it should not
-    caption a fencer with a figure the project has withdrawn.
-
-    net_scale is the clip-wide fixed scale in pixels per metre. It defaults to None
-    so a caller without one still gets an overlay, showing the closing share and
-    marking the displacement unavailable rather than inventing it.
-
-    `trails` are the recent positions of each slot, drawn as a short tail behind
-    it. WHY THEY ARE THERE: a single frame does not say which slot went wrong.
-    Correcting a bystander capture means telling the tracker WHICH fencer it has
-    misplaced, and on clip 2's real failure both boxes sit on the same side of
-    the piste, so from one frame it is impossible to tell which slot abandoned
-    which fencer. Working that out needed the position CSV rather than the video,
-    and a user has only the video. A tail makes the answer visible: the slot that
-    jumped has a tail stretching back across the piste, and the slot that did not
-    has a short one around its own feet.
+    cumulative push and pull totals they used to show.
     """
 
     h, w = frame.shape[:2]
@@ -1480,14 +1052,9 @@ def _fmt_net(v):
 def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=None,
         show_piste=False, stabilise_camera=False, fixed_scale_calibration=True,
         reanchor_path=None, progress=False, nearest_candidates=True):
-    """
-    Process one video end to end.
+    """Process one video end to end.
 
-    `progress` adds a machine-readable counter line to the output. It exists for
-    the web layer, which supervises this as a subprocess and has no other way to
-    know how far along a run is: the alternative was importing this module into
-    the API process, which would put YOLO and MediaPipe in the request path and
-    is the arrangement the architecture rules out.
+    `progress` adds a machine-readable counter line to the output.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -1528,11 +1095,9 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
     if reanchor_path:
         reanchors = load_reanchors(reanchor_path, fps)
         # Counted into its own name. An earlier version assigned this to `total`,
-        # which is the video's frame count: the progress line then reported
-        # "12/3 frames processed" and the machine-readable PROGRESS counter fed
-        # the web interface a percentage of the number of corrections. It only
-        # fired when --reanchors was passed, which is why it survived until the
-        # re-anchor path was first run on real footage.
+        # which is the video's frame count: the progress line then reported "12/3
+        # frames processed" and the machine-readable PROGRESS counter fed the web
+        # interface a percentage of the number of corrections.
         n_reanchors = sum(len(v) for v in reanchors.values())
         print(f"  {n_reanchors} user re-anchor correction(s) loaded, "
               f"on {len(reanchors)} frame(s)")
@@ -1594,16 +1159,9 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
         # map detections to stable Fencer 1 / Fencer 2 slots
         slots = fencer_tracker.select(ids, xyxys, confs)
 
-        # Did the correction actually take? Nothing is force-assigned: a
-        # re-anchor moves the slot's reference point and clears its gates for one
-        # frame, then lets ordinary matching resume. If the matcher still prefers
-        # the pairing it already had, the correction leaves no trace at all - a
-        # first real-footage attempt produced output byte-identical to its
-        # baseline. That is the right failure mode, since a mis-aimed click
-        # cannot corrupt the result, but silence is the wrong report: the user
-        # exported a correction, re-ran a multi-minute job, and is entitled to
-        # know it changed nothing. So the outcome of each correction is recorded
-        # here and written out with the results.
+        # Did the correction actually take? Nothing is force-assigned: a re-
+        # anchor moves the slot's reference point and clears its gates for one
+        # frame, then lets ordinary matching resume.
         for slot, rx, ry in applied_here:
             got = slots[slot]
             outcome, dist_px = reanchor_outcome((rx, ry),
@@ -1673,12 +1231,7 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
             front1 = get_front_foot(pose_data[1], ref1[0], ref0[0]) if pose_data[1] else None
 
             # The bounding-box estimate is computed on EVERY frame, not only when
-            # pose fails. It costs two subtractions and it is the only way to ask
-            # what pose contributes: on a frame where pose succeeded, the two
-            # estimates are of the same quantity from different landmarks, so they
-            # can be compared directly. Without this column the comparison would
-            # be between disjoint sets of frames, which measures which frames pose
-            # copes with, not what pose adds. See evaluate_pose.py.
+            # pose fails.
             p0 = get_box_bottom_centre(box0)
             p1 = get_box_bottom_centre(box1)
             dist_bbox_m = normalise_distance(pixel_distance(p0, p1), avg_height_px)
@@ -1730,14 +1283,8 @@ def run(video_path, output_dir, pose_stride=DEFAULT_POSE_STRIDE, piste_config=No
             push_pull.update(1, sx1, sx0, movement_scale)
 
             # Raw position of each fencer along the image x axis, in metres.
-            #
             # Written to the CSV so downstream metrics are derived from the
-            # measurement rather than from the filtered totals. Net displacement
-            # and closing share computed from these columns are independent of the
-            # noise floor, the movement cap and the banking buffer; computed from
-            # the cumulative advance/retreat columns they inherit all three. That
-            # distinction is not academic: the two disagreed by 3.5 m on clip 3
-            # before these columns existed.
+            # measurement rather than from the filtered totals.
             if movement_scale:
                 f1_pos_m = sx0 / movement_scale
                 f2_pos_m = sx1 / movement_scale

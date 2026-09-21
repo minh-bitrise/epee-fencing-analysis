@@ -2,14 +2,9 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import PisteConfirm from './PisteConfirm.jsx'
 
-/**
- * The piste confirmation step exists because of a specific past failure: a
- * polygon placed by eye on this project admitted the adjacent piste and raised
- * the count of physically impossible distance readings from 53 to 252, while the
- * headline coverage figure went up. So the user is asked to confirm a
- * MEASUREMENT, and these tests mostly assert that the measurement is shown to
- * them rather than hidden behind a picture.
- */
+/* The piste confirmation step exists because of a specific past failure: a polygon placed by
+   eye on this project admitted the adjacent piste and raised the count of physically
+   impossible distance readings from 53 to 252, while the headline coverage figure went up. */
 
 const job = (over = {}) => ({
   job_id: 'abc123def456',

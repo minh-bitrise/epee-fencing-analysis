@@ -34,14 +34,11 @@ class TestSelectFencerPair:
         assert select_fencer_pair(fencers) is not None
 
     def test_ignores_the_referee_even_though_he_is_the_tallest(self):
-        """
-        The defect that produced a useless polygon on the broadcast clip.
+        """The defect that produced a useless polygon on the broadcast clip.
 
-        Taking the two tallest boxes is what `calibrate_fixed_scale` does, and it
-        is wrong here: the referee stands nearest the camera, so he is the
-        tallest box in the frame. Measured on clip 2, the two tallest boxes are a
-        median of 296 px apart vertically, which is not two people on one strip.
-        Selecting on shared depth instead drops that to 7 px.
+        Taking the two tallest boxes is what `calibrate_fixed_scale` does, and
+        it is wrong here: the referee stands nearest the camera, so he is the
+        tallest box in the frame.
         """
         referee = box(600, 716, 396)          # nearest the camera, tallest
         fencer_a = box(400, 440, 250)
@@ -90,13 +87,10 @@ class TestCluster1d:
         assert cluster_1d([], 10) == []
 
     def test_a_percentile_of_everything_would_land_in_the_wrong_group(self):
-        """
-        Why clustering is needed at all, stated as an assertion.
+        """Why clustering is needed at all, stated as an assertion.
 
-        A percentile taken across a bimodal distribution describes neither mode.
-        On clip 2 the 1st percentile of all measured feet-y is 214, which is
-        inside the spectators, and a band built from it covers most of the frame
-        and filters nothing.
+        A percentile taken across a bimodal distribution describes neither
+        mode.
         """
         spectators = list(range(207, 256, 4))
         fencers = list(range(393, 528, 4)) * 8      # roughly the real proportion

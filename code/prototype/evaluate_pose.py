@@ -1,67 +1,22 @@
 """
-Epee Fencing Bout Analysis - What Pose Estimation Contributes to Distance
-=========================================================================
-Compare the pose front-foot distance against the bounding-box distance ON THE
-SAME FRAMES, and measure whether the difference reaches the decision that
-distance exists to serve.
+Compare pose front-foot distance against bounding-box distance on the SAME
+frames, and measure whether the difference reaches the decision distance serves.
 
-WHY THIS EXISTS. The report's only figure for the pose model is the proportion
-of frames it succeeded on, and that figure is governed mostly by the deliberate
-frame stride: pose runs every third frame, so a "success rate" near a third is
-a configuration setting reported as a result. It says nothing about the model.
+The report's only figure for pose is the proportion of frames it succeeded on,
+which is governed mostly by the frame stride: a configuration setting reported as
+a result. Both estimators measure the same quantity from different landmarks, so
+wherever pose succeeded they can be compared directly. The difference is a paired
+quantity, so its interval comes from resampling windows within each clip, the
+clips held fixed, since six clips cannot support a resample over clips.
 
-Pose and the bounding box estimate the SAME quantity, the distance between two
-fencers, from different landmarks. On any frame where pose succeeded both are
-available, so they can be compared directly. That is weaker than ground truth,
-which would need a measured distance per frame and does not exist here, and it
-is stronger than a coverage count because it asks what the model changes.
+Neither is validated against a measured distance, so a difference says which
+serves the downstream decision better, never which is closer to the truth.
 
-WHAT IS MEASURED, AND WHY IN THIS ORDER.
-
-1. AGREEMENT. The signed difference between the two estimates, per frame,
-   pooled per clip. If the two agree to within the system's own resolution then
-   pose is refining a number the bounding box already determines, and the
-   honest conclusion is that pose does not earn its place through distance.
-
-2. NOISE. The median absolute change between consecutive pose frames. The real
-   movement between two frames is identical for both estimators because it is
-   the same pair of fencers over the same interval, so any excess is the
-   estimator's own jitter. A refinement that is noisier than what it refines is
-   a cost, not a contribution.
-
-3. DISCRIMINATION. Distance exists in this system to support one decision, that
-   a touch happened. Each clip is cut into non-overlapping windows, a window is
-   positive if a hand-labelled touch falls inside it, and each estimator scores
-   the window by its minimum distance. The rank statistic (AUC) then says how
-   well each estimator separates the windows a touch occurred in from the rest,
-   on the same windows and the same frames. This is the only one of the three
-   that uses real labels, and it is the one that matters: agreement and noise
-   describe the signal, discrimination asks whether the difference reaches the
-   decision.
-
-WHY PAIRED, AND WHY THE INTERVAL IS CLUSTERED BY CLIP. Both estimators see the
-same windows, so the difference between their AUCs is a paired quantity and its
-interval must be built by resampling windows, not by treating two independent
-intervals as if their overlap settled anything. Windows are resampled WITHIN
-each clip and the clips are held fixed, because six clips cannot support a
-resample over clips and pretending otherwise would put a confidence interval on
-a sample of six.
-
-WHAT THIS CANNOT SAY. Neither estimator is validated against a measured
-distance, so a difference here says which estimator serves the downstream
-decision better, never which is closer to the truth. Both could be wrong in the
-same direction and this would not see it.
-
-Run with:
     python3 evaluate_pose.py
 
-RESULTS DIRECTORY. This defaults to results_current, the run every other
-evaluation reads. It used to default to results_posecmp, a four-clip directory
-written before the set grew, and the two do not agree: on four clips the
-interval excludes zero and on six it does not. Anyone running the script the
-documented way therefore reproduced a superseded result and nothing said so.
-The four-clip directory is kept because the report cites that earlier interval,
-and it is reachable with --results results_posecmp.
+Defaults to results_current. It used to default to results_posecmp, a four-clip
+directory whose interval excludes zero where the six-clip one does not, so the
+documented command reproduced a superseded answer.
 """
 
 import argparse
@@ -134,10 +89,7 @@ def windows(times, pose_m, bbox_m, labels, window_s=WINDOW_S, tol_s=LABEL_TOL_S)
     """Cut the clip into non-overlapping windows and score each one.
 
     Returns (is_touch, pose_min, bbox_min) arrays over windows that hold at
-    least one paired frame. A window with no frames is dropped rather than
-    scored as a miss: an interval the tracker lost both fencers over is an
-    absence of measurement, and scoring it would credit whichever estimator
-    happened to be undefined there.
+    least one paired frame.
     """
     if times.size == 0:
         return np.zeros(0, bool), np.zeros(0), np.zeros(0)

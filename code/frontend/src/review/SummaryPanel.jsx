@@ -1,18 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, boutPath } from '../api.js'
 
-/**
- * Render just enough markdown for the four headings, bullets and bold that the
- * summary prompt asks for. A full parser would be more code than the format
- * needs.
- *
- * Built as React elements rather than as an HTML string. The original page
- * escaped the text by hand before inserting it, because this is model output and
- * treating generated text as trusted markup is how a prompt injection becomes a
- * script tag. React escapes anything placed in a child position, so the same
- * guarantee comes from not reaching for `dangerouslySetInnerHTML` at all, which
- * is a harder thing to get wrong by accident later.
- */
+/* Render just enough markdown for the four headings, bullets and bold that the summary prompt
+   asks for. */
 function renderMarkdown(md) {
   return md.split('\n').map((line, i) => {
     if (/^##\s+/.test(line)) {
@@ -87,32 +77,14 @@ export default function SummaryPanel({ boutId }) {
   )
 }
 
-/**
- * The button that spends money.
- *
- * Kept as an explicit action, never automatic, because each press costs a paid
- * API call. What changed when the job runner arrived is only that the user
- * presses a button instead of being handed a command line to type in a terminal,
- * which was this panel's previous answer.
- *
- * The request only QUEUES the job. The summary appears on the next load rather
- * than streaming in, which is honest about what is happening: the work is
- * running in the same single-slot queue as everything else and may be behind a
- * detection run.
- */
+/* The button that spends money. Kept as an explicit action, never automatic, because each
+   press costs a paid API call. */
 function Generate({ boutId, force = false, onDone }) {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState(null)
 
-  // WAIT HERE RATHER THAN SENDING THE USER AWAY. Queueing the job is all the
-  // request does, and this panel used to say so and stop: "watch it on the
-  // upload tab, then reload this bout". That is an accurate description of the
-  // plumbing and a poor description of what the user wanted, which was a
-  // summary. Pressing the button appeared to do nothing, and the summary turned
-  // up later somewhere else.
-  //
-  // The work still runs in the same single-slot queue, and the panel simply
-  // watches for it and reloads itself when it lands.
+  // WAIT HERE RATHER THAN SENDING THE USER AWAY. Queueing the job is all the request does, and
+  // this panel used to say so and stop: "watch it on the upload tab, then reload this bout".
   const go = async () => {
     setBusy(true)
     setNote(null)

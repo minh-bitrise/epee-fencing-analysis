@@ -1,35 +1,10 @@
 """
-Epee Fencing Bout Analysis - Touch Detection Evaluation
-========================================================
-Scores the candidates from detect_touches.py against hand-labelled ground
-truth.
+Score the candidates from detect_touches.py against hand-labelled ground truth.
 
-Matching is greedy one-to-one within a time tolerance: each labelled touch
-can be claimed by at most one candidate and vice versa. Without that
-constraint a burst of candidates around a single touch would inflate recall,
-which is exactly the failure mode the clustered-candidate case produces.
-
-Alongside precision and recall this reports **corrections required**, the
-count of user actions needed to turn the proposals into a correct record:
-one rejection per false positive plus one manual entry per missed touch.
-That is the human-in-the-loop measure identified by Mosqueira-Rey et al.
-(2023) and it is the number that actually matters for this design, since a
-detector that halves a user's work is useful even at modest precision.
-
-KNOWN FLAW IN THIS METRIC. It treats a rejection and a manual addition as
-equally expensive, and they are not. Rejecting a proposal is one click on an
-event the system has already located and timestamped. Adding a missed touch
-requires scrubbing the video to find it, which is precisely the work the tool
-exists to remove. Recall is therefore worth more than the raw count implies,
-and settings should be compared with that asymmetry in mind rather than by
-minimising corrections alone. Quantifying the real ratio needs the user study
-described in the design chapter, which has not been run; until then this
-number is a lower bound on the benefit, not a measure of it.
-
-Usage:
-    python3 evaluate_touches.py \
-        --candidates results_after/fencing_clip3_distance_touches.csv \
-        --truth ground_truth/fencing_clip3_touches.csv
+Matching is greedy one-to-one within a time tolerance, so a burst of candidates
+around one touch cannot inflate recall. Alongside precision and recall it reports
+CORRECTIONS REQUIRED: one rejection per false positive plus one manual entry per
+miss, which is the number this design turns on.
 """
 
 import argparse
@@ -41,22 +16,9 @@ DEFAULT_TOLERANCE_S = 2.0
 def load_truth(path, exclude_annulled=False):
     """Read ground-truth touches, skipping comment lines.
 
-    ANNULLED TOUCHES ARE COUNTED BY DEFAULT, AND THAT IS DELIBERATE. An annulled
-    hit is one the apparatus registered and the referee then disallowed, for a
-    corps-a-corps or a covered target or some other non-valid action. The
-    physical event happened: the fencers closed, contact was made and they
-    separated, which is exactly the geometry this detector looks for. Scoring it
-    as a false positive would penalise the detector for finding something that
-    was really there.
-
-    The scoring evaluations take the opposite view and exclude them, because a
-    touch that awarded no point cannot appear in a scoreline. Both are right for
-    their own question, and the disagreement was accidental until clip 7a became
-    the first clip in the set to contain an annulled touch: this function read
-    the column and then ignored it.
-
-    Pass exclude_annulled to score detection against awarded touches only, which
-    is the stricter reading.
+    An annulled hit is one the apparatus registered and the referee then
+    disallowed, for a corps-a-corps or a covered target or some other non-valid
+    action.
     """
     with open(path) as f:
         rows = [r for r in csv.DictReader(

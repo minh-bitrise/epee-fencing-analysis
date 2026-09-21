@@ -2,23 +2,10 @@
 The evaluation set: which clips exist, where their labels are, and which of them
 are the same recording.
 
-WHY THIS IS A MODULE AND NOT A DICT IN EACH SCRIPT. The mapping from clip to
-ground-truth file was written out twice, in `touch_features.py` and in
-`evaluate_pose.py`, and adding footage meant editing both. On a project whose
-recurring defect is a fact stated in one place and contradicted in another, two
-copies of the evaluation set is a defect waiting to be written.
-
-WHY GROUPS EXIST, AND WHY THEY ARE NOT OPTIONAL. `fencing_clip7a` and
-`fencing_clip7b` are two windows of ONE video: same camera, same venue, same
-lighting, same two fencers. Held out separately in a leave-one-out protocol, a
-model trains on one and is tested on the other, which is close to testing it on
-its own training data and would inflate every figure quietly and plausibly.
-
-The unit that generalisation is claimed over is the RECORDING, so the recording
-is what must be held out. `GROUP` says which recording each clip came from, and
-the cross-validation folds over groups rather than over files. A clip with no
-entry is its own group, which is the right default: footage from separate
-sources is independent unless something says otherwise.
+One definition, because the mapping was written out twice and adding footage
+meant editing both. Groups are not optional: 7a and 7b are two windows of ONE
+video, so holding them out separately would test a model on its own training
+data and inflate every figure quietly.
 """
 
 # clip basename -> its hand-labelled touches, relative to this directory

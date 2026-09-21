@@ -2,11 +2,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ProfilePanel from './ProfilePanel.jsx'
 
-/**
- * The profile panel. Its risk is not that it breaks, it is that it draws a
- * confident shape out of data that does not support one. So these tests are
- * mostly about absence and refusal being VISIBLE rather than smoothed over.
- */
+/* The profile panel. Its risk is not that it breaks, it is that it draws a confident shape out
+   of data that does not support one. */
 
 const axis = (key, label, v1, s1, v2, s2, unit = '') => ({
   key, label, unit, explains: 'why this axis exists',
@@ -69,23 +66,15 @@ describe('ProfilePanel', () => {
   })
 
   it('names an unmeasured axis rather than showing it as a zero', async () => {
-    /**
-     * The distinction the whole panel turns on. A fencer with no confirmed
-     * lunges has not been measured lunging rarely; they have not been measured.
-     * A zero on that spoke would read as a finding about the fencer.
-     */
+    /* The distinction the whole panel turns on. A fencer with no confirmed lunges has not been
+       measured lunging rarely; they have not been measured. */
     stub(body())
     render(<ProfilePanel boutId="b" boutPath="/api/bouts/b" refreshKey="0:0" />)
     await waitFor(() => expect(screen.getByText('not measured')).toBeInTheDocument())
   })
 
   it('marks an unmeasured spoke so the shape does not read as a tie', async () => {
-    /**
-     * An axis with no data is drawn at parity, because there is nowhere honest
-     * to put it. That makes it identical in the SHAPE to a genuine tie, so the
-     * spoke carries the distinction and the caveat does not live only in the
-     * table.
-     */
+    /* An axis with no data is drawn at parity, because there is nowhere honest to put it. */
     stub(body())
     const { container } = render(
       <ProfilePanel boutId="b" boutPath="/api/bouts/b" refreshKey="0:0" />)

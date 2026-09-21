@@ -6,24 +6,9 @@ const SIDES = [['left', 'F1', 'Fencer 1 scored'],
                ['right', 'F2', 'Fencer 2 scored'],
                ['double', 'both', 'both scored, a double']]
 
-/**
- * The proposals, with what each one rests on.
- *
- * Confidence and the separation that triggered the proposal are shown beside
- * every row because the user is being asked to adjudicate the system's guess,
- * and a guess presented without its basis is just an assertion. A low-confidence
- * proposal next to a large separation is a different thing to judge than a
- * high-confidence one, and the user cannot tell them apart otherwise.
- *
- * WHY ROWS AND NOT A TABLE. As a six-column table every cell had equal weight,
- * so fourteen proposals were fourteen identical bands of small text and finding
- * the one under review meant reading. Each proposal is now one row with a
- * hierarchy inside it: the timestamp first because that is what identifies it,
- * the state as a coloured pill because that is what the user is changing, and
- * the evidence in smaller muted text because it is consulted rather than
- * scanned. The columns that carried "conf" and "sep" headings are gone: three
- * words of heading for a number that is self-describing once labelled inline.
- */
+/* The proposals, with what each one rests on. Confidence and the separation that triggered the
+   proposal are shown beside every row because the user is being asked to adjudicate the
+   system's guess, and a guess presented without its basis is just an assertion. */
 export default function TouchTable({ rows, selIdx, onSelect, onDecide, onDelete,
                                      scorerProposals, onScorer }) {
   // Proposed scorers, keyed by the time they belong to. Matched on time rather

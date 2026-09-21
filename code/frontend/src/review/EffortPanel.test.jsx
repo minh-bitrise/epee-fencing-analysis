@@ -2,11 +2,8 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import EffortPanel from './EffortPanel.jsx'
 
-/**
- * The effort comparison. Its whole risk is that a ratio computed from one pass
- * in each mode gets quoted as a result, so the tests are about the caveat being
- * as visible as the number.
- */
+/* The effort comparison. Its whole risk is that a ratio computed from one pass in each mode
+   gets quoted as a result, so the tests are about the caveat being as visible as the number. */
 
 const mode = (runs, decisions, rate) => ({
   runs, total_decisions: decisions, mean_seconds_per_decision: rate,
@@ -32,11 +29,8 @@ describe('EffortPanel', () => {
   })
 
   it('labels a one-run-each ratio as an illustration, beside the ratio', () => {
-    /**
-     * The test that matters. A speed-up from a single pass in each mode is an
-     * anecdote about one afternoon, and a number in a box reads as a result
-     * unless it is told not to.
-     */
+    /* The test that matters. A speed-up from a single pass in each mode is an anecdote about
+       one afternoon, and a number in a box reads as a result unless it is told not to. */
     render(<EffortPanel sessions={{
       assisted: mode(1, 14, 4.2), manual: mode(1, 12, 19.8),
       speedup: 4.71, strength: 'one run in each mode: an illustration, not a measurement',

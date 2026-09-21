@@ -1,27 +1,6 @@
 import Disclosure from './Disclosure.jsx'
 
-/**
- * The scoreline: how it moved, and where on the strip the touches were scored.
- *
- * WHY THIS IS SEPARATE FROM THE PROFILE. Everything here is derived from the
- * touches the user confirmed, and nothing from tracking. That means it survives
- * the swap check that withholds every per-fencer axis: a bout the tracker could
- * not follow still has a score, and suppressing it would be withholding
- * something the system did not get wrong.
- *
- * WHY PACE IS HERE AND NOT ON THE RADAR. Touches per minute is derived from
- * the same confirmed list, so it belongs on the same side of that line. It is
- * deliberately not a radar axis: both fencers are divided by the same bout
- * duration, so scoring a rate against the other fencer would reproduce the
- * scoring-share axis exactly, and a radar with the same number twice reads as
- * better evidenced than it is. As an absolute figure it says what share cannot,
- * which is whether this was a bout of fourteen touches or of three.
- *
- * WHY LEAD CHANGES AND TIME LEADING. A 5-4 bout that one fencer led throughout
- * and a 5-4 bout that changed hands four times are the same scoreline and
- * different bouts, and the second is the one worth talking about. The final
- * score cannot tell them apart and these two numbers can.
- */
+/* The scoreline: how it moved, and where on the strip the touches were scored. */
 export default function ScorePanel({ score, zones, pace }) {
   if (!score) return null
   if (!score.available) {

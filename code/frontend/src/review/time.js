@@ -1,16 +1,5 @@
-/**
- * Positions in the video, written the way the video writes them.
- *
- * WHY. The player's own readout says 1:28, and every time the interface
- * produced elsewhere said 88.0s, so a user matching a listed touch or lunge
- * against the picture had to convert in their head, once per item, on a screen
- * whose whole purpose is going through items one at a time.
- *
- * The tenth is kept because it is load-bearing: a lunge lasts about ten frames
- * and labels are placed to the frame, so rounding to the second would throw away
- * the precision the labelling was careful about. Durations are a different
- * quantity and keep their own formatter in ReviewQueue.
- */
+/* Positions in the video, written the way the video writes them: 1:28.2 for a
+   timestamp a user reads against a player, 1:28 where the tenth is noise. */
 
 const mmss = (s) => {
   const t = Math.max(0, s)

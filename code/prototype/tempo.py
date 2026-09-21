@@ -1,36 +1,11 @@
 """
-Epee Fencing Bout Analysis - Tempo and Exchange Metrics
-=======================================================
-Derives the timing metrics the introduction promises from a bout's touch list.
+Derive timing metrics from a bout's touch list: time between touches, exchange
+duration, and how those change as a bout progresses.
 
-WHY THIS COULD NOT EXIST BEFORE. Chapter 1 argues the project's value rests on
-metrics that cannot be measured by eye, and lists tempo among them: time between
-touches, the duration of individual exchanges, and how a fencer's behaviour
-changes as a bout progresses. Every one of those needs to know when touches
-happen. Until touch detection existed the pipeline could produce distance and
-displacement but nothing temporal, which is why the generated summaries were
-accurate and thin.
-
-WHAT AN EXCHANGE IS TAKEN TO BE. A phrase ends at a touch. It begins when play
-resumes after the previous reset, which is estimated as the touch time plus the
-reset duration measured in in_play.py from the distance profile aligned on
-labelled touches. The first exchange begins at the start of the recording. This
-is an approximation of the referee's "allez", which is not observable in the
-data, and the approximation is stated rather than hidden: an exchange duration
-here is the interval available for fencing, not necessarily the interval spent
-fencing.
-
-WHAT IS DELIBERATELY NOT DERIVED. Nothing here attributes a touch to a fencer.
-The detector reports when a touch occurred and never who scored, and testing
-showed geometry cannot supply that: in epee there is no right-of-way, so a
-counter-attack scores as readily as the attack, and "whichever fencer advanced
-more" predicts the scorer on 53 per cent of single-scorer touches against a 50
-per cent chance baseline. Per-fencer tempo metrics therefore appear only when the
-user has supplied scorers.
-
-Usage:
-    python3 tempo.py --csv results_after/fencing_clip3_distance.csv \
-                     --touches ground_truth/fencing_clip3_touches.csv
+None of it could exist before touch detection, which is why the earlier generated
+summaries were accurate and thin. An exchange is taken to end at a touch and to
+begin when play resumes after the previous reset, using the reset duration
+measured in in_play.py.
 """
 
 import argparse

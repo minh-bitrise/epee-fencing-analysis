@@ -4,11 +4,8 @@ import Disclosure from './Disclosure.jsx'
 // -1.2 m away are opposite tactical readings and "1.2 m" is neither.
 const signedM = (v) => (v > 0 ? '+' : '') + v.toFixed(1) + ' m'
 
-// Net displacement below this magnitude means the fencer finished where they
-// started, and the sign is not meaningful there. Fencer 2 on the club clip
-// measures +0.43 m from raw positions and -0.94 m from smoothed endpoints: the
-// two readings agree on the substance and disagree on the sign, so printing one
-// of them with a sign would invent a direction the data does not support.
+// Net displacement below this magnitude means the fencer finished where they started, and the
+// sign is not meaningful there.
 const NET_SIGN_FLOOR_M = 1.0
 
 // Both movement figures get the floor treatment, because both are sums of the
@@ -22,23 +19,7 @@ function Tile({ value, label }) {
   return <div className="tile"><b>{value}</b><span>{label}</span></div>
 }
 
-/**
- * The bout's numbers.
- *
- * WHY THE PER-FENCER FIGURES ARE A TABLE AND NOT A LIST. They were a flat list
- * of label-and-value rows, every one of them prefixed "F1" or "F2", which meant
- * the two fencers were being compared by reading alternate lines and matching
- * the words after the prefix. Six rows carrying three measurements. As two
- * columns the comparison is the layout, and the prefixes disappear.
- *
- * Movement is shown as net displacement and closing share, never as cumulative
- * push and pull totals. Path length sums the size of every frame's movement, so
- * tracking noise accumulates into it and never cancels: re-measuring the same
- * footage under median smoothing windows from 1 to 121 frames moved the totals
- * from 161 m to 34 m with no asymptote, while the net figure settled. The API
- * does not return the totals at all, and this does not display them, because a
- * number on screen beside a real measurement reads as one.
- */
+/* The bout's numbers. WHY THE PER-FENCER FIGURES ARE A TABLE AND NOT A LIST. */
 export default function MetricsPanel({ metrics }) {
   if (!metrics) return <div className="mini">Loading.</div>
   const w = metrics.whole_recording

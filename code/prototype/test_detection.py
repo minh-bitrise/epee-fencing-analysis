@@ -440,17 +440,11 @@ class TestPushPullTracker:
         assert p.retreat_m[1] == 0.0
 
     def test_camera_pan_jump_is_bounded_not_dropped(self):
-        """
-        A jump beyond MAX_FRAME_MOVEMENT_M is capped at that limit rather than
+        """A jump beyond MAX_FRAME_MOVEMENT_M is capped at that limit rather than
         discarded.
 
         This test previously asserted the jump was dropped entirely, and that
         behaviour turned out to be a source of bias rather than robustness.
-        Measured on the club clip, the threshold was exceeded on about one per
-        cent of frames, and those frames carried roughly ten metres of net
-        retreat, so discarding them injected ten metres of false advance.
-        Capping bounds how much a single bad frame can contribute while keeping
-        the direction of the movement underneath it.
         """
         p = PushPullTracker(smooth_window=1)
         p.update(0, 100, 500, 100)
@@ -729,13 +723,8 @@ class TestFencerTrackerPredictedPos:
                       [950, 100, 1050, 400]]),  # slot 1 centre = (1000, 250)
             np.array([0.9, 0.8]),
         )
-        # frame 3: two detections. The FENCER is at x=700 (kept moving),
-        # a BYSTANDER (identical size) is at x=100 - exactly where slot 0
-        # started. Old code compared to last_pos=(400,250) and would have
-        # picked the bystander (dist 300) over the real fencer (dist 300),
-        # tied by original assignment; and the bystander was well inside
-        # 3.5 * box height. The motion-model gate predicts slot 0 should
-        # now be near x=700 and rejects the bystander at x=100.
+        # frame 3: two detections. The FENCER is at x=700 (kept moving), a
+        # BYSTANDER (identical size) is at x=100 - exactly where slot 0 started.
         slots = t.select(
             np.array([5, 9]),
             np.array([[650, 100,  750, 400],   # real fencer 1 at (700, 250)
@@ -952,17 +941,15 @@ class TestCameraMotionEstimator:
 # -------------------- push/pull banking (directional bias) --------------------
 
 class TestPushPullBanking:
-    """
-    The noise threshold exists to stop bounding-box jitter accumulating; an early
-    version summed raw displacement and reported 216 m of push per fencer in a
-    three-minute bout. Discarding sub-threshold movement fixed that number and
-    introduced a directional bias, because advances and retreats in fencing do
-    not share a speed: an attack is explosive and clears the threshold on every
-    frame, while the recovery is slow and clears it on none.
+    """The noise threshold exists to stop bounding-box jitter accumulating; an
+    early version summed raw displacement and reported 216 m of push per fencer
+    in a three-minute bout. Discarding sub-threshold movement fixed that number
+    and introduced a directional bias, because advances and retreats in fencing
+    do not share a speed: an attack is explosive and clears the threshold on
+    every frame, while the recovery is slow and clears it on none.
 
     Banking sub-threshold movement instead of discarding it keeps the jitter
-    rejection and removes the bias. These tests pin both halves of that, because
-    a change to either constant could silently reintroduce the bug.
+    rejection and removes the bias.
     """
 
     SCALE = 143.0
@@ -1118,29 +1105,14 @@ class TestPushPullDirectionIsFixed:
         assert math.isclose(net, expected, abs_tol=0.02), f"{net} vs {expected}"
 
     def test_the_cap_breaks_the_identity_by_exactly_what_it_discards(self):
-        """
-        The counterpart to the test above, and the one that matters on real data.
+        """The counterpart to the test above, and the one that matters on real
+        data.
 
-        That test picks steps inside the cap so it measures sign handling. This one
-        crosses the cap deliberately, because the cap is what breaks the identity
-        on real footage: replaying clip 3's recorded positions through this logic,
-        the cap fires on 63 and 65 frames of 5,246 and destroys -9.26 m and
-        -23.94 m of signed movement, which is the whole of the divergence between
-        the cumulative totals and the endpoint measurement.
-
-        Pinning it here converts that from a surprise into a known property. The
-        assertion is not that the identity holds, because it does not; it is that
-        the shortfall equals the discarded amount and nothing else leaks.
+        That test picks steps inside the cap so it measures sign handling.
         """
         p = PushPullTracker(n_fencers=2, smooth_window=1)
-        # A ONE-SIDED jump, i.e. the position steps and stays rather than snapping
-        # back. That asymmetry is the point. A symmetric out-and-back glitch
-        # crosses the cap twice in opposite directions and mostly cancels, so it
-        # does little harm. What damages the total is a step that is never
-        # returned, which is what re-acquiring a fencer at a new position after a
-        # tracking gap produces, and it explains why clip 3's 65 capped frames
-        # carried -23.94 m almost entirely in one direction instead of averaging
-        # out.
+        # A ONE-SIDED jump, i.e. the position steps and stays rather than
+        # snapping back.
         over = (MAX_FRAME_MOVEMENT_M + 0.40) * self.SCALE
         xs = [100.0, 110.0, 120.0, 120.0 - over]
         for x in xs:
@@ -1223,20 +1195,10 @@ class TestSavePlot:
 # -------------------- closing share --------------------
 
 class TestClosingShare:
-    """
-    The well-defined replacement for "how far did each fencer advance in total".
+    """The well-defined replacement for "how far did each fencer advance in
+    total".
 
-    That question has no answer as a distance in this data. Path length sums the
-    magnitude of every frame's change, so measurement noise adds to it and never
-    cancels: re-measuring clip 3 under median windows from 1 to 121 frames moved
-    one fencer's path length from 161 m to 33 m with no asymptote, while net
-    displacement stayed at exactly +3.43 m throughout. A quantity that changes
-    fivefold with an arbitrary smoothing parameter measures the filter, not the
-    fencer.
-
-    Counting the sign of each movement instead of its magnitude avoids that,
-    because noise contributes symmetrically to both directions. Under the same
-    sweep the closing share moved only from 52.4 to 60.9 per cent.
+    That question has no answer as a distance in this data.
     """
 
     SCALE = 150.0
@@ -1284,15 +1246,10 @@ class TestClosingShare:
         assert 0.0 <= s <= 1.0
 
     def test_magnitude_does_not_affect_it_above_the_noise_floor(self):
-        """
-        The property that makes it usable: scaling every movement leaves the
+        """The property that makes it usable: scaling every movement leaves the
         share unchanged, whereas it would scale a path length proportionally.
 
-        This holds only for movements that clear PUSH_PULL_NOISE_FLOOR_M. Below
-        it the banking buffer decides when a movement commits, so magnitude does
-        influence the count. The metric is therefore magnitude-invariant in the
-        regime that matters and not universally, which is worth knowing before
-        quoting it on footage where the fencers barely move.
+        This holds only for movements that clear PUSH_PULL_NOISE_FLOOR_M.
         """
         floor_px = PUSH_PULL_NOISE_FLOOR_M * self.SCALE
         shares = []
@@ -1469,13 +1426,11 @@ class TestOverlayShowsOnlyDefensibleMetrics:
         assert "+0.20" not in text
 
     def test_a_real_net_is_drawn_with_its_sign_and_magnitude(self, monkeypatch):
-        """
-        Above the floor the direction is the whole point, so it must be shown.
+        """Above the floor the direction is the whole point, so it must be shown.
 
         Only Fencer 1 moves in this fixture, 400 px at 100 px/m, so its line
         carries +4.00 m while the stationary opponent falls under the floor and
-        renders without a sign. Both halves are asserted, because a change that
-        made every fencer read the same way would be wrong either direction.
+        renders without a sign.
         """
         drawn = self._drawn_text(monkeypatch, self.SCALE)
         net_lines = [t for t in drawn if t.startswith("net")]
@@ -1578,12 +1533,11 @@ class TestReanchor:
 
 
 class TestAssignmentTies:
-    """
-    Cost ties in the two-detection matcher are routine, not a curiosity, and for
-    a long time they were broken by whatever order the candidate list happened to
-    be in. Three behaviours rested on that and all three flipped when the
-    ordering changed: re-anchor recovery (565 against 565), far-bystander
-    rejection (1455 against 1455), and the clip-2 capture itself.
+    """Cost ties in the two-detection matcher are routine, not a curiosity, and
+    for a long time they were broken by whatever order the candidate list
+    happened to be in. Three behaviours rested on that and all three flipped
+    when the ordering changed: re-anchor recovery (565 against 565), far-
+    bystander rejection (1455 against 1455), and the clip-2 capture itself.
 
     A sum ties whenever one slot's fencer is absent, because that slot
     contributes a large distance to both assignments and drowns the difference.
@@ -1638,13 +1592,10 @@ class TestAssignmentTies:
 
 
 class TestReanchorAgainstRealFailure:
-    """
-    The clip-2 failure, reconstructed from its measured numbers.
+    """The clip-2 failure, reconstructed from its measured numbers.
 
     Every other test in TestReanchor builds its own scenario, and all of them
-    passed while the action could not repair a real bystander capture. These use
-    the values measured at clip 2 frame 8590, so the case that defeated it is
-    the case being asserted on.
+    passed while the action could not repair a real bystander capture.
     """
 
     def _box(self, cx, cy, h=100.0, w=40.0):
@@ -1672,13 +1623,12 @@ class TestReanchorAgainstRealFailure:
         assert 2 not in top_two, "the clicked fencer is no longer the odd one out"
 
     def test_a_correction_reaches_a_fencer_the_confidence_cut_would_discard(self):
-        """
-        The whole failure, in one case.
+        """The whole failure, in one case.
 
         The tracker keeps only the two most confident detections before any
         anchor is consulted, so on real footage the fencer the user clicked was
-        thrown away by a margin of 0.010 and the correction changed nothing: the
-        reprocessed run was byte-identical to its baseline.
+        thrown away by a margin of 0.010 and the correction changed nothing:
+        the reprocessed run was byte-identical to its baseline.
         """
         t = FencerTracker()
         ids, boxes, confs = self._detections()
@@ -1744,14 +1694,10 @@ class TestReanchorAgainstRealFailure:
 
 
 class TestReanchorOutcome:
-    """
-    Whether a correction took effect has to be reported, not assumed.
+    """Whether a correction took effect has to be reported, not assumed.
 
     A re-anchor is not a force-assignment: it moves the slot's reference point
-    and clears its gates for one frame, then lets ordinary matching resume. On
-    real footage a correction aimed at the wrong slot produced output
-    byte-identical to its baseline, so the user re-ran a multi-minute job and was
-    told nothing at all.
+    and clears its gates for one frame, then lets ordinary matching resume.
     """
 
     def box(self, cx, cy, h=200, w=70):
@@ -1806,22 +1752,12 @@ class TestLoadReanchors:
         assert list(load_reanchors(p, 30.0)) == [390]
 
     def test_loading_corrections_does_not_disturb_the_frame_count(self):
-        """
-        A regression, found by running the re-anchor path on real footage for the
-        first time rather than by any test.
+        """A regression, found by running the re-anchor path on real footage for
+        the first time rather than by any test.
 
         `run()` reads the video's frame count into `total`, and the branch that
         loads corrections then assigned the NUMBER OF CORRECTIONS to the same
-        name. The progress line began reporting "12/3 frames processed", and the
-        machine-readable PROGRESS counter the web interface reads reported a
-        percentage of the correction count, so a re-anchored run showed a bar
-        that shot past 100 per cent and stopped. It fired only when --reanchors
-        was passed, which is why it survived a full unit suite.
-
-        Asserted over the parsed function rather than over its text: a first
-        version of this test scanned the few lines following the load call and
-        passed with the defect reintroduced, because an added comment had pushed
-        the offending line out of the window it looked at.
+        name.
         """
         import ast
         import inspect

@@ -43,13 +43,10 @@ pytestmark = pytest.mark.slow
 
 @pytest.fixture
 def synthetic_bout(tmp_path):
-    """
-    A short video with two person-sized shapes moving toward each other.
+    """A short video with two person-sized shapes moving toward each other.
 
     Person-SHAPED on purpose: roughly 2:1 tall, moving smoothly, on a plain
-    background. YOLO may or may not call them people, and the test does not
-    depend on it doing so. What matters is that every stage receives a real video
-    and produces a real artefact for the next one.
+    background.
     """
     import cv2
     path = tmp_path / "synthetic.mp4"
@@ -104,13 +101,11 @@ def wait_for(client, job_id, states, timeout=300):
 
 
 def test_a_video_becomes_a_reviewable_bout(live_client, synthetic_bout):
-    """
-    The whole loop, in the order a user meets it.
+    """The whole loop, in the order a user meets it.
 
     Every assertion here is about a JOIN. The stages pass work by filename
     convention, the bout id is built in one module and taken apart in another,
-    and discovery finds bouts by scanning for a naming pattern. None of that is
-    reachable from a unit test.
+    and discovery finds bouts by scanning for a naming pattern.
     """
     with open(synthetic_bout, "rb") as f:
         r = live_client.post("/api/jobs",
@@ -154,9 +149,7 @@ def test_a_video_becomes_a_reviewable_bout(live_client, synthetic_bout):
     # Metrics either work or explain themselves. Two rectangles are not
     # necessarily people to YOLO, so this fixture cannot guarantee measurements
     # exist, and a bout with none is a real outcome rather than a broken one: an
-    # upload shot from behind the piste produces exactly it. What must never
-    # happen is an unhandled 500, which is what this endpoint did before this
-    # test was written.
+    # upload shot from behind the piste produces exactly it.
     metrics = live_client.get(f"/api/bouts/{bout_id}/metrics")
     assert metrics.status_code in (200, 422), metrics.text
     if metrics.status_code == 200:

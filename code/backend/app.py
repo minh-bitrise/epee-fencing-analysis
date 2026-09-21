@@ -1,26 +1,10 @@
 """
-Epee Fencing Bout Analysis - Annotation API
-============================================
 FastAPI backend for the assisted-annotation workflow.
 
-WHAT THIS EXISTS TO TEST. The project's central design claim is that unreliable
-computer vision is acceptable because a user can repair each class of error with
-a single high-level action. Until now that claim has been argued but never
-exercised, which the evaluation chapter identifies as the most significant gap in
-the project: the failures are demonstrated, the mechanism that resolves them is
-not. This API exposes exactly the four actions the design specifies, so the claim
-can be tested rather than asserted.
-
-WHAT IT DELIBERATELY DOES NOT DO. It does not process video. Detection, tracking
-and touch proposal remain command-line stages, and this reads their artefacts.
-Keeping inference out of the request path means a long processing job cannot
-block a review session, which is the separation the architecture calls for, and
-it also means the interface can be evaluated against already-processed footage
-without waiting on a pipeline run.
-
-Run with:
-    cd code/backend && python3 -m uvicorn app:app --reload --port 8000
-Then open http://localhost:8000
+The project's central claim is that unreliable computer vision is acceptable
+because a user can repair each class of error with one high-level action. This
+API exposes exactly those actions, so the claim can be exercised rather than
+asserted. It does not run the pipeline in the request path; that is jobs.py.
 """
 
 import glob
@@ -54,16 +38,7 @@ from jobs import (  # noqa: E402
 
 # results_fixed is listed first because it is the only output produced since the
 # raw position columns were added, and those columns are what the reliable
-# movement metrics are derived from. Without it the interface can only reach CSVs
-# that force the fallback derivation, which inherits the noise floor, the
-# movement cap and the banking buffer, and which disagreed with the position
-# route by 3.5 m of net displacement on the club clip. The older directories stay
-# discoverable so the before/after comparisons in the evaluation remain openable,
-# and the interface reports which route each bout used rather than hiding it.
-# results_current is first because it is the reference set: all four clips from one
-# version of the pipeline, each with the piste configuration it needs, and the only
-# set where movement figures are comparable across clips. RESULTS.md says which
-# numbers to quote from where.
+# movement metrics are derived from.
 RESULTS_DIRS = [os.path.join(PROTOTYPE_DIR, d) for d in
                 ("results_current", "results_pose", "results_fixed", "results_after",
                  "results_stabilised", "results_fixedscale", "results_ablation",
@@ -92,14 +67,12 @@ _SUMMARY_STAGES = summary_stages()
 
 
 def _stages_for(job):
-    """
-    Which pipeline a job runs.
+    """Which pipeline a job runs.
 
     Two kinds share one worker rather than one runner each, because a second
-    runner would mean a second worker thread and the one-job-at-a-time guarantee
-    exists precisely so two CPU-bound runs do not fight over a machine with no
-    GPU. A summary job is cheap, but it is not free and it is not worth a
-    special case that could let it start while detection is mid-run.
+    runner would mean a second worker thread and the one-job-at-a-time
+    guarantee exists precisely so two CPU-bound runs do not fight over a
+    machine with no GPU.
     """
     return _SUMMARY_STAGES if job.get("kind") == "summary" else _PROCESSING_STAGES
 
@@ -112,23 +85,12 @@ KEYCHAIN_SERVICE = "anthropic-api-key"
 
 
 def _load_api_key_from_keychain():
-    """
-    Put the provider API key into the environment at startup, reading it from the
-    macOS Keychain when it is not already there.
+    """Put the provider API key into the environment at startup, reading it from
+    the macOS Keychain when it is not already there.
 
-    WHY AT STARTUP AND NOT ON DEMAND. Starting the server is a deliberate act by
-    the person who owns the key, and macOS can prompt them for Keychain access
-    while they are still at the keyboard. Reading a secret in response to an HTTP
-    request would move that prompt to a moment nobody is watching, and would make
-    a web request the thing that reaches into the Keychain. Once here, the value
-    lives in this process's environment and is inherited by the summary
-    subprocess, which is where it is actually needed.
-
-    The key is never logged, never returned by any endpoint, and never written to
-    a job record. Only whether one was found is reported.
-
-    Failing is not an error. A machine without the key, or without `security`,
-    simply has no summary button, and the endpoint says so.
+    Starting the server is a deliberate act by the person who owns the key, and
+    macOS can prompt them for Keychain access while they are still at the
+    keyboard.
     """
     if os.environ.get("ANTHROPIC_API_KEY"):
         return "environment"
@@ -182,9 +144,7 @@ def _cached_playable(bout_id):
     gone.
 
     The annotated render is large and is not in version control; the transcode
-    is small and is what actually gets served. Losing the render therefore need
-    not mean losing playback, and refusing to play a file that is sitting on
-    disk would be a self-inflicted failure. Returns "" when there is none.
+    is small and is what actually gets served.
     """
     parent, _, stem = bout_id.partition(":")
     if not stem:
@@ -247,15 +207,12 @@ class Reanchor(BaseModel):
 # --- read endpoints -----------------------------------------------------
 
 def _bout_label(bout_id):
-    """
-    A name a person can read.
+    """A name a person can read.
 
     Bout ids are derived from output directories, which is right for an
     identifier and wrong for a menu: an uploaded bout is called
     `upload_a07ab97cf679:bout_a07ab97cf679`, which says nothing about the video
-    it came from. The evaluation clips keep their ids, since those ARE the names
-    the report and RESULTS.md use and renaming them in the interface would break
-    the correspondence.
+    it came from.
     """
     directory = bout_id.split(":")[0]
     if not directory.startswith("upload_"):
@@ -273,12 +230,7 @@ def _bout_label(bout_id):
 
 # The bout the interface opens on when it is present. RESULTS_DIRS already puts
 # results_current first because it is the reference set; this does the same one
-# level down. Clip 3 is the club recording the evaluation quotes most, it is
-# hand-labelled, and its tracking holds throughout, so it is the bout that shows
-# what the system does rather than what it does when the footage fights it.
-#
-# It is a display preference and nothing else: no figure, no evaluation and no
-# stored annotation depends on the order bouts are listed in.
+# level down.
 REFERENCE_BOUT = "results_current:fencing_clip3"
 
 
@@ -286,15 +238,8 @@ REFERENCE_BOUT = "results_current:fencing_clip3"
 def list_bouts():
     """Processed bouts available for review, with review progress for each.
 
-    ORDER IS DISCOVERY ORDER, NOT ALPHABETICAL. RESULTS_DIRS is ordered
-    deliberately, results_current first because it is the reference set, and
-    discover_bouts walks it in that order. Sorting here threw that away: the
-    interface opens on the first bout that has both touches and a video, and
-    alphabetically that is `results_ablation:ablation_180p`, a deliberately
-    degraded 180p clip kept only so the resolution ablation stays openable. The
-    application opened on its own worst artefact, with an overlay too coarse to
-    read, and nothing in the test suite noticed because every test asks whether
-    a bout is reachable and all of them were.
+    RESULTS_DIRS is ordered deliberately, results_current first because it is
+    the reference set, and discover_bouts walks it in that order.
     """
     out = []
     found = _bouts()
@@ -355,13 +300,10 @@ def get_touches(bout_id: str):
 
 @app.get("/api/bouts/{bout_id}/metrics")
 def get_metrics(bout_id: str):
-    """
-    Bout metrics, scoped to in-play segments when the user has confirmed touches.
+    """Bout metrics, scoped to in-play segments when the user has confirmed
+    touches.
 
-    Both the whole-recording and in-play figures are returned. The difference
-    between them is itself informative: on the club clip, reset periods are 43
-    per cent of the recording and inflate movement totals by a third, so showing
-    only the scoped number would hide how much the scoping mattered.
+    Both the whole-recording and in-play figures are returned.
     """
     from in_play import (out_of_play_windows, in_play_mask, scope_distance,
                          closing_share, net_forward_movement)
@@ -374,13 +316,7 @@ def get_metrics(bout_id: str):
         whole = compute_stats(rows)
     except ValueError as e:
         # A bout where the tracker never held both fencers at once has no
-        # distance samples, and every statistic here is derived from them. That
-        # is a real outcome rather than a broken file: an upload shot from behind
-        # the piste, or one showing a single fencer drilling, produces exactly
-        # this. Raising through as a 500 told the user only that something had
-        # gone wrong, when what they need is to know their footage did not track
-        # and why that is not a crash. Found by the end-to-end test, on a bout
-        # whose subject the detector never recognised as people at all.
+        # distance samples, and every statistic here is derived from them.
         raise HTTPException(
             422, f"this bout has no usable measurements: {e}. The tracker never "
                  f"held both fencers in the same frame, so there is nothing to "
@@ -404,20 +340,10 @@ def get_metrics(bout_id: str):
     mask = in_play_mask(t, windows)
 
     def movement(prefix):
-        """
-        In-play movement figures for one fencer.
+        """In-play movement figures for one fencer.
 
-        Net forward movement and closing share are the reliable pair, and they are
-        the only movement figures returned. The cumulative push and pull totals are
-        deliberately absent: B1g traced their error to the per-frame movement cap
-        and measured it at 24 m on a 14 m piste, so they are wrong rather than
-        approximate, and an API that returns them invites a client to display them.
-        They remain in the pipeline's CSV, which is the evidence artefact.
-
-        The scoped figure is called movement rather than displacement on purpose.
-        Excluding the resets breaks the position series, so it does not telescope
-        to a first-to-last difference and can exceed the whole-recording
-        displacement, which is where the ground gained in a phrase is given back.
+        Net forward movement and closing share are the reliable pair, and they
+        are the only movement figures returned.
         """
         cs = closing_share(rows, prefix, mask)
         return {
@@ -459,23 +385,12 @@ _SUMMARY_INVARIANTS = ("duration_s", "frames_total", "coverage_pct",
 
 @app.get("/api/bouts/{bout_id}/summary")
 def get_summary(bout_id: str):
-    """
-    The cached LLM summary for a bout, and whether it still matches the metrics.
+    """The cached LLM summary for a bout, and whether it still matches the
+    metrics.
 
-    Reading only. Generating a summary costs an API call, so it stays a deliberate
-    command-line step rather than something a button can trigger by accident.
-
-    The staleness check earns its place. A summary is a file on disk with no link to
-    the data it was written from, so re-running detection leaves a confident piece
-    of prose describing numbers that no longer exist. This project has already
-    shipped one summary that faithfully reported a mis-specified input, and the
-    movement metrics have been redefined three times, so a summary that silently
-    predates the current CSV is a real hazard rather than a hypothetical one.
-
-    Staleness compares the stats fields that do not depend on the touch file. The
-    touch list is excluded on purpose: the summary may have been generated from
-    ground truth, from detector output or from an exported review, and disagreeing
-    with whichever is on disk now is not the same as being out of date.
+    Reading only. Generating a summary costs an API call, so it stays a
+    deliberate command-line step rather than something a button can trigger by
+    accident.
     """
     b = _get_bout(bout_id)
     base = os.path.splitext(b.metrics_csv)[0]
@@ -585,19 +500,10 @@ def export_touches(bout_id: str):
 
 @app.post("/api/bouts/{bout_id}/export-reanchors")
 def export_reanchors(bout_id: str):
-    """
-    Write the user's re-anchor corrections where the pipeline can read them.
+    """Write the user's re-anchor corrections where the pipeline can read them.
 
-    Action 4 is the only one that changes tracking rather than interpretation, so it
-    cannot take effect in this interface: the tracker has already run. Until now the
-    corrections were stored and nothing consumed them, which meant the interface
-    offered a repair that did nothing at all. This closes that, in the same shape as
-    the touch export: a file beside the metrics CSV, nothing existing modified, and
-    the exact command to run returned with it.
-
-    Corrections already marked applied are included rather than filtered out. A
-    reprocess starts from the original video every time, so every correction is
-    needed on every run; excluding the applied ones would silently undo them.
+    Action 4 is the only one that changes tracking rather than interpretation,
+    so it cannot take effect in this interface: the tracker has already run.
     """
     b = _get_bout(bout_id)
     data = store.load(bout_id)
@@ -668,14 +574,10 @@ class LungeIn(BaseModel):
 
 @app.post("/api/bouts/{bout_id}/lunges")
 def add_lunge(bout_id: str, body: LungeIn):
-    """
-    Label the peak of one lunge, for evaluating the pose model.
+    """Label the peak of one lunge, for evaluating the pose model.
 
     This is not a fifth annotation action. The four designed actions let a user
-    repair the system's output; this lets a user grade it. TODO B1h found that
-    pose stance features do not mark awarded touches, but touch times are a weak
-    proxy for lunges in both directions, since most lunges miss and some touches
-    are not lunges. These labels test the hypothesis directly.
+    repair the system's output; this lets a user grade it.
     """
     _get_bout(bout_id)
     store.add_lunge(bout_id, body.time_s, body.slot, body.note)
@@ -694,17 +596,12 @@ WEB_VIDEO_DIR = os.path.join(PROTOTYPE_DIR, "web_video")
 
 
 def _web_playable(src):
-    """
-    Return a browser-playable copy of an annotated render, transcoding once and
+    """Return a browser-playable copy of an annotated render, transcoding once and
     caching the result.
 
-    OpenCV's VideoWriter writes MPEG-4 Part 2 with the `mp4v` tag, which browsers
-    generally refuse to decode: the element loads, reports readyState 0, and
-    plays nothing. The pipeline is deliberately left alone rather than switched
-    to H.264 at write time, because the `avc1` fourcc is not available in every
-    OpenCV build and a pipeline that fails to write video on some machines would
-    be a worse problem than a transcode here. Transcoding is done once per bout
-    and cached, so the cost is paid on first view rather than on every request.
+    OpenCV's VideoWriter writes MPEG-4 Part 2 with the `mp4v` tag, which
+    browsers generally refuse to decode: the element loads, reports readyState
+    0, and plays nothing.
     """
     os.makedirs(WEB_VIDEO_DIR, exist_ok=True)
     stem = os.path.basename(src).replace(".mp4", "")
@@ -725,14 +622,11 @@ def _web_playable(src):
 
 @app.get("/api/bouts/{bout_id}/video")
 def get_video(bout_id: str):
-    """
-    Stream a browser-playable copy of the annotated render for this bout.
+    """Stream a browser-playable copy of the annotated render for this bout.
 
-    Served with range-request support so the player can seek, which is what makes
-    review practical: a user jumps to a proposed touch, watches two seconds, and
-    decides. Without seeking they would have to scrub linearly through three
-    minutes per decision, and the workflow's claim to save effort would not
-    survive that.
+    Served with range-request support so the player can seek, which is what
+    makes review practical: a user jumps to a proposed touch, watches two
+    seconds, and decides.
     """
     b = _get_bout(bout_id)
     if b.video:
@@ -798,13 +692,12 @@ def delete_segment(bout_id: str, segment_id: str):
 
 @app.post("/api/bouts/{bout_id}/reanchor")
 def add_reanchor(bout_id: str, body: Reanchor):
-    """
-    Action 4: tell the tracker it has a fencer wrong at this moment.
+    """Action 4: tell the tracker it has a fencer wrong at this moment.
 
-    Recorded as pending rather than applied. Unlike the other three actions this
-    changes tracking rather than interpretation, so it takes effect only when the
-    pipeline is rerun, and the response says so plainly rather than implying the
-    correction is already in force.
+    Recorded as pending rather than applied. Unlike the other three actions
+    this changes tracking rather than interpretation, so it takes effect only
+    when the pipeline is rerun, and the response says so plainly rather than
+    implying the correction is already in force.
     """
     _get_bout(bout_id)
     try:
@@ -816,18 +709,11 @@ def add_reanchor(bout_id: str, body: Reanchor):
 
 
 def _source_for_bout(bout_id, b):
-    """
-    The ORIGINAL video a bout was produced from, and the piste config used.
+    """The ORIGINAL video a bout was produced from, and the piste config used.
 
     Needed by any reprocess, and the two kinds of bout keep it in different
-    places: an uploaded bout's source is recorded on its job, while an evaluation
-    bout's sits in the prototype directory under the clip's stem.
-
-    The distinction that matters is that this must never return the ANNOTATED
-    render. That file has boxes, labels and a distance readout burnt into it, so
-    re-running detection over it would be detecting on top of the overlay.
-
-    Returns (source_path or None, piste_config_path or None).
+    places: an uploaded bout's source is recorded on its job, while an
+    evaluation bout's sits in the prototype directory under the clip's stem.
     """
     directory = bout_id.split(":")[0]
     if directory.startswith("upload_"):
@@ -864,21 +750,11 @@ def _source_for_bout(bout_id, b):
 
 @app.post("/api/bouts/{bout_id}/reprocess")
 def reprocess_bout(bout_id: str):
-    """
-    Re-run the pipeline on this bout's source video, applying the user's
-    re-anchor corrections.
+    """Re-run the pipeline on this bout's source video, applying the user's re-
+    anchor corrections.
 
-    WHY THIS EXISTS. Action 4 changes tracking rather than interpretation, so it
-    can only take effect on a reprocess. Until now the interface's answer to "I
-    have corrected the tracking" was a command line for the user to go and type
-    in a terminal, which is precisely the arrangement this whole application
-    layer exists to remove. The corrections were recorded, exported, and then
-    depended on the user being someone who could run the pipeline by hand.
-
-    The result is a NEW bout rather than an overwrite. That is the same guarantee
-    the annotation store makes: a reprocess must never destroy a previous result,
-    and here it also means the before and after can be opened side by side, which
-    is the only way to see whether a correction helped.
+    Action 4 changes tracking rather than interpretation, so it can only take
+    effect on a reprocess.
     """
     b = _get_bout(bout_id)
     source, piste_config = _source_for_bout(bout_id, b)
@@ -947,16 +823,10 @@ def reprocess_bout(bout_id: str):
 
 @app.get("/api/bouts/{bout_id}/reanchor-outcomes")
 def get_reanchor_outcomes(bout_id: str):
-    """
-    Whether the corrections applied to this bout actually changed anything.
+    """Whether the corrections applied to this bout actually changed anything.
 
     A re-anchor is not a force-assignment: it moves the slot's reference point
-    and clears its gates for one frame, then lets ordinary matching resume. A
-    correction the matcher disagrees with leaves no trace at all, which was
-    confirmed on real footage when a mis-aimed correction produced output
-    byte-identical to its baseline. Without this the user re-runs a job that
-    takes minutes and is told nothing, and cannot tell "my correction was wrong"
-    from "my correction was right and did not help".
+    and clears its gates for one frame, then lets ordinary matching resume.
     """
     b = _get_bout(bout_id)
     base = os.path.splitext(b.metrics_csv)[0]
@@ -975,36 +845,20 @@ def get_reanchor_outcomes(bout_id: str):
 
 
 class ScorerRequest(BaseModel):
-    """
-    Which fencer the green lamp belongs to.
+    """Which fencer the green lamp belongs to.
 
     Required, with no default, because nothing in the image says it and a guess
-    would be wrong half the time in a way that looks authoritative. It is one
-    confirmation per bout, which the design already asks the user for in the same
-    spirit as the piste region.
+    would be wrong half the time in a way that looks authoritative.
     """
     green_is: str = Field(..., pattern="^(left|right)$")
 
 
 @app.post("/api/bouts/{bout_id}/propose-scorers")
 def propose_scorers(bout_id: str, body: ScorerRequest):
-    """
-    Read the scoring lamps and propose who scored each confirmed touch.
+    """Read the scoring lamps and propose who scored each confirmed touch.
 
-    WHY THIS RUNS IN THE REQUEST. It decodes a handful of frames per touch and
-    loads no models, so it costs seconds rather than the minutes a pipeline stage
-    takes. The rule that inference stays out of the request path is about the
-    models; this is colour thresholding.
-
-    WHY IT ONLY LOOKS AT TOUCHES THE USER HAS CONFIRMED. The lamps fire whenever
-    the circuit closes, which includes fencers testing weapons against the piste
-    or each other's guards, routinely just after a touch and before coming back
-    on guard. Reading them only at times a touch is already known to have
-    happened sidesteps that whole class of spurious firing, and it is why this
-    can never become a touch detector.
-
-    Proposals are returned rather than applied. The user still confirms each one,
-    which is the same contract as every other suggestion the system makes.
+    It decodes a handful of frames per touch and loads no models, so it costs
+    seconds rather than the minutes a pipeline stage takes.
     """
     b = _get_bout(bout_id)
     source, _ = _source_for_bout(bout_id, b)
@@ -1064,20 +918,10 @@ def propose_scorers(bout_id: str, body: ScorerRequest):
 
 @app.post("/api/bouts/{bout_id}/propose-lunges")
 def propose_lunges(bout_id: str, slot: int = Query(0, ge=0, le=1)):
-    """
-    Propose lunges for one fencer, calibrated on the ones already confirmed.
+    """Propose lunges for one fencer, calibrated on the ones already confirmed.
 
-    WHY IT CALIBRATES INSTEAD OF TRANSFERRING. The stance ratio is not
-    view-invariant: an operating point fitted on one clip reaches F1 0.22 on
-    another while firing on a quarter of all windows. Measured, clip 3 calibrates
-    to 1.902 and clip 2 to 2.706, a 42 per cent difference in what counts as a
-    lunge-like posture. So the threshold comes from lunges the user has confirmed
-    on THIS bout, which is the correction mechanism the design already uses
-    rather than a new demand on them.
-
-    Refusing below five confirmed lunges is deliberate rather than cautious. A
-    threshold fitted on two fires on a quarter of the bout, and a user who has to
-    reject every proposal is worse off than one who was offered none.
+    The stance ratio is not view-invariant: an operating point fitted on one
+    clip reaches F1 0.22 on another while firing on a quarter of all windows.
     """
     b = _get_bout(bout_id)
     from detect_lunges import (MIN_CALIBRATION_LUNGES, calibrate, propose,
@@ -1125,18 +969,10 @@ class ReviewSession(BaseModel):
 
 @app.post("/api/bouts/{bout_id}/sessions")
 def record_session(bout_id: str, body: ReviewSession):
-    """
-    Record how long one pass over a bout took, assisted or manual.
+    """Record how long one pass over a bout took, assisted or manual.
 
-    WHY THE APPLICATION MEASURES THIS AT ALL. The project's central claim is
-    about effort, and nothing in it measures effort. A user study would measure
-    it better and is parked; this needs no participants, costs one button, and
-    turns "reviewing is faster than labelling" from an assertion into a figure
-    with a denominator.
-
-    The touch and lunge counts are taken from the store rather than from the
-    request, so a client cannot report a session that its own annotations do not
-    support.
+    The project's central claim is about effort, and nothing in it measures
+    effort.
     """
     b = _get_bout(bout_id)
     data = store.load(bout_id)
@@ -1156,21 +992,12 @@ def get_sessions(bout_id: str):
 
 @app.get("/api/bouts/{bout_id}/profile")
 def fencer_profile(bout_id: str):
-    """
-    A per-fencer profile of one bout, as six axes that can be drawn as a radar.
+    """A per-fencer profile of one bout, as six axes that can be drawn as a radar.
 
-    WHY THIS IS NOT THE WITHDRAWN PUSH / PULL METRIC WEARING A NEW SHAPE. That
-    metric accumulated per-frame position deltas, and a fencer re-acquired after
-    a tracking dropout contributed a one-sided step that never cancelled: clip
-    3's Fencer 2 accumulated +23.01 m against an endpoint difference of -0.94 m.
-    Every axis here is either an instantaneous reading averaged over frames or a
-    count of touches the user confirmed, so a dropout displaces a few samples out
-    of thousands instead of banking itself permanently.
-
-    WHY IT CAN REFUSE. All six axes are per-fencer and therefore assume slot
-    identity held. On clip 4 it did not, and a profile drawn there would describe
-    the tracker while looking exactly as convincing as a real one. The refusal
-    carries the swap count so the interface can say why.
+    That metric accumulated per-frame position deltas, and a fencer re-acquired
+    after a tracking dropout contributed a one-sided step that never cancelled:
+    clip 3's Fencer 2 accumulated +23.01 m against an endpoint difference of
+    -0.94 m.
     """
     b = _get_bout(bout_id)
     from fencer_profile import build
@@ -1193,19 +1020,11 @@ def fencer_profile(bout_id: str):
 
 @app.post("/api/bouts/{bout_id}/summary/generate")
 def generate_summary_for_bout(bout_id: str, force: bool = False):
-    """
-    Generate the written summary for this bout, as a background job.
+    """Generate the written summary for this bout, as a background job.
 
     Deliberately never automatic. It costs a paid API call per run, and a job
     that quietly spent money on every upload would reverse a decision the
-    annotation API took on purpose. What has changed is only that the user
-    presses a button rather than being handed a command to type: the decision is
-    still theirs, the terminal is no longer required.
-
-    The touch file is the reviewed export where one exists, so the summary
-    describes the record the user confirmed rather than the detector's first
-    guess. That was the point of the export, and without preferring it here the
-    prose a reader sees would still come from unreviewed output.
+    annotation API took on purpose.
     """
     b = _get_bout(bout_id)
     if not os.environ.get("ANTHROPIC_API_KEY"):
@@ -1246,14 +1065,12 @@ def generate_summary_for_bout(bout_id: str, force: bool = False):
 # already produced in a terminal.
 
 def _probe_video(path):
-    """
-    Confirm the upload is a video this pipeline can open, and measure it.
+    """Confirm the upload is a video this pipeline can open, and measure it.
 
     Done in the request, deliberately, because it is the one check that must
     happen before a job is accepted: OpenCV opening the file is the same test
     the pipeline itself will apply, so failing it here turns a job that would
-    die two stages later into an immediate, explainable rejection. It costs one
-    file open and one frame read, and loads no models.
+    die two stages later into an immediate, explainable rejection.
     """
     import cv2
     cap = cv2.VideoCapture(path)
@@ -1306,18 +1123,9 @@ async def create_job(
     # from a handful of frames while looking like every other run.
     pose_stride: int = Form(0, ge=0, le=30),
 ):
-    """
-    Accept a bout video and queue it for processing.
+    """Accept a bout video and queue it for processing.
 
-    The request writes the file to disk, checks it opens, and returns. It does
-    not process anything, which is the separation the architecture requires and
-    the reason this layer exists at all: a three minute clip takes minutes to
-    process, and a request that waited for it would time out in the proxy, the
-    browser, or both, while holding a worker for the duration.
-
-    The upload is streamed in chunks rather than read whole. A 500 MB file read
-    into memory to be written straight back out is 500 MB of resident memory
-    spent for nothing, on the same machine that is about to load three models.
+    The request writes the file to disk, checks it opens, and returns.
     """
     filename = os.path.basename(video.filename or "bout.mp4")
     ext = os.path.splitext(filename)[1].lower()
@@ -1416,13 +1224,9 @@ def get_job_log(job_id: str):
 
 @app.get("/api/jobs/{job_id}/frame")
 def get_job_frame(job_id: str):
-    """
-    A still from the uploaded video, for drawing the piste region over.
+    """A still from the uploaded video, for drawing the piste region over.
 
-    Taken from a quarter of the way in rather than from frame one. Broadcast
-    footage routinely opens on a title card or a crowd shot, and a first frame
-    with no fencers in it is exactly the wrong picture to ask someone to confirm
-    a fencer-detection boundary against.
+    Taken from a quarter of the way in rather than from frame one.
     """
     import cv2
     job = job_store.load(job_id)
@@ -1460,23 +1264,12 @@ class PisteDecision(BaseModel):
 
 @app.post("/api/jobs/{job_id}/piste")
 def confirm_piste(job_id: str, body: PisteDecision):
-    """
-    Accept, adjust or skip the measured piste region, and let the job continue.
+    """Accept, adjust or skip the measured piste region, and let the job continue.
 
-    WHY THE JOB PAUSES HERE. The region decides which detections the tracker is
-    allowed to see, and getting it wrong is not a small error: rebuilding the
-    reference results without the regions dropped the broadcast clip from 98.0
-    per cent coverage to 80.1. It is also the one decision in the pipeline that
-    a person can make far better than the system, because they can see at a
-    glance whether the band drawn on the frame contains the fencers and excludes
-    the referee.
-
-    WHAT THE USER IS BEING ASKED. To confirm a measurement, not to produce a
-    guess. The distinction is the whole reason the region is measured first: a
-    polygon placed by eye on this project once admitted the adjacent piste and
-    raised the count of physically impossible distance readings from 53 to 252,
-    while the headline coverage figure went up. The interface therefore shows
-    what was measured and offers agreement, not an empty canvas.
+    The region decides which detections the tracker is allowed to see, and
+    getting it wrong is not a small error: rebuilding the reference results
+    without the regions dropped the broadcast clip from 98.0 per cent coverage
+    to 80.1.
     """
     job = job_store.load(job_id)
     if job is None:
@@ -1516,15 +1309,12 @@ def cancel_job(job_id: str):
 
 @app.delete("/api/jobs/{job_id}")
 def delete_job(job_id: str):
-    """
-    Remove a job and everything it produced.
+    """Remove a job and everything it produced.
 
     Needed rather than tidy. Each bout keeps its source, an annotated render, a
     browser copy of that render, a metrics CSV and a plot, which is several
     times the size of the upload, and nothing else in this system ever deletes
-    anything. Without this the only way to reclaim the disk is to know the
-    layout and use a terminal, which is the situation this whole layer exists to
-    remove.
+    anything.
     """
     job = job_store.load(job_id)
     if job is None:
@@ -1534,17 +1324,8 @@ def delete_job(job_id: str):
             409, f"job is {job['state']}; cancel it before deleting")
     # ONLY DIRECTORIES THIS JOB CREATED. A job's output_dir is not always its
     # own: a summary job sets it to the directory holding the metrics CSV, which
-    # for an evaluation bout is a shared results directory containing every
-    # other bout as well. Deleting such a job therefore used to rmtree the whole
-    # reference set, nine bouts at once, from a single click on a job card.
-    #
-    # That happened. It is the worst defect found on this project, it destroys
-    # data rather than producing a wrong number, and the only reason it was
-    # recoverable is that most of those files were in version control.
-    #
-    # The test is ownership, not the path the job happens to carry: a job owns
-    # its upload directory and its own output under the uploads root, and
-    # nothing else.
+    # for an evaluation bout is a shared results directory containing every other
+    # bout as well.
     owned = [os.path.join(UPLOAD_ROOT, job_id)]
     out = job.get("output_dir")
     if out and os.path.abspath(out).startswith(
@@ -1569,15 +1350,11 @@ def _all_results_dirs():
 
 @app.get("/api/storage")
 def get_storage():
-    """
-    Where the disk went, and how much of it can go.
+    """Where the disk went, and how much of it can go.
 
     Worth an endpoint rather than a note in the README because nothing else in
     this system reclaims anything, and the transcode cache grows every time a
-    bout is viewed. On the development machine it reached 313 MB unnoticed. The
-    point of reporting it by category is that "how much" is not the useful
-    question: the answer a user needs is which of it is derived and which is
-    their own footage.
+    bout is viewed.
     """
     from storage import stale_jobs, storage_report
     report = storage_report(WEB_VIDEO_DIR, _all_results_dirs(),
@@ -1589,32 +1366,18 @@ def get_storage():
 @app.post("/api/storage/cleanup")
 def clean_storage(everything: bool = Query(
         False, description="also delete transcodes that are still serviceable")):
-    """
-    Delete cached video that is derived, never anything that is not.
+    """Delete cached video that is derived, never anything that is not.
 
-    Defaults to the two kinds that cost nothing to lose: transcodes whose source
-    video is gone, and transcodes older than the source they were made from,
-    which the serving code would re-encode over anyway. Clearing the live cache
-    as well costs a few seconds per bout on next view and has to be asked for.
-
-    Nothing here can reach the pipeline results, the annotated videos, the
-    uploaded sources or the annotations. The annotations matter most: they are 36
-    hand-marked lunges and 27 hand-labelled touches that no amount of
-    reprocessing would bring back.
+    Defaults to the two kinds that cost nothing to lose: transcodes whose
+    source video is gone, and transcodes older than the source they were made
+    from, which the serving code would re-encode over anyway.
     """
     from storage import clean
     return clean(WEB_VIDEO_DIR, _all_results_dirs(), orphans_only=not everything)
 
 
-# --- static UI ----------------------------------------------------------
-#
-# Two interfaces are served, and both are kept deliberately.
-#
-# `/` is the React application: upload, job progress and review in one place.
-# `/legacy` is the original no-build-step page, which reviews already-processed
-# bouts and needs nothing but Python to run. It stays because it is the fallback
-# when the React build is absent, and because the two are directly comparable:
-# the same workflow, the same API, one with a build step and one without.
+# --- static UI ---------------------------------------------------------- Two
+# interfaces are served, and both are kept deliberately.
 
 REACT_DIR = os.path.join(STATIC_DIR, "app")
 
@@ -1643,20 +1406,11 @@ def index():
 
 @app.get("/legacy", response_class=HTMLResponse)
 def legacy_index():
-    """
-    The no-build-step interface, DELIBERATELY FROZEN at the four annotation
+    """The no-build-step interface, DELIBERATELY FROZEN at the four annotation
     actions it was written for.
 
-    It does not have upload, job progress, the piste confirmation step, reprocess,
-    who-scored or lunge proposals, and it will not be given them. Two reasons.
-    It exists so that a checkout with Python and nothing else still has a working
-    review interface, which matters for an examiner who may never run npm, and
-    that guarantee is worth more than feature parity. And it is the comparison the
-    evaluation makes: the same four actions, the same API, one interface with a
-    build step and one without.
-
-    Keeping it current would mean maintaining every feature twice, which is how
-    the two would quietly diverge in behaviour rather than in scope.
+    It does not have upload, job progress, the piste confirmation step,
+    reprocess, who-scored or lunge proposals, and it will not be given them.
     """
     path = os.path.join(STATIC_DIR, "index.html")
     if not os.path.exists(path):

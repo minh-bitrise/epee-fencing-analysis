@@ -1,39 +1,11 @@
 """
-Epee Fencing Bout Analysis - Disk Accounting and Cleanup
-=========================================================
 Report where the disk went, and reclaim the part of it that is derived.
 
-WHY THIS EXISTS. Nothing in this system deleted anything until the job-delete
-endpoint, and that only covers bouts a user explicitly removes. Meanwhile every
-bout ever viewed leaves a transcoded copy of its annotated video behind: OpenCV
-writes MPEG-4 Part 2, which browsers refuse to decode, so a browser-playable
-H.264 copy is made on first view and cached. Measured on the development machine
-that cache reached 313 MB, none of it reclaimable without knowing the layout and
-using a terminal, which is the situation the whole application layer exists to
-remove.
-
-WHAT IS SAFE TO DELETE, AND WHY THAT DISTINCTION IS THE WHOLE MODULE. Exactly one
-class of file here is derived: the transcode cache. Every byte of it can be
-regenerated from an annotated video that is still on disk, so removing it costs a
-few seconds on next view and nothing else. Everything else is either evidence or
-user work:
-
-  - pipeline results (CSVs, touch files, plots) are what the report quotes,
-  - annotated videos are the input the transcodes are derived FROM,
-  - annotations are the user's own labelling and can never be regenerated,
-  - uploaded sources are the only copy of footage the user provided.
-
-None of those are touched here, and the functions below take the roots they may
-work in as arguments rather than reaching for module globals, so a caller cannot
-accidentally point cleanup at the evaluation set.
-
-TWO KINDS OF WASTE ARE FREE TO REMOVE, AND ARE HANDLED SEPARATELY FROM THE REST.
-An ORPHAN has lost the annotated video it came from, so it can neither be served
-nor regenerated. A STALE entry is older than its source, so the serving code will
-re-encode over it on the next view regardless. Neither costs anybody anything to
-delete, which is why cleanup defaults to exactly those two and requires an
-explicit request to clear the live cache. Measured after regenerating the
-reference results, the stale category alone was 64 MB.
+Every bout ever viewed leaves a transcoded copy of its annotated video behind,
+because OpenCV writes MPEG-4 Part 2 and browsers refuse to decode it. On the
+development machine that cache reached 313 MB with no way to reclaim it short of
+a terminal. Only derived files are removable here; source uploads and annotations
+are not.
 """
 
 import os
@@ -61,18 +33,10 @@ def _mb(n):
 
 
 def find_orphan_transcodes(web_video_dir, results_dirs):
-    """
-    Cached transcodes that can never be served, or will be discarded anyway.
+    """Cached transcodes that can never be served, or will be discarded anyway.
 
-    Two kinds, both pure waste. An ORPHAN has lost the annotated video it was made
-    from, so it can never be served and can never be regenerated. A STALE entry is
-    older than its source, so the serving code will re-encode over it on next
-    view regardless.
-
-    The cache filename encodes where it came from, `<results dir>__<stem>.h264.mp4`,
-    because the same clip processed into different output directories must not
-    collide. That encoding is what makes the source recoverable here, and it is
-    the reason the naming is worth keeping even though it is ugly.
+    Two kinds, both pure waste. An ORPHAN has lost the annotated video it was
+    made from, so it can never be served and can never be regenerated.
     """
     orphans = []
     if not os.path.isdir(web_video_dir):
@@ -144,16 +108,12 @@ def storage_report(web_video_dir, results_dirs, upload_root, job_root,
 
 
 def clean(web_video_dir, results_dirs, orphans_only=True):
-    """
-    Remove cached transcodes. Orphans by default, the whole cache on request.
+    """Remove cached transcodes. Orphans by default, the whole cache on request.
 
-    Defaulting to orphans is the meaningful default rather than the timid one: an
-    orphan costs nothing to remove because it can never be served, whereas
+    Defaulting to orphans is the meaningful default rather than the timid one:
+    an orphan costs nothing to remove because it can never be served, whereas
     clearing the live cache costs a re-encode the next time somebody opens each
-    bout. The caller gets to decide, but not by accident.
-
-    Returns what was removed, so the interface can say so rather than reporting
-    a silent success.
+    bout.
     """
     if orphans_only:
         targets = find_orphan_transcodes(web_video_dir, results_dirs)
@@ -177,13 +137,12 @@ def clean(web_video_dir, results_dirs, orphans_only=True):
 
 
 def stale_jobs(job_store, older_than_days=30):
-    """
-    Finished job records older than a cutoff, as candidates for removal.
+    """Finished job records older than a cutoff, as candidates for removal.
 
-    Reported and never removed automatically. A job record is the only account of
-    what was run and with which settings, it is a few hundred bytes, and this
-    project's evaluation depends on being able to say how a result was produced.
-    Deleting those on a timer to save kilobytes would be a poor trade.
+    Reported and never removed automatically. A job record is the only account
+    of what was run and with which settings, it is a few hundred bytes, and
+    this project's evaluation depends on being able to say how a result was
+    produced.
     """
     cutoff = time.time() - older_than_days * 86400
     out = []

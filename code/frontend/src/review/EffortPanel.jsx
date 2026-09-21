@@ -1,19 +1,6 @@
 import Disclosure from './Disclosure.jsx'
 
-/**
- * How long reviewing this bout took, assisted against manual.
- *
- * WHY THIS PANEL EXISTS. The project's central claim is that confirming the
- * system's proposals costs less effort than labelling from scratch, and until
- * now nothing in it measured effort at all. A user study would measure it
- * better and is parked; this needs no participants and produces the figure as a
- * by-product of doing the work.
- *
- * WHY IT REFUSES TO SHOW A RATIO FROM ONE RUN EACH. It will show one, because
- * withholding it would be worse, but it labels it. A speed-up computed from a
- * single pass in each mode is an anecdote about one afternoon, and a number in a
- * box reads as a result unless it is told not to.
- */
+/* How long reviewing this bout took, assisted against manual. WHY THIS PANEL EXISTS. */
 const secs = (v) => (v == null ? '-' : `${v.toFixed(1)}s`)
 
 function Mode({ label, stats }) {
@@ -36,11 +23,9 @@ function Mode({ label, stats }) {
   )
 }
 
-// An empty mode rather than a crash. This panel is fed by a network response,
-// and it sits in the same column as the review table: a response missing the
-// shape it expects used to take the whole review screen down, which is the same
-// failure the video play() guard exists for. A missing comparison is worth far
-// less than the ability to keep reviewing.
+// An empty mode rather than a crash. This panel is fed by a network response, and it sits in
+// the same column as the review table: a response missing the shape it expects used to take
+// the whole review screen down, which is the same failure the video play() guard exists for.
 const EMPTY = { runs: 0, total_decisions: 0, mean_seconds_per_decision: null }
 
 export default function EffortPanel({ sessions }) {

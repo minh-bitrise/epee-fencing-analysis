@@ -1,46 +1,10 @@
 """
-Epee Fencing Bout Analysis - Processing Job Runner
-===================================================
-Runs the command-line pipeline on an uploaded video, in the background, so a
-bout can be processed from a browser instead of a terminal.
+Run the pipeline on an uploaded video in the background, so a bout can be
+processed from a browser instead of a terminal.
 
-WHY THIS EXISTS. Until now the pipeline was reachable only from a shell: there
-was no upload, no way to start a run, and no way for anyone but the author to
-use the system at all. The design chapter describes a web application and the
-evaluation chapter admits the gap. This is the missing layer.
-
-WHY SUBPROCESSES AND NOT THREADS. Each stage runs as a separate process rather
-than as a function call in the API's own process, for three reasons that are
-specific to this pipeline rather than general good practice.
-
-  1. The heavy work is native code. YOLO, OpenCV and MediaPipe do their work in
-     C++ extensions, and when those fail they can take the interpreter with them
-     rather than raising something catchable. In a thread that ends the API and
-     every job with it. In a subprocess it is an exit code the runner can
-     record against one job.
-  2. The models cost hundreds of megabytes of resident memory. A subprocess
-     gives it all back on exit; an in-process import keeps it for the life of
-     the server, which on this project is a laptop also running a browser.
-  3. The pipeline stays a working command line. Every stage is invoked here by
-     exactly the command a user would type, which the evaluation depends on:
-     the figures in the report came from those commands, and a second in-process
-     code path would be a second thing that could disagree with them.
-
-WHY ONE JOB AT A TIME. Detection is CPU-bound and pose estimation is the
-bottleneck on a machine without a GPU. Two concurrent runs do not finish in the
-time one takes, they finish in rather more than twice it, while making the
-machine unusable. Jobs therefore queue, and the queue position is reported so a
-waiting user is told they are waiting rather than left to guess.
-
-WHERE PROGRESS COMES FROM. Each stage prints machine-readable `PROGRESS done
-total` lines, which this parses as it reads the process output. The alternative
-was a callback into the pipeline, which would have meant importing it, which is
-the thing this file exists to avoid.
-
-STATE. Every job is a JSON file on disk, in the same spirit as the annotation
-store: no database, nothing lost on restart, and a record a human can read when
-something goes wrong. A run interrupted by a restart is marked as interrupted on
-the next startup rather than being left claiming to be running.
+Each stage runs as a subprocess rather than in the API's own process: the stages
+are command-line tools with their own argument handling, a crash in one must not
+take the API down, and YOLO and MediaPipe in the request path would block it.
 """
 
 import json
@@ -78,13 +42,9 @@ ERROR_TAIL_LINES = 40
 
 
 class JobStore:
-    """
-    Job records as one JSON file each.
+    """Job records as one JSON file each.
 
-    Reads go straight to disk rather than through a cache. Jobs are polled a few
-    times a second by one browser, the files are under a kilobyte, and a cache
-    would mean the worker thread and the request threads holding two views of
-    the same job.
+    Reads go straight to disk rather than through a cache.
     """
 
     def __init__(self, root):
@@ -97,16 +57,12 @@ class JobStore:
     _ID = re.compile(r"^[0-9a-f]{6,32}$")
 
     def _path(self, job_id):
-        """
-        The record's path, refusing any id that could name something else.
+        """The record's path, refusing any id that could name something else.
 
-        Job ids arrive from URL path segments, and `os.path.join` happily accepts
-        `../`: a request for `/api/jobs/../../something` resolved to a path
-        outside the store, which `delete` would then have passed to os.remove.
-        Every endpoint does look the job up first, so an attack needed a parsable
-        JSON file at the traversed path, but that is a property of the callers
-        and not of this class. Validating the id here means no future caller can
-        reintroduce it.
+        Job ids arrive from URL path segments, and `os.path.join` happily
+        accepts `../`: a request for `/api/jobs/../../something` resolved to a
+        path outside the store, which `delete` would then have passed to
+        os.remove.
         """
         if not isinstance(job_id, str) or not self._ID.match(job_id):
             raise ValueError(f"not a job id: {job_id!r}")
@@ -188,14 +144,10 @@ class JobStore:
 
 
 class Stage:
-    """
-    One pipeline command.
+    """One pipeline command.
 
-    `build` returns the argument list to run, or None to skip the stage for this
-    job. Stages are supplied to the runner rather than hardcoded in it so the
-    tests can substitute cheap stand-ins: a test that had to run YOLO would take
-    minutes and need real footage, and would be testing the models rather than
-    the runner.
+    `build` returns the argument list to run, or None to skip the stage for
+    this job.
     """
 
     def __init__(self, name, build, label=None, on_success=None):
@@ -227,8 +179,8 @@ def parse_progress(line):
 
 
 class JobRunner:
-    """
-    A single background worker that takes jobs off a queue and runs their stages.
+    """A single background worker that takes jobs off a queue and runs their
+    stages.
 
     The worker thread is a daemon: it holds no state that is not already on
     disk, so there is nothing to flush at shutdown, and a job caught mid-run is
@@ -239,11 +191,7 @@ class JobRunner:
     def __init__(self, store, stages, cwd=None, env=None):
         self.store = store
         # Either a list of stages for every job, or a callable taking a job and
-        # returning its stages. The callable form lets one worker serve more than
-        # one kind of job - processing a bout, and generating a summary - which
-        # matters because a second runner would mean a second worker, and the
-        # one-job-at-a-time guarantee exists so that two CPU-bound runs do not
-        # fight over a machine without a GPU.
+        # returning its stages.
         self.stages = stages
         self.cwd = cwd
         self.env = env
@@ -264,14 +212,10 @@ class JobRunner:
         self._thread.start()
 
     def reconcile(self):
-        """
-        Repair the record after a restart.
+        """Repair the record after a restart.
 
         A job whose process died with the server is left on disk saying it is
-        running, which is a claim nothing is behind. Marking those interrupted
-        keeps the record honest; re-queueing them automatically would be worse,
-        since a server that crashes on a particular video would then retry it
-        forever.
+        running, which is a claim nothing is behind.
         """
         repaired = []
         for job in self.store.list():
@@ -482,14 +426,9 @@ class JobRunner:
 # --- the real pipeline stages ------------------------------------------
 
 def pipeline_stages(python_exe=None, prototype_dir=None):
-    """
-    The four stages an uploaded bout goes through.
+    """The four stages an uploaded bout goes through.
 
-    Detection and touch proposal run automatically. Summary generation does not,
-    and its absence here is deliberate rather than an omission: it costs a paid
-    API call per run, and the existing API kept it a considered command-line step
-    for that reason. A job that quietly spent money on every upload would undo
-    that decision by accident.
+    Detection and touch proposal run automatically.
     """
     python_exe = python_exe or sys.executable
 
@@ -507,8 +446,7 @@ def pipeline_stages(python_exe=None, prototype_dir=None):
                 "--output-json", job["piste_result_path"]]
 
     def after_piste(job, store):
-        """
-        Read the measurement, and decide whether to pause for the user.
+        """Read the measurement, and decide whether to pause for the user.
 
         Returning False stops the job here. It pauses only when there is
         something worth showing: a video with no bystanders needs no region at
@@ -545,10 +483,7 @@ def pipeline_stages(python_exe=None, prototype_dir=None):
             cmd += ["--pose-stride", str(job["pose_stride"])]
         # Re-anchor corrections are applied here because they change TRACKING
         # rather than interpretation, so they can only take effect on a
-        # reprocess. Carrying them on the job is what lets the interface offer a
-        # button: before this, the review page's answer to "I have corrected the
-        # tracking" was a command line for the user to go and type, which is the
-        # arrangement the whole application layer exists to remove.
+        # reprocess.
         if job.get("reanchor_path") and os.path.exists(job["reanchor_path"]):
             cmd += ["--reanchors", job["reanchor_path"]]
         return cmd
@@ -558,15 +493,11 @@ def pipeline_stages(python_exe=None, prototype_dir=None):
         return [python_exe, "detect_touches.py", "--csv", csv_path]
 
     def build_transcode(job):
-        """
-        Convert the annotated render to something a browser will play.
+        """Convert the annotated render to something a browser will play.
 
         Done here rather than on first view. OpenCV writes MPEG-4 Part 2, which
         browsers generally refuse, so the existing API transcodes on demand
-        inside a request handler. That was tolerable for four fixed clips and is
-        not for uploads: it puts a multi-second ffmpeg run in the request path of
-        whoever happens to open the bout first, which is the shape of thing this
-        whole layer exists to remove.
+        inside a request handler.
         """
         src = os.path.join(job["output_dir"], f"{stem(job)}_annotated.mp4")
         if not os.path.exists(src):
@@ -587,15 +518,11 @@ def pipeline_stages(python_exe=None, prototype_dir=None):
 
 
 def summary_stages(python_exe=None):
-    """
-    The one stage of a summary job.
+    """The one stage of a summary job.
 
     Kept as its own job type rather than appended to the processing pipeline,
-    because generating a summary costs a paid API call and the decision to spend
-    it is the user's. Every upload silently spending money would reverse a
-    decision the annotation API took deliberately. What has changed is only that
-    the user now presses a button instead of being handed a command line to type,
-    which was the review page's answer before this layer existed.
+    because generating a summary costs a paid API call and the decision to
+    spend it is the user's.
     """
     python_exe = python_exe or sys.executable
 
@@ -611,13 +538,9 @@ def summary_stages(python_exe=None):
 
 
 def write_piste_config(result, path):
-    """
-    Write a derived polygon where run_detection.py can load it.
+    """Write a derived polygon where run_detection.py can load it.
 
-    The reason the measurement gave is carried into the file as its comment. The
-    hand-authored polygons record their reasoning the same way, and a derived
-    file that did not would be indistinguishable from one placed by eye, which is
-    the distinction this project has already paid to learn.
+    The reason the measurement gave is carried into the file as its comment.
     """
     with open(path, "w") as f:
         json.dump({"_comment": result.get("reason", ""),

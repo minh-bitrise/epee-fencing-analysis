@@ -2,17 +2,9 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import UploadView from './UploadView.jsx'
 
-/**
- * The entry point. Everything else in the application depends on a bout having
- * been processed, so a failure here is a failure to start, and it is the one
- * screen a first-time user cannot route around.
- *
- * Two behaviours carry most of the risk and most of these tests. Polling has to
- * stop when nothing can change, or the page asks about a queue of finished jobs
- * for as long as it is left open; and an upload that fails has to say so,
- * because a silent failure is indistinguishable from a slow one and the user's
- * response to each is opposite.
- */
+/* The entry point. Everything else in the application depends on a bout having been processed,
+   so a failure here is a failure to start, and it is the one screen a first-time user cannot
+   route around. */
 
 const job = (over = {}) => ({
   job_id: 'abc123def456', filename: 'bout.mp4', state: 'done', stage: 'detect',
@@ -106,11 +98,9 @@ describe('UploadView', () => {
   })
 
   it('shows an upload failure instead of silently doing nothing', async () => {
-    /**
-     * The failure this guards. A rejected upload left the page exactly as it
-     * was, which is indistinguishable from a slow one, and the user's response
-     * to each is opposite: wait, or try again.
-     */
+    /* The failure this guards. A rejected upload left the page exactly as it was, which is
+       indistinguishable from a slow one, and the user's response to each is opposite: wait, or
+       try again. */
     stub({ uploadFails: 'that file is not a video the pipeline can read' })
     const { container } = render(<UploadView onOpenBout={vi.fn()} />)
     await waitFor(() => expect(globalThis.__api).toHaveBeenCalled())
@@ -142,11 +132,8 @@ describe('UploadView', () => {
   })
 
   it('backs off once nothing can change', async () => {
-    /**
-     * Without this the page asks about a queue of finished jobs for as long as
-     * it is left open. It does not stop entirely, because a job can be started
-     * from another tab or a terminal and this page should notice.
-     */
+    /* Without this the page asks about a queue of finished jobs for as long as it is left
+       open. */
     stub({ jobs: [job({ state: 'done' })] })
     render(<UploadView onOpenBout={vi.fn()} />)
     await waitFor(() => expect(globalThis.__api).toHaveBeenCalledTimes(1))

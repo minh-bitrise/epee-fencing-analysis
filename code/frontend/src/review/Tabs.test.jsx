@@ -13,12 +13,8 @@ describe('Tabs', () => {
   })
 
   it('does not remount the active tab when the parent re-renders', async () => {
-    // The defect this exists for. The caller builds its `tabs` object inline, so
-    // those arrow functions are new objects on every parent render. Mounting
-    // them as <Body /> made the tab body a new component TYPE each time and
-    // React remounted the lot. The parent re-renders about four times a second
-    // while the video plays, and each remount re-ran the panels' effects: one
-    // bout left playing issued roughly 150 requests for its profile.
+    // The defect this exists for. The caller builds its `tabs` object inline, so those arrow
+    // functions are new objects on every parent render.
     const mounted = vi.fn()
 
     function Panel() {

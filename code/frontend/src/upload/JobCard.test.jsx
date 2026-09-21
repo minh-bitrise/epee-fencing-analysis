@@ -2,12 +2,8 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import JobCard from './JobCard.jsx'
 
-/**
- * The job card is the only window onto work that takes minutes, so its duty is
- * to say what is happening in terms of the bout rather than the runner. Most of
- * these assert that a particular state is DISTINGUISHABLE from another, because
- * the states that look alike are the ones that waste the user's time.
- */
+/* The job card is the only window onto work that takes minutes, so its duty is to say what is
+   happening in terms of the bout rather than the runner. */
 
 const job = (over = {}) => ({
   job_id: 'abc123def456',
