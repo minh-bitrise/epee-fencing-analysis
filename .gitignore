@@ -97,3 +97,10 @@ code/prototype/.demo_backup_*
 
 # Editor and tooling backups.
 *.prefix-backup
+
+# Earlier coursework submissions and the report's own build script. The
+# deliverables for the proposal and preliminary stages are the author's, not
+# part of the system, and the PDF build is local tooling. All kept on disk.
+/preliminary/
+/proposal/
+/final/make_pdf.sh
