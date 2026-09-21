@@ -43,9 +43,9 @@ WHY PAIRED, AND WHY THE INTERVAL IS CLUSTERED BY CLIP. Both estimators see the
 same windows, so the difference between their AUCs is a paired quantity and its
 interval must be built by resampling windows, not by treating two independent
 intervals as if their overlap settled anything. Windows are resampled WITHIN
-each clip and the clips are held fixed, because four clips cannot support a
+each clip and the clips are held fixed, because six clips cannot support a
 resample over clips and pretending otherwise would put a confidence interval on
-a sample of four.
+a sample of six.
 
 WHAT THIS CANNOT SAY. Neither estimator is validated against a measured
 distance, so a difference here says which estimator serves the downstream
@@ -53,7 +53,15 @@ decision better, never which is closer to the truth. Both could be wrong in the
 same direction and this would not see it.
 
 Run with:
-    python3 evaluate_pose.py --results results_posecmp
+    python3 evaluate_pose.py
+
+RESULTS DIRECTORY. This defaults to results_current, the run every other
+evaluation reads. It used to default to results_posecmp, a four-clip directory
+written before the set grew, and the two do not agree: on four clips the
+interval excludes zero and on six it does not. Anyone running the script the
+documented way therefore reproduced a superseded result and nothing said so.
+The four-clip directory is kept because the report cites that earlier interval,
+and it is reachable with --results results_posecmp.
 """
 
 import argparse
@@ -294,7 +302,7 @@ def report(res):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
-    ap.add_argument("--results", default="results_posecmp",
+    ap.add_argument("--results", default="results_current",
                     help="directory holding *_distance.csv with a distance_bbox_m column")
     ap.add_argument("--gt-dir", default=".", help="directory holding ground_truth/")
     args = ap.parse_args(argv)

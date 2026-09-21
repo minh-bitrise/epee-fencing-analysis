@@ -1,0 +1,10 @@
+clip,source_w,source_h,fencer_px,samples,coverage_pct,short_gap_pct,gaps,longest_gap_frames
+fencing_clip,1280,720,172.8,240,93.5,0.09,10,226
+fencing_clip2,1280,720,132.3,240,98.0,0.7,19,114
+fencing_clip3,1280,720,121.8,239,97.4,2.59,45,19
+fencing_clip4,640,360,100.5,227,79.8,11.21,226,58
+fencing_clip5,1920,1080,162.5,235,93.0,0.82,12,91
+fencing_clip6,1920,1080,226.9,240,92.1,0.73,8,120
+fencing_clip7a,1280,720,163.0,234,93.2,0.69,19,138
+fencing_clip7b,1280,720,156.4,238,93.1,0.93,14,133
+fencing_clip8,1920,1080,247.0,237,88.2,1.79,33,296

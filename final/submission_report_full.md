@@ -1,17 +1,5 @@
 # An AI-Assisted Web Application for Epee Fencing Bout Analysis and Fencer Profiling
 
-## About this document
-
-This is the **submission version** of the final report, written to the per-chapter word limits.
-It is derived from `final/final_report.md`, which is the project's full research record and is
-maintained continuously as development proceeds. Nothing here contradicts that document; where
-this version states a result, the record holds the derivation, the intermediate measurements
-and the failures that preceded it. Appendices carry evidence that does not fit the caps.
-
-Word counts are checked by `final/wordcount.py`, which reports the counted prose separately
-from the raw total so that the reliance on the brief's exclusion of tables and figures is
-visible rather than assumed.
-
 ## Abstract
 
 Post-bout video review in fencing is manual across the whole sport. This project develops an
@@ -19,16 +7,16 @@ AI-assisted web application that chains three pre-trained models, YOLOv8 detecti
 ByteTrack, MediaPipe Pose and a large language model, into a pipeline that turns an uploaded
 epee bout into a distance series, proposed touches, per-fencer measurements and a written
 summary, which a user then confirms or corrects through a browser interface. Touch detection
-reaches F1 0.85 across three clips against hand-labelled ground truth, and reading the scoring
-machine's lamps identifies whether one named fencer was involved in 48 of 49 labelled
-touches. The project's most transferable outcome is methodological: five separate metrics
+reaches F1 0.73 across six labelled clips against hand-labelled ground truth, 0.86 on the three
+it was tuned on, and reading the scoring machine's lamps identifies whether one named fencer was
+involved in 48 of 49 labelled touches. The project's most transferable outcome is methodological: five separate metrics
 passed every test written for them while measuring something other than what they claimed, and
 each was exposed by measurement against an external constraint rather than by further
 reasoning.
 
 ---
 
-## 1. Introduction
+## 1. Introduction (985/1000 words)
 
 ### Context
 
@@ -99,9 +87,9 @@ region pose works in, pose landmarks supply the ground reference the distance se
 measured from, that series drives touch proposal, confirmed touches scope every aggregate, and
 those aggregates are what a language model interprets.
 
-**A geometric touch detector evaluated against hand-labelled ground truth.** Twenty-seven
-touches were labelled across four independently sourced bouts, with clips held back from tuning
-so generalisation could be tested rather than assumed. An audio detector was built first, shown
+**A geometric touch detector evaluated against hand-labelled ground truth.** Forty-nine hits
+were labelled across five independently sourced recordings, with clips held back from tuning so
+generalisation could be tested rather than assumed. An audio detector was built first, shown
 to fail on held-back footage, and replaced.
 
 **Two capabilities the detector could not supply.** Attribution of a touch to a fencer, read
@@ -138,7 +126,7 @@ establish.
 
 ---
 
-## 2. Literature Review
+## 2. Literature Review (1621/2500 words)
 
 This chapter reviews work across four themes relevant to the application: deep learning in
 sports video analysis; temporal action detection in untrimmed video; pose estimation for
@@ -184,9 +172,11 @@ applies acutely to fencing, where two athletes overlap on a narrow piste and mov
 Their conclusion that pose is informative yet unreliable supports a design in which pose-derived
 features inform suggestions a user confirms.
 
-The implementation bears this out. Pose succeeded on roughly 30 to 32 per cent of frames where
-both fencers were tracked, a figure governed mainly by a deliberate stride of three frames, and
-it failed most often during precisely the clinches and rapid exchanges Hong et al. identify.
+The implementation bears this out. Pose succeeded on 27 to 32 per cent of frames where both
+fencers were tracked on eight of the nine clips, a figure governed mainly by a deliberate stride
+of three frames, and on 12 per cent of clip 4, the clip in which the fencers stand smallest in
+the frame. It failed most often during precisely the clinches and rapid exchanges Hong et al.
+identify.
 The pipeline falls back to bounding-box geometry on those frames rather than treating a missing
 pose as missing data. Their distillation method is, however, a model-training contribution
 aimed at improving accuracy on curated datasets; it does not deliver an end-user tool, and
@@ -293,7 +283,7 @@ tested on held-back footage of the kind the system will actually meet.
 
 ---
 
-## 3. Design
+## 3. Design (1960/2000 words)
 
 ### Users and domain
 
@@ -461,8 +451,8 @@ exclusion than a refusal.**
 
 **What was done about it.** The system now refuses: if neither fencer's position varies by more
 than 0.25 m, the per-fencer axes are withheld and the reason given. The threshold comes from the
-four clips, whose smallest spread is 0.66 m, and is calibrated from one side only, no wheelchair
-footage being available. This does not make the system inclusive; it makes it honest about the
+evaluation set, whose smallest spread is 0.85 m, over three times it, and is calibrated from one
+side only, no wheelchair footage being available. This does not make the system inclusive; it makes it honest about the
 boundary of what it measures.
 
 **A population assumption is baked into every distance figure.** The pixel-to-metre scale assumes
@@ -475,8 +465,8 @@ until the project was examined this way.
 person class comes from COCO, a convenience-collected web dataset the project neither audited nor
 controls; the documented failure of facial-analysis systems trained on predominantly pale-skinned
 cohorts is the standing example, and nothing here establishes the detection stage is free of an
-analogous skew. The evaluation set compounds it: four clips, three elite, all labelled by the
-author.
+analogous skew. The evaluation set compounds it: six labelled clips from five recordings, out of
+nine the pipeline was run over, mostly elite competition and all labelled by the author.
 
 **What the design gets right, though neither was motivated by inclusion.** The review loop is
 keyboard-driven, every decision one key, removing the precise pointing a scrubbing interface
@@ -502,7 +492,7 @@ carried out with consenting healthy adults.
 
 ---
 
-## 4. Implementation
+## 4. Implementation (2267/2500 words)
 
 This chapter records what was built and where the direction changed, because on this project
 the changes of direction carry most of the evidence.
@@ -548,8 +538,17 @@ of each other, since differencing positions further apart measures displacement 
 a slot unmatched for thirty frames discards its history, because one whose stale history rejects
 every candidate can otherwise never recover.
 
-Chapter 5 reports a fifth change, to candidate selection, which turned out to be the cause of
-both documented failure modes.
+The fifth change was to candidate selection, and it turned out to be the cause of both
+documented failure modes. `FencerTracker.select` narrowed each frame to the two most
+**confident** detections before any anchor, gate or correction was consulted. On competition
+footage that is measurably false, because the referee stands on the strip and survives the piste
+filter by construction. In clip 2's six-second bystander capture the fencer a user would click
+is detected in every frame yet discarded by the confidence cut in 9 of 16, the three competing
+confidences being 0.899, 0.896 and 0.886. The tracker was arbitrating between three people on
+margins that are noise, which is also why a momentary re-anchor cannot repair a cause sustained
+over six seconds. It now selects instead the two candidates nearest each slot's predicted
+position, which costs nothing since those predictions already exist. Chapter 5 reports what that
+changed.
 
 ### Attribution and lunge proposals
 
@@ -670,23 +669,41 @@ printed at equal width. The fencers are the same physical size; what differs is 
 frame they occupy, and clip 4's spectator gallery is visible along the
 top.](figures/fig_framing_comparison.png)
 
-![**Figure 4.4: Coverage against fencer height in the network's input.** Source resolution is
-annotated. Clip 4 is both the smallest fencer and the lowest coverage, while the 720p clips at
-similar fencer heights reach similar coverage.](figures/fig_framing_vs_coverage.png)
+![**Figure 4.4: Fencer size against two measures of tracking loss, all nine clips.** Left, the
+coverage figure the chapter reports. Right, only the frames lost to gaps shorter than a second,
+which is the detector losing the fencers rather than the fencers leaving the
+frame.](figures/fig_framing_vs_coverage.png)
 
-Coverage, meaning both fencers detected and held in stable slots, runs at 93 to 98 per cent on
-three clips and 79.8 per cent on clip 4. The obvious reading, that clip 4 is 360p and the others
-720p, is wrong: **source resolution is invisible to the detector**, which resizes so the longest
-side is 640. What predicts coverage is how tall a fencer is in that input, as Figure 4.4 shows,
-and Figure 4.3 shows why at equal print width: the fencers are not smaller or worse lit, they
-occupy less of the frame. The clips between 133 and 162 px reach 93 to 98 per cent, clip 4 at
-103 px reaches 74. Cropping to the piste and masking the gallery, the obvious interventions, both
-**reduced** it (Appendix D), so removing image content on the assumption that it can only help is
+Coverage, meaning both fencers detected and held in stable slots, runs between 92.1 and 98.0 per
+cent on seven of the nine clips. The two exceptions are clip 8 at 88.2 and clip 4 at 79.8.
+
+The obvious reading of clip 4, that it is 360p and the others 720p, is wrong: **source
+resolution is invisible to the detector**, which resizes so the longest side is 640. An earlier
+version of this section offered the replacement explanation, that what predicts coverage is how
+tall a fencer stands in that input, and on the four clips then available it fitted. On nine it
+does not. The correlation across the set is r = 0.02 (Figure 4.4, left), and clip 8 has the
+largest fencers of any clip alongside the second-worst coverage.
+
+The mistake was in the measure, not the explanation. Coverage counts two unrelated things as one
+loss: frames where the detector lost fencers who were there, and frames where a fencer had
+walked out of shot after a touch while the referee conferred. Gap length separates them, because
+a break in play lasts seconds and a detection failure lasts a few frames. Clip 4 loses 11.2 per
+cent of its frames to gaps under a second, against at most 2.6 per cent anywhere else. Clip 8's
+missing frames sit in 33 gaps of which the longest runs twelve seconds, so clip 8 is not tracked
+badly; its fencers are repeatedly absent, which is a property of the bout rather than a defect.
+Measured against short-gap loss alone the framing explanation points the right way and still
+does not reach significance (r = -0.51, p = 0.16, Figure 4.4, right). Clip 4 is the one clip
+with a real tracking problem and it does have the smallest fencers, but one point is an anecdote.
+Nine clips cannot settle this, and Figure 4.3 is offered as the mechanism it would be, not as
+evidence that it is.
+
+Cropping to the piste and masking the gallery, the obvious interventions, both **reduced**
+coverage (Appendix D), so removing image content on the assumption that it can only help is
 wrong.
 
 ### Testing
 
-The system is supported by 791 automated tests: 443 over the pipeline, 198 over the application
+The system is supported by 799 automated tests: 451 over the pipeline, 198 over the application
 layer and 150 over the interface, plus two end-to-end tests driving the real pipeline on a
 synthetic video. The end-to-end pair exists for what unit tests structurally cannot reach: the
 stages are joined by filename conventions rather than return values, and a bout identifier is
@@ -699,17 +716,20 @@ every defect that mattered on this project passed its tests.
 
 ---
 
-## 5. Evaluation
+## 5. Evaluation (2499/2500 words)
 
 Six bouts from five independently sourced recordings, each three minutes, hand-labelled by the
-author with the scoring fencer recorded: 48 touches. Two were labelled late, after the results
-below had first been computed on four.
+author with the scoring fencer recorded: 49 hits, 48 awarded and one annulled. Both counts are
+used deliberately. Detection is scored against the 48, since a hit awarding no point cannot
+appear in a scoreline; attribution against all 49, since the lamp fires on an annulled hit as
+readily and reading it is the task being measured. Two clips were labelled late, after the
+results below had first been computed on four.
 
 
 ### The audio detector failed to generalise, and geometry replaced it
 
 The first touch detector scored candidates from a band-passed audio envelope. Tuned on clip 3 it
-reached F1 0.79; applied without retuning to a held-back clip it collapsed:
+reached F1 0.79 and collapsed on a held-back clip:
 
 | | clip 3 (tuned on) | clip 2 (held back) |
 |---|---|---|
@@ -718,23 +738,30 @@ reached F1 0.79; applied without retuning to a held-back clip it collapsed:
 | F1 | 0.79 | 0.35 |
 | Corrections vs manual | 6 vs 14 | 15 vs 4 |
 
-Fifteen corrections against a manual baseline of four is four times the work of labelling by
-hand, and confidence lost all ranking power: real touches scored 0.74 to 0.79, false positives
-reached 0.91.
+On the held-back clip the assistance cost four times the work of labelling by hand, and
+confidence lost its ranking power: real touches scored 0.74 to 0.79, false positives 0.91.
 
-Three diagnostics established that this was not a badly chosen constant but a method that cannot
-be retuned (Appendix D). The decisive one: on the club clip the loudest tonal component at each
-touch sat at a different frequency every time. A scoring machine has one pitch, so that scatter
-says the buzzer is not reliably in the recording and the detector had been finding blade contact
-that happens to correlate with touches.
+Three diagnostics established a method that cannot be retuned rather than a poorly chosen
+constant (Appendix D). The decisive one: on the club clip the loudest tonal component at each touch sat at
+a different frequency every time. A scoring machine has one pitch, so that scatter says the
+buzzer is not reliably in the recording and the detector was finding blade contact that merely
+correlates with touches.
 
 Geometry alone, using features the pipeline already produced, scored F1 0.86 on both clips with
-identical settings. The audio was not merely unhelpful but harmful, generating candidates
-geometry had to filter. The geometric signature follows from how fencing works rather than from a
-fit: a touch requires closing to scoring distance, and the referee's halt sends both fencers back
-to their guard lines, so they separate. It is also robust to panning, since a pan shifts both
-fencers together and distance is a difference between them. Across the three 720p clips the
-detector reaches F1 0.85.
+identical settings; the audio was not merely unhelpful but harmful, generating candidates
+geometry then had to filter. The signature follows from how fencing works rather than from a fit: a
+touch requires closing to scoring distance, and the halt sends both fencers back to their guard
+lines. It is robust to panning, since a pan shifts both fencers together.
+
+**Across all six labelled clips the detector reaches F1 0.73**, and 0.86 across the three it was
+tuned on. The gap is the result: per-clip F1 runs 0.89, 0.86, 0.80, 0.77, 0.59 and 0.57, the two
+clips added last at 0.77 and 0.57. Quoting the higher figure alone would select the best half of
+the evidence, the error this chapter diagnoses elsewhere.
+
+In the terms the design argues in, those 48 awarded touches need **25 corrections, 52 per cent of
+the work of logging them by hand**, ranging from 25 per cent on clip 2 to 117 on clip 4. Clip 4
+is the point of the range rather than an outlier to discount: there the assistance costs more
+than the job itself. It is a saving that varies by bout, not a rate to promise.
 
 ![**Figure 5.1: Inter-fencer distance across clip 3, with the fourteen hand-labelled touches
 marked.** The touches sit at local minima followed by sustained separation, which is the pattern
@@ -742,14 +769,12 @@ the detector looks for.](figures/fig_touch_signature.png)
 
 Figure 5.1 evidences that claim and shows its limits. Every labelled touch coincides with a
 minimum and not every minimum is a touch, which is why the detector is tuned for recall. The last
-touch, at 179 s of a 180 s recording, fails because its separation window runs past the end of
-the footage. An edge effect, not a detection
-failure.
+touch, at 179 s of 180, fails only because its separation window runs past the end.
 
-Two points follow. **A single-clip evaluation establishes nothing**: the audio F1 of 0.79 was an
-artefact of the clip it was tuned on. And **the more sophisticated approach was the worse one**:
-audio followed the literature, needed band calibration and an external dependency, and lost to a
-local minimum in a signal already computed.
+Two points follow. **A single-clip evaluation establishes nothing**: the audio F1 of 0.79 was a
+tuning artefact. And **the more sophisticated approach was the worse one**: audio
+followed the literature, needed band calibration and an external dependency, and lost to a local
+minimum in a signal already computed.
 
 ### A learned proposer, and what it could not beat
 
@@ -759,52 +784,41 @@ works because the sport has this structure or because two numbers suit these rec
 question the rule can answer, so a trained classifier was put against it. Every local minimum
 becomes a candidate described by fifteen features; two models are trained leave one recording
 out; the rule is scored on the same candidates by the same function, or the comparison would be
-between protocols; and the operating point is chosen inside each training set.
+between protocols; and the operating point is chosen inside each training fold. Two protocol
+defects surfaced while building it, both flattering and neither visible in the output
+(Appendix D).
 
 ![**Figure 5.2: A learned touch proposer against the hand rule.** Left, F1 under leave one clip
-out, with the four per-clip folds drawn over the pooled bar. Right, the change in the boosted
+out, with the six per-clip folds drawn over the pooled bar. Right, the change in the boosted
 model's F1 when each feature group is removed.](figures/fig_touch_model.png)
 
 **The rule still leads, by less than the folds vary**: F1 0.73 against 0.70 for gradient boosted
-trees and 0.46 for logistic regression, over 48 touches. The folds span 0.57 to 0.89 for the rule
-alone, so a gap of 0.03 is not a result, and the two fail on different clips: the rule scores
-0.57 on 7b where the model reaches 0.77, and 0.86 on clip 3 where the model reaches 0.70.
+trees and 0.46 for logistic regression, over 48 touches. The rule's own folds span 0.57 to 0.89,
+so a gap of 0.03 is not a result, and the two fail on different clips: the rule scores 0.57 on 7b
+against the model's 0.77, and 0.86 on clip 3 against its 0.70.
 
 **This was first measured on four clips, and adding two changed its conclusions.** The earlier run
-gave the rule 0.78 against 0.68, with an ablation putting the model's performance on the
-separation features at 0.19 F1 and nothing else above 0.05, which supported a tidy claim: a model
-free to choose differently had independently chosen the same quantity the rule thresholds. **On
-six clips it is gone.** Separation now costs 0.03 when removed and the group that matters is
-context, at 0.20: where in the bout a candidate falls, where on the strip, how long since the
-last. That is a model learning the rhythm of these recordings rather than what a touch looks
-like, and none of it shows in the headline F1. **The earlier ablation did not reproduce**, so no
-claim about which feature carries the model survives at this sample size.
+gave the rule 0.78 against 0.68, with an ablation putting the model's performance on separation
+at 0.19 F1 and nothing else above 0.05, which supported a tidy claim: a model free to choose
+differently had independently chosen the quantity the rule thresholds. **On six clips it is
+gone.** Separation now costs 0.03 when removed and the group that matters is context, at 0.20:
+where in the bout a candidate falls, where on the strip, how long since the last. That is a model
+learning the rhythm of these recordings rather than what a touch looks like, and none of it shows
+in the headline F1, so no claim about which feature carries the model survives at this sample
+size.
 
 **The learning curve is now readable, and it rises**: 0.58, 0.65 and 0.71 as the training set
-grows from two recordings to four, monotone where four clips gave two points that contradicted
-each other. The spread is still 0.22 and three points justify no extrapolation, but the direction
-is consistent where it was not. Candidate generation remains a domain rule: the model ranks
-minima rather than finding touches in video.
-
-Two protocol defects were found while building it, both flattering and neither visible in the
-output (Appendix D).
+grows from two recordings to four, monotone where four clips gave two contradictory points. Three
+points justify no extrapolation, but the direction is at least consistent. Candidate generation
+remains a domain rule: the model ranks minima rather than finding touches in video.
 
 ### The candidate cut: one cause behind both tracking failure modes
 
-Wrong-target capture by background people and close-range identity flicker were treated for most
-of this project as inherent limits of single-camera tracking. Asking why a correctly aimed
-correction repaired neither showed one cause behind both.
-
-`FencerTracker.select` narrowed each frame to the two most **confident** detections before any
-anchor, gate or correction was consulted. On competition footage that is measurably false,
-because the referee stands on the strip and survives the piste filter by construction. In clip
-2's six-second bystander capture the fencer a user would click is detected in every frame yet
-discarded by the confidence cut in 9 of 16, the three competing confidences being 0.899, 0.896
-and 0.886: the tracker was arbitrating between three people on margins that are noise, which also
-explains why a momentary re-anchor cannot repair a cause sustained over six seconds.
-
-Selecting instead the two candidates nearest each slot's predicted position, which costs nothing
-since those predictions already exist:
+Wrong-target capture and close-range identity flicker were treated for most of this project as
+limits inherent to single-camera tracking. Asking why a correctly aimed correction repaired
+neither found one cause behind both: the confidence cut described in Chapter 4, which discarded
+the right fencer on margins of three thousandths. Replacing it with selection by predicted
+position gives:
 
 | Clip | Coverage before / after | Mix-ups before / after | Touch F1 before / after |
 |---|---|---|---|
@@ -813,9 +827,9 @@ since those predictions already exist:
 | 3 | 97.4% / 97.4% | 0 / 0 | 0.86 / 0.86 |
 | 4 | 73.7% / **79.8%** | 114 / **54** | 0.60 / 0.60 |
 
-Mix-ups are single-frame position jumps exceeding 1.5 m. An earlier version reported clip 4's F1
-rising from 0.67 to 0.77, read at that clip's own best threshold rather than the operating point
-tuned on clip 3, the error the audio detector was diagnosed with (Appendix D).
+Mix-ups are single-frame position jumps exceeding 1.5 m. An earlier version of this table
+credited the change with a rise in clip 4's F1, read at that clip's own best threshold, the error
+the audio detector was diagnosed with (Appendix D).
 
 **What this costs the argument.** Wrong-target capture was presented as evidence for the assisted
 design: vision fails this way, therefore the user must repair it. On three of four clips it now
@@ -827,12 +841,13 @@ and the honest reading is that the project spent a long time designing around a 
 Clip 4's Fencer 2 reported +7.08 m of net displacement, which is impossible: play resets to the
 guard lines after every touch, so slot identity had not held. Two fencers do not cross on a
 piste, so a sign change in the difference between tracked positions is the tracker exchanging
-which fencer each slot follows, and counting those separates the set completely. Clips 1 to 3
-record zero swaps; clip 4 swaps 14 times and holds Fencer 1 on the left in 26.9 per cent of
-frames. Its masked variant reports net displacements passing the implausibility test comfortably while
-exchanging fencers 64 times: **a believable-looking number is not evidence that
-identity held.** The system now warns on any swap, needing no threshold, because fencers do not
-cross.
+which fencer each slot follows. Counting those split the first four clips cleanly, clips 1 to 3
+recording zero swaps against clip 4's 14. Over all nine it is less tidy and more useful: four
+clips record none, 7a one and 7b three, and clips 5, 8 and 4 record 19, 15 and 14, so identity
+degrades by degrees rather than holding or failing. Clip 4's masked variant meanwhile
+passes the implausibility test while exchanging fencers 64 times: **a believable-looking number
+is not evidence that identity held.** The system now warns on any swap,
+needing no threshold, because fencers do not cross.
 
 ### Attributing a touch to a fencer
 
@@ -849,128 +864,121 @@ Evaluated leave-one-out against the scorer column in the ground truth:
 | **all** | **33/49 (67%)** | **48/49 (98%)** |
 
 Nearly every three-way error is a red-lamp error, red being contaminated by everything
-permanently red in frame. The claim is therefore narrower than "the system says who scored": it
-identifies whether one named fencer was involved in 48 of 49 touches. The colour-to-side mapping
-is confirmed once per bout by the user.
+permanently red in frame. The claim is narrower than "the system says who scored": it identifies
+whether one named fencer was involved in 48 of 49 touches. The user confirms the colour-to-side
+mapping once per bout.
 
 **That figure was 27 of 27 on the first four clips.** It was not wrong; calling it "always" would
-have been. The same two clips also removed the significance from the pose comparison and reversed
-which features the learned proposer depends on: three headline claims weakened by one afternoon
-of extra labelling.
+have been. The same two clips weakened three headline claims in one afternoon of labelling, this
+one, the pose comparison's significance and the proposer's ablation.
 
 ### Lunge detection works per bout and does not transfer
 
 An operating point fitted on clip 3 reaches F1 0.22 on clip 2 while firing on a quarter of all
 windows: clip 3 calibrates to a stance ratio of 1.902 and clip 2 to 2.706, a 42 per cent
-difference in what counts as a lunge-like posture. Calibrating instead on the first five
-confirmed lunges of a bout and testing on those that follow, clip 3 reaches F1 0.75 on 25
-held-out lunges, and a second labelling session on the same clip by the same labeller
-independently reached 0.80.
-
-Precision is a lower bound, since firing on a real but unlabelled lunge counts against it. The
-claim is not that lunge detection works, but that per-bout calibration does.
+difference in what counts as a lunge-like posture. Calibrating instead on a bout's first five
+confirmed lunges and testing on those that follow, clip 3 reaches F1 0.75 on 25 held-out lunges,
+and a second labelling session by the same labeller reached 0.80. Precision is a lower bound,
+since firing on a real but unlabelled lunge counts against it. The claim is not that lunge
+detection works, but that per-bout calibration does.
 
 ### What closing share can resolve, which is nothing
 
 Closing share, the proportion of moving frames spent reducing distance, survived scrutiny on the
 reasoning that counting direction is robust where summing magnitudes is not, which says nothing
-about resolution. All eight fencer-clip values fall between 48.3 and 52.8 per cent, and
-resampling contiguous blocks of a third of a second, to respect the autocorrelation between
-frames, **not one is distinguishable from a coin flip.** A null is only readable alongside what
-the method could detect: on three minutes it finds a 60/40 tendency every time and 52/48 in 30
-per cent of trials, so the measurements are consistent both with balance and with tendencies too
-small to resolve.
+about resolution. Across all nine clips the eighteen fencer-clip values fall between 45.9 and
+52.8 per cent, and resampling contiguous blocks of a third of a second, to respect the
+autocorrelation between frames, **one of the eighteen separates from a coin flip.** The same
+procedure fires on 11 per cent of series with no tendency at all, so one hit in eighteen is
+chance rather than a finding. A null is only readable alongside what the method could detect: on
+three minutes it finds a 60/40 tendency every time and 52/48 in 30 per cent of trials, so the
+measurements are consistent both with balance and with tendencies too small to resolve.
 
 This is the fifth measurement here to survive its own reasoning and fail a test of what it can
-resolve, which is specific enough to state as a rule: **a metric's derivation establishes what it
-means, never what it can detect.**
+resolve, specific enough to state as a rule: **a metric's derivation establishes what it means,
+never what it can detect.**
 
 ### Characterising a fencer without accumulating error
 
 Cumulative push and pull totals were withdrawn because they accumulated (Appendix D): clip 3's
 Fencer 2 reached +23.01 m against an endpoint difference of -0.94 m, because a fencer re-acquired
-after a dropout contributes a one-sided step that never cancels. What failed was the operation,
-not the series.
+after a dropout contributes a one-sided step that never cancels. The operation failed, not the
+series.
 
 ![**Figure 5.3: Path length and net displacement across median smoothing windows, clip 3.** Both
 are computed from the same smoothed series at each window.](figures/fig_smoothing_sweep.png)
 
 Figure 5.3 is why they were withdrawn rather than qualified. Path length falls monotonically as
 the smoothing window widens with no asymptote, so any figure quoted describes the smoother rather
-than the fencer, while net displacement from the same series moves once and holds.
+than the fencer, while net displacement from the same series moves once and settles.
 
 A six-axis per-fencer profile was therefore built in which no axis accumulates: three a mean or
-quantile of position, three counts over confirmed touches. On clip 3 the fencers separate
-on a reading no earlier number expressed, Fencer 2 occupying nearly twice the ground while Fencer
-1 scores at the longer distance. Whether that describes the bout is an outstanding verification,
-not a finding.
+quantile of position, three counts over confirmed touches. On clip 3 the fencers separate on a
+reading no earlier number expressed, Fencer 2 occupying nearly twice the ground while Fencer 1
+scores at longer distance. Whether that describes the bout is unverified.
 
-The profile introduces the system's first outright refusal. All six axes assume slot identity
-held, and on clip 4 it did not, so a profile there would describe the tracker while looking
-exactly as convincing. A caveat beside a number is sound, beside a shape it is not: a radar with
-a footnote is still read as a radar.
+The profile introduces the system's first outright refusal, because all six axes assume slot
+identity held and where it did not a profile would describe the tracker while looking just as
+convincing. A caveat beside a number is sound, beside a shape it is not: a radar with a footnote
+is still read as a radar.
 
 ### Measuring the effort the design claims to save
 
 The central claim is that confirming proposals costs less effort than labelling from scratch, and
 nothing measured it. A review queue and a manual mode are the two conditions, the manual mode
 withholding proposals rather than dimming them, since a visible suggestion has been read by the
-time the user ignores it. Both time themselves and the rate is per decision.
+time it is ignored. Both time themselves per decision.
 
 **Measured on two bouts neither condition had seen before.** Manual logging took 181 s for 6
-touches, 30.2 s per decision; assisted review 26 s for 7, at 3.7 s. The assisted figure includes
-about four seconds the reviewer spent realising the run ends explicitly, and is kept.
+touches, 30.2 s per decision; assisted review 26 s for 7, at 3.7 s. The assisted figure keeps the
+four seconds the reviewer spent realising the run had ended.
 
 **The ratio is a property of the clip, so the useful figure is the crossover.** Manual review is
-bounded below by the length of the recording, because finding touches means watching the bout,
-while assisted pays only per decision. The two meet at about **16 touches per minute**, a touch
-every 3.7 seconds and not a rate epee produces: pool bouts and direct eliminations run near 1.7
-and the densest clip here reaches 4.7. The advantage therefore holds across the range the sport
-generates and widens with duration.
+bounded below by the recording's length, because finding touches means watching the bout, while
+assisted pays only per decision. The two meet at about **16 touches per minute**, a touch every
+3.7 seconds and not a rate epee produces: pool bouts and direct eliminations run near 1.7 and the
+densest clip here reaches 4.7. The advantage holds across the range the sport generates and
+widens with duration.
 
 That assisted would win was close to guaranteed by that structure, so the direction is not the
-discovery. The size of the assisted cost was not: seek latency or the cost of rejecting bad
-proposals could have eaten it, and an earlier interface did exactly that by making the user scan
-a table for the next undecided row.
-
-The limitations are severe. **One run per condition, one participant, who built the system, and
-the two conditions on different bouts**, so bout difficulty is confounded with mode. A second
-person would be worth more than a hundred further runs by this one.
+discovery. The size of the assisted cost was: seek latency or rejecting bad proposals could have
+eaten it, and an earlier interface did exactly that. The limitations are severe. **One run per
+condition, one participant, who built the system, and the two conditions on different bouts**, so
+bout difficulty is confounded with mode. A second person would be worth more than a hundred
+further runs by this one.
 
 ### Evaluating the models as components
 
-Taking each model separately exposes what the pipeline-level figures hide.
+Taking each model separately exposes what the pipeline-level figures hide. **Detection is
+measured by commitment, not correctness**: coverage records whether the tracker committed, so a
+confidently wrong detection raises it.
 
-**Detection is measured by commitment, not correctness.** Coverage records whether the tracker
-committed, so a confidently wrong detection raises it.
-
-**Pose was reported as a configuration, not a capability.** The third of frames quoted is governed
-mainly by the frame stride. Pose and the bounding box estimate the same quantity from different
-landmarks, so wherever pose succeeded both exist and can be compared, which is why both are
-recorded on every frame. Judged on the decision distance exists to serve,
-separating the two-second windows holding a labelled touch from the rest, the bounding box scores
-0.821 against pose's 0.807 over 535 windows, an interval of -0.040 to +0.011 that spans zero.
-**An earlier run on four clips put that interval at -0.091 to -0.006, which excludes zero**, and
-that firmer conclusion did not survive two more recordings: pose leads on three clips of six.
-Neither estimate is checked against a measured distance, so what survives is that the refinement
-does not reach the decision it was meant to serve.
+**Pose was reported as a configuration, not a capability.** The share of frames quoted, between a
+quarter and a third, is governed mainly by the frame stride. Pose and the bounding box estimate
+the same quantity from different landmarks, so wherever pose succeeded both exist and can be
+compared, which is why both are recorded every frame. Judged on the decision distance exists
+to serve, separating the two-second windows holding a labelled touch from the rest, the bounding
+box scores 0.821 against pose's 0.807 over 535 windows, an interval of -0.040 to +0.011 spanning
+zero. **An earlier run on four clips put that interval at -0.091 to -0.006, which excludes
+zero**, and that firmer conclusion did not survive two more recordings: pose leads on three clips
+of six. Neither estimate is checked against a measured distance, so what survives is that the
+refinement does not reach the decision.
 
 **The language model was not evaluated at all**, the weakest point in the original strategy. Its
 documented failure is fabrication: fluent prose containing figures never in the input, the
 fluency being what stops a reader noticing. `audit_summary.py` checks every number against the
-payload: across two summaries, **58 figures, none unsupported**.
+payload, finding **58 figures, none unsupported**, across two summaries.
 
 That is only readable alongside what the audit could catch, so it was run against fabricated
-figures. **The first version detected none**, because treating a difference or sum of any two
-payload values as derivation let sixty values cover the small numbers densely.
-Restricting derivation to direct matches raised detection to 90 to 98 per cent for any figure
-with a decimal or above 20. The honest result is narrower than "the summaries are faithful":
-**no fabricated decimal figure appears in either**, on an instrument measured to catch such
-figures nine times in ten.
+figures. **The first version detected none**, because treating any two payload values' difference
+or sum as derivation let sixty values cover the small numbers densely. Restricting derivation to
+direct matches raised detection to 90 to 98 per cent for any figure with a decimal or above 20.
+The honest result is narrower than "the summaries are faithful": **no fabricated decimal figure
+appears in either**, on an instrument measured to catch them nine times in ten.
 
 ---
 
-## 6. Conclusion
+## 6. Conclusion (900/1000 words)
 
 ### Against the original aims
 
@@ -983,12 +991,12 @@ touch proposal, confirmed touches scope every aggregate, and those aggregates ar
 language model interprets. Each stage consumes the previous one, and a defect in an early stage
 propagates, which Chapter 5 demonstrates rather than assumes.
 
-The measurable outcomes are strongest where the evidence is strongest. Touch detection reaches
-F1 0.85 across the three 720p clips against hand-labelled ground truth, and confirming its
-proposals costs six corrections where labelling from scratch would cost twenty-one. Tracking
-holds both fencers in 93 to 98 per cent of frames on three of four clips. Attribution, which
-the detector could never supply, identifies whether one named fencer was involved in 48 of 49
-labelled touches. These are the claims the project can defend.
+The measurable outcomes are weaker than the first four clips suggested. Touch detection reaches
+F1 0.73 across six labelled clips, against 0.86 on the three it was tuned on, and both clips added
+last fall below that. Tracking holds both fencers in 92.1 to 98.0 per cent of frames on seven of
+the nine clips the pipeline was run over. Attribution, which the detector could never supply,
+identifies whether one named fencer was involved in 48 of 49 labelled touches. These are the
+claims the project can defend.
 
 The central claim is now measured, late and thinly. Assisted review cost 3.7 s per decision
 against 30.2 s for manual logging, and the two costs cross at a touch density the sport does not
@@ -1108,9 +1116,9 @@ AI FencingMeter (no date) *AI FencingMeter*. Available at: https://aifencingmete
 
 ## Appendices
 
-Appendices are excluded from the word count and carry the evidence supporting Chapter 5.
-`final/final_report.md` holds the full derivations; the appendices below are the subset a
-reader needs in order to check the claims made here.
+These carry the evidence behind Chapter 5, kept short. `final/final_report.md` in the repository
+holds the full derivations; what follows is the subset a reader needs in order to check the
+claims made above.
 
 ### A. Source code overview
 
@@ -1135,9 +1143,9 @@ cumulative totals, kept because the analysis of why they fail is reproduced from
 
 ### C. Footage attribution
 
-All four clips are publicly available video, used solely for non-commercial academic evaluation
-and not redistributed with this report. Each was trimmed to approximately three minutes; no clip
-is reproduced in full.
+All footage is publicly available video, used solely for non-commercial academic evaluation and
+not redistributed with this report. Each clip was trimmed to three minutes; no source is
+reproduced in full. Clips 1 to 4 were accessed on 17 September 2026 and the rest on 18 September.
 
 | Clip | Title | Uploader | URL |
 |---|---|---|---|
@@ -1145,8 +1153,17 @@ is reproduced in full.
 | 2 | *Berne Men's Epee World Cup 2026, Mencarelli vs Kanok* | Fencing Database | https://www.youtube.com/watch?v=Heim7zIE6ME |
 | 3 | *15 Touch Epee Bout* | Paul Sise | https://www.youtube.com/watch?v=m3_DFZtGAyc |
 | 4 | *Junior Epee Team, Basel 2024, Final, Hungary vs Kazakhstan* | Zoltan Somody | https://www.youtube.com/watch?v=KDJ65dPtlwQ |
+| 5 | *2013 Magyar Bajnoksag, Ferfi Parbajtor Donto* | (Hungarian national final) | https://www.youtube.com/watch?v=f8HW1wtZWgM |
+| 6 | *Epee Tymoshenko UKR vs Reizlin UKR, Averbach, Kharkov 2021* | | https://www.youtube.com/watch?v=Om50o0ZnJso |
+| 7a, 7b | *War of the Roses Final, Crotchett vs Fabrice Jeannet* | | https://www.youtube.com/watch?v=KrW4hGbQmiA |
+| 8 | *Samuel G-Pelletier (CAN) vs Strokatov (UKR), Vancouver World Cup 2022 pool bout* | GP Fencing | https://www.youtube.com/watch?v=EfqI5bblF4c |
 
-All four accessed 17 September 2026.
+**Clips 7a and 7b are two windows of one recording**, 0:05 to 3:05 and 3:05 to 6:05. They are
+never held out separately in any cross-validation here: two windows of one bout share a camera,
+a venue and both fencers, so treating them as independent would be testing a model on the
+recording it was trained on. Clip 8 is processed and reported for coverage and tracking but is
+not hand-labelled, its referee obscuring the strip often enough that labelling it would have
+measured the framing rather than the detector.
 
 Fencer 1 and Fencer 2 throughout this report are tracking slots. Nothing in the project
 identifies anyone by name.

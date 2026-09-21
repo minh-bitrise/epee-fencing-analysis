@@ -167,6 +167,73 @@ def check_evaluation_set(c):
              f"{len(clipset.groups(labelled))} independent recordings")
 
 
+def check_framing(c, report):
+    """
+    The coverage and fencer-size figures the chapter quotes, against framing.csv.
+
+    These are the numbers that went stale worst. Chapter 4 carried a coverage range
+    and a per-clip exception list measured on four clips, and Figure 4.4 carried four
+    more as constants typed into the plotting script, long after the evaluation set
+    had grown to nine. Nothing disagreed with anything, because nothing compared them.
+    """
+    path = os.path.join(ROOT, "code/prototype/results_current/framing.csv")
+    if not os.path.exists(path):
+        c.skip("framing", "results_current/framing.csv absent, run measure_framing.py")
+        return
+    import csv as _csv
+    with open(path) as f:
+        rows = list(_csv.DictReader(f))
+    cov = {r["clip"]: float(r["coverage_pct"]) for r in rows}
+
+    # "between 92.1 and 98.0 per cent on seven of the nine clips"
+    m = re.search(r"runs between ([\d.]+) and ([\d.]+) per\s+cent on (\w+) of the (\w+) clips",
+                  report)
+    if not m:
+        c.skip("framing", "could not find the coverage sentence")
+        return
+    lo, hi = float(m.group(1)), float(m.group(2))
+    inside = sorted(v for v in cov.values() if lo - 0.05 <= v <= hi + 0.05)
+    words = {"four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9}
+    claimed_in = words.get(m.group(3))
+    claimed_all = words.get(m.group(4))
+    if claimed_all != len(cov):
+        c.fail("framing", f"report says {m.group(4)} clips, framing.csv has {len(cov)}")
+    elif claimed_in != len(inside):
+        c.fail("framing", f"report says {m.group(3)} clips inside {lo}-{hi}, "
+                          f"measured {len(inside)}: {inside}")
+    elif abs(min(inside) - lo) > 0.05 or abs(max(inside) - hi) > 0.05:
+        c.fail("framing", f"report range {lo}-{hi}, measured {min(inside)}-{max(inside)}")
+    else:
+        c.ok(f"coverage {lo}-{hi} on {len(inside)} of {len(cov)} clips")
+
+    # The named exceptions. Scoped to the sentence that names them rather than
+    # searched for across the chapter: "clip 4 at 0.67" also appears, about F1, and a
+    # check that compares an F1 against a coverage figure fails for the wrong reason.
+    # Bounded by a fixed window rather than by "up to the next full stop": the
+    # figures themselves contain full stops, so a sentence match stopped at "88.2".
+    at = report.find("The two exceptions are")
+    if at < 0:
+        at = report.find("The exceptions are")
+    if at < 0:
+        c.skip("framing", "could not find the exceptions sentence")
+        return
+    named = re.findall(r"clip (\d+[ab]?) at (\d+\.\d+)", report[at:at + 200])
+    outside = sorted(k for k, v in cov.items() if not (lo - 0.05 <= v <= hi + 0.05))
+    if len(named) != len(outside):
+        c.fail("framing", f"report names {len(named)} exceptions, "
+                          f"{len(outside)} clips fall outside {lo}-{hi}: {outside}")
+        return
+    for clip, claimed in named:
+        key = f"fencing_clip{clip}"
+        if key not in cov:
+            c.fail("framing", f"report names clip {clip}, framing.csv does not have it")
+        elif abs(cov[key] - float(claimed)) > 0.05:
+            c.fail("framing", f"report says clip {clip} coverage {claimed}, "
+                              f"measured {cov[key]}")
+        else:
+            c.ok(f"clip {clip} coverage {claimed}")
+
+
 def check_readme_commands(c):
     """Every script the README tells the reader to run must exist."""
     readme = read("README.md")
@@ -325,6 +392,49 @@ def check_derived_is_current(c):
         c.ok("derived snapshot is level with the working document")
 
 
+def check_stamped_headings(c, path):
+    """Each chapter title must carry its own word count, and it must be right.
+
+    The brief asks for "1. Introduction (783/1000 words)". That puts a number in
+    the most visible place in the document and makes it go stale on every edit,
+    so it is written by `wordcount.py --stamp` and verified here rather than
+    typed.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "final"))
+    try:
+        import wordcount
+    except Exception as e:                                  # noqa: BLE001
+        c.skip("chapter word counts", f"wordcount.py did not import: {e}")
+        return
+    text = read(path)
+    chapters = wordcount.split_chapters(text)
+    seen = 0
+    for line in text.split("\n"):
+        m = re.match(r"^## (.+?)\s*$", line)
+        if not m:
+            continue
+        name = wordcount.bare(m.group(1))
+        if name not in wordcount.CAPS:
+            continue
+        seen += 1
+        stamped = re.search(r"\(([\d,]+)/([\d,]+) words\)", m.group(1))
+        if not stamped:
+            c.fail("chapter word counts",
+                   f"'{name}' has no word count in its title; the brief requires one")
+            continue
+        actual = wordcount.counts(chapters[name])[1]
+        if int(stamped.group(1).replace(",", "")) != actual:
+            c.fail("chapter word counts",
+                   f"'{name}' says {stamped.group(1)} and contains {actual}. "
+                   f"Run: python3 final/wordcount.py --stamp {path}")
+        if int(stamped.group(2).replace(",", "")) != wordcount.CAPS[name]:
+            c.fail("chapter word counts", f"'{name}' states the wrong cap")
+    if seen == len(wordcount.CAPS):
+        c.ok(f"{seen} chapter titles carry a correct word count")
+    else:
+        c.fail("chapter word counts", f"found {seen} chapters, expected {len(wordcount.CAPS)}")
+
+
 def check_word_count(c, path):
     out = subprocess.run([sys.executable, os.path.join(ROOT, "final/wordcount.py"),
                           os.path.join(ROOT, path)],
@@ -360,6 +470,8 @@ def main(argv=None):
         check_csv_schema(c, report)
         check_model_results(c, report)
         check_word_count(c, path)
+        check_stamped_headings(c, path)
+        check_framing(c, report)
     print("\nREADME")
     check_readme_commands(c)
     print("\ndocuments")

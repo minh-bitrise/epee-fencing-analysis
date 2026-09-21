@@ -20,6 +20,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy import stats
 
 FIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "final", "figures")
 BLUE, ORANGE, GREY, RED = "#2196F3", "#FF9800", "#607D8B", "#E53935"
@@ -96,31 +97,96 @@ def fig_smoothing_sweep():
     print("wrote", os.path.basename(out))
 
 
+def _place_labels(fig, ax, xs, ys, names, fontsize=8):
+    """
+    Annotate each point with the first candidate offset that collides with nothing.
+
+    Five of the nine clips sit inside a 25 px band, so a single offset stacks their
+    labels illegibly. Cycling through fixed offsets by rank in x was the first fix and
+    it was not enough: an offset chosen from x alone cannot know that a label pushed
+    right lands on top of a marker that happens to share its height, which is how the
+    label for clip 2 ended up underneath clip 7b. Measuring the drawn extents is the
+    only version that holds when the numbers move.
+    """
+    candidates = [(0, -16), (0, 12), (34, 0), (-34, 0),
+                  (30, -14), (-30, -14), (30, 12), (-30, 12), (0, -28), (0, 24)]
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    # Markers are obstacles too, not just other labels.
+    taken = []
+    for xi, yi in zip(xs, ys):
+        cx, cy = ax.transData.transform((xi, yi))
+        taken.append((cx - 9, cy - 9, cx + 9, cy + 9))
+
+    for xi, yi, nm in zip(xs, ys, names):
+        placed = None
+        for off in candidates:
+            ann = ax.annotate(nm, (xi, yi), textcoords="offset points", xytext=off,
+                              ha="center", va="center", fontsize=fontsize)
+            bb = ann.get_window_extent(renderer=renderer)
+            box = (bb.x0 - 2, bb.y0 - 2, bb.x1 + 2, bb.y1 + 2)
+            if not any(box[0] < t[2] and t[0] < box[2] and
+                       box[1] < t[3] and t[1] < box[3] for t in taken):
+                placed = box
+                break
+            ann.remove()
+        if placed is None:
+            # Nothing fits; keep the last candidate rather than dropping the label.
+            ax.annotate(nm, (xi, yi), textcoords="offset points", xytext=candidates[-1],
+                        ha="center", va="center", fontsize=fontsize)
+            continue
+        taken.append(placed)
+
+
 def fig_framing_vs_coverage():
     """
-    Fencer height in the network's input against coverage, for the four clips.
+    The figure that retires the framing explanation.
 
-    Label offsets are per point rather than uniform. Clips 2 and 3 sit at 135 and 133 px,
-    so a single offset stacked their labels on top of each other and neither was legible;
-    they are pushed to opposite sides instead.
+    Its first version plotted four clips and showed a clean trend: the smallest
+    fencer had the worst coverage, the rest lined up behind it. With nine clips the
+    trend is gone, and the two panels are how the figure says so rather than hiding
+    it. The left panel is the original claim tested on the full set. The right panel
+    is the same x axis against the part of the loss that is actually a detector
+    failure, which is the version of the claim that survives at all.
+
+    Numbers come from measure_framing.py rather than from constants typed here. The
+    constants are what let the first version go stale unnoticed while the chapter
+    around it moved on.
     """
-    # (label, fencer px, coverage, label offset in points)
-    clips = [("Clip 1\n720p", 162, 93.0, (0, -38)),
-             ("Clip 2\n720p", 135, 98.0, (34, -6)),
-             ("Clip 3\n720p", 133, 97.4, (-34, -6)),
-             ("Clip 4\n360p", 103, 73.7, (0, -38))]
-    fig, ax = plt.subplots(figsize=(7, 4.5))
-    for name, px, cov, off in clips:
-        colour = RED if px < 120 else BLUE
-        ax.scatter(px, cov, s=150, color=colour, zorder=3, edgecolor="white", linewidth=1.2)
-        ax.annotate(name, (px, cov), textcoords="offset points", xytext=off,
-                    ha="center", va="center", fontsize=9)
-    ax.set_xlabel("Fencer height in the network's input (pixels)")
-    ax.set_ylabel("Tracking coverage (per cent of frames)")
-    ax.set_title("Coverage follows fencer size in the network's input,\nnot source resolution", fontsize=11)
-    ax.set_xlim(88, 182); ax.set_ylim(65, 104)
-    ax.grid(True, alpha=0.3)
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "results_current", "framing.csv")
+    rows = [r for r in csv.DictReader(open(path)) if r["fencer_px"]]
+    px = np.array([float(r["fencer_px"]) for r in rows])
+    cov = np.array([float(r["coverage_pct"]) for r in rows])
+    short = np.array([float(r["short_gap_pct"]) for r in rows])
+    names = [(r["clip"].replace("fencing_clip", "Clip ").strip() or "Clip") for r in rows]
+    names = ["Clip 1" if n == "Clip" else n for n in names]
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.4))
+    for ax, y, label, title in (
+            (axes[0], cov, "Tracking coverage (per cent of frames)",
+             "Coverage does not follow fencer size\n(r = %.2f, p = %.2f, n = %d)"),
+            (axes[1], short, "Frames lost to gaps under 1 s (per cent)",
+             "Short-gap loss, the detector's own failures\n(r = %.2f, p = %.2f, n = %d)")):
+        r, p = stats.pearsonr(px, y)
+        n = len(px)
+        for xi, yi, nm in zip(px, y, names):
+            colour = RED if nm == "Clip 4" else BLUE
+            ax.scatter(xi, yi, s=110, color=colour, zorder=3,
+                       edgecolor="white", linewidth=1.2)
+        ax.set_xlabel("Fencer height in the network's input (pixels)")
+        ax.set_ylabel(label)
+        ax.set_title(title % (r, p, n), fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.margins(x=0.12, y=0.18)
+
+    # Labels go on after tight_layout, not before. Placement is measured in display
+    # coordinates, and tight_layout resizes the axes, so labels placed first are
+    # checked for collisions against a geometry that no longer exists by the time the
+    # figure is saved. Two of them drifted back on top of each other that way.
     fig.tight_layout()
+    _place_labels(fig, axes[0], px, cov, names)
+    _place_labels(fig, axes[1], px, short, names)
     out = os.path.join(FIG, "fig_framing_vs_coverage.png")
     fig.savefig(out, dpi=DPI); plt.close(fig)
     print("wrote", os.path.basename(out))
@@ -169,12 +235,18 @@ def fig_framing_frames():
     exact thing it existed to show. The framing difference is the subject, so the
     overlay is noise here.
     """
-    picks = [("fencing_clip3.mp4", 40.0,
-              "Clip 3: tight framing. Fencer height 133 px in the network's input, 97 per cent coverage"),
-             ("fencing_clip4.mp4", 60.0,
-              "Clip 4: wide framing. Fencer height 103 px, 74 per cent coverage")]
+    m = {r["clip"]: r for r in csv.DictReader(open(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     "results_current", "framing.csv")))}
+    picks = [("fencing_clip3", 40.0, "Clip 3: tight framing"),
+             ("fencing_clip4", 60.0, "Clip 4: wide framing")]
     fig, axes = plt.subplots(2, 1, figsize=(9, 7.4))
-    for ax, (path, at, title) in zip(axes, picks):
+    for ax, (clip, at, label) in zip(axes, picks):
+        path = f"{clip}.mp4"
+        # Subtitles are read from the measurements rather than typed, because the
+        # typed pair outlived the run they came from and understated clip 4 by six points.
+        title = (f"{label}. Fencer height {float(m[clip]['fencer_px']):.0f} px in the "
+                 f"network's input, {m[clip]['coverage_pct']} per cent coverage")
         cap = cv2.VideoCapture(path)
         cap.set(cv2.CAP_PROP_POS_FRAMES, int(at * cap.get(cv2.CAP_PROP_FPS)))
         ok, frame = cap.read(); cap.release()
@@ -365,8 +437,13 @@ def fig_touch_model(results_json="results_current/touch_model_eval.json"):
     model 0.19 and nothing else costs it more than 0.05, so the model puts its
     weight on the same quantity the rule thresholds. Bars run both ways because
     two groups have POSITIVE deltas, meaning the model scores better without
-    them, which is what redundant correlated features do at 27 positives. Hiding
-    that by plotting magnitudes would turn an honest oddity into a clean story.
+    them, which is what redundant correlated features do at this many positives.
+    Hiding that by plotting magnitudes would turn an honest oddity into a clean story.
+
+    EVERY LABEL HERE IS DERIVED FROM THE JSON. The touch count, the fold count, the
+    legend and the right panel's title were all typed once and all went stale together
+    when the set grew, and the right panel's title ended up asserting the opposite of
+    the bars under it.
     """
     import json
     with open(results_json) as f:
@@ -393,16 +470,21 @@ def fig_touch_model(results_json="results_current/touch_model_eval.json"):
                         color=RED if is4 else "#263238", marker="D" if is4 else "o",
                         zorder=5 if is4 else 4, edgecolor="white", linewidth=0.8)
     ax1.scatter([], [], color=RED, marker="D", s=44, label="clip 4 (360p)")
-    ax1.scatter([], [], color="#263238", s=34, label="clips 1 to 3 (720p)")
+    ax1.scatter([], [], color="#263238", s=34,
+                label=f"the other {len(d['rule']['folds']) - 1} clips (720p)")
     ax1.legend(fontsize=8.5, loc="upper right", framealpha=0.9)
     for b, v in zip(bars, pooled):
         ax1.text(b.get_x() + b.get_width() / 2, v + 0.022, f"{v:.2f}",
                  ha="center", fontsize=10, fontweight="bold")
     ax1.set_xticks(xs); ax1.set_xticklabels([n for _, n in names])
-    ax1.set_ylabel("F1, micro-averaged over 27 touches")
+    # Both the touch count and the fold count are read from the evaluation rather
+    # than typed. They were typed once, and stayed at 27 touches over four folds
+    # while the evaluation moved to 48 over six.
+    n_touches = sum(f["touches"] for f in d["rule"]["folds"])
+    ax1.set_ylabel(f"F1, micro-averaged over {n_touches} touches")
     ax1.set_ylim(0, 1.12)
-    ax1.set_title("Leave one clip out: the rule wins\n"
-                  "(dots are the four per-clip folds)", fontsize=11)
+    ax1.set_title("Leave one clip out: the rule leads by less than the folds vary\n"
+                  f"(dots are the {len(d['rule']['folds'])} per-clip folds)", fontsize=11)
     ax1.grid(True, axis="y", alpha=0.3, zorder=0)
 
     abl = d["ablation"]
@@ -420,8 +502,13 @@ def fig_touch_model(results_json="results_current/touch_model_eval.json"):
     ax2.axvline(0, color="#263238", linewidth=1)
     ax2.set_xlabel("change in F1 when the group is removed")
     ax2.set_xlim(-0.24, 0.12)
-    ax2.set_title("Only separation carries the model,\n"
-                  "which is what the rule already thresholds", fontsize=11)
+    # The title names whichever group actually dominates. It read "Only separation
+    # carries the model, which is what the rule already thresholds" for weeks after
+    # the six-clip run put separation at -0.03 and context at -0.20, so the figure
+    # asserted the opposite of the bars directly beneath it.
+    worst, drop = groups[0]
+    ax2.set_title(f"Removing {worst} costs the model most, at {drop:+.2f} F1,\n"
+                  "and the four-clip run said separation", fontsize=11)
     ax2.grid(True, axis="x", alpha=0.3, zorder=0)
 
     fig.tight_layout()

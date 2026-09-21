@@ -425,6 +425,53 @@ new ones. The earlier result was not wrong so much as premature: it was an artef
 recordings, and it is the clearest instance in this project of a borderline finding evaporating
 under more evidence. Quote the six-clip figures.
 
+## The framing explanation did not survive nine clips (21 Sep 2026)
+
+Chapter 4 explained tracking coverage by how tall a fencer stands in the detector's input:
+source resolution is invisible to the detector, which resizes so the longest side is 640, so
+what should matter is how much of the frame a fencer occupies. On the four clips it was
+formed on, that fitted. `measure_framing.py` now measures it for all nine.
+
+| | 4 clips | 9 clips |
+|---|---|---|
+| fencer size against coverage | r = 0.51 | **r = 0.02, p = 0.95** |
+
+Clip 8 has the largest fencers in the set, 247 px, and the second-worst coverage at 88.2 per
+cent. The explanation is not weakly supported; it is unsupported.
+
+### The measure was wrong, not just the explanation
+
+Coverage counts two unrelated things as one loss: frames where the detector lost fencers who
+were on screen, and frames where a fencer had walked out of shot between touches. Gap length
+separates them cleanly, because a break in play lasts seconds and a detection failure lasts
+frames.
+
+| clip | coverage | lost to gaps under 1 s | gaps | longest gap |
+|---|---|---|---|---|
+| 4 | 79.8% | **11.21%** | 226 | 58 fr |
+| 8 | 88.2% | 1.79% | 33 | **296 fr** |
+| others | 92.1 to 98.0% | 0.09 to 2.59% | 8 to 45 | 19 to 226 fr |
+
+Clip 8 is not tracked badly. Its fencers are repeatedly absent, which is a property of the
+bout. Clip 4 is the only clip with a real tracking problem. Against short-gap loss alone the
+framing explanation points the right way and still does not reach significance (r = -0.51,
+p = 0.16), which nine clips cannot settle either way.
+
+**Both figures used to be constants typed into `make_report_figures.py`.** That is how a
+four-clip figure stayed in a chapter that had moved to nine without anything disagreeing.
+Both figures now read `results_current/framing.csv`, and `check_claims.py` checks the
+chapter's coverage range and its named exceptions against the same file.
+
+### Two smaller corrections from the same sweep
+
+Pose success: 26.8 to 32.2 per cent of tracked frames on eight clips, and 11.5 per cent on
+clip 4. The report said "roughly 30 to 32 per cent" throughout.
+
+Closing share: over all nine clips, one of the eighteen fencer-clip values separates from a
+coin flip (clip 5's Fencer 1, 45.9 per cent). The procedure's own false-positive rate is 11
+per cent, so one in eighteen is what chance produces. The report said "not one", which was
+true of the eight values it was written against.
+
 ## Reproducing any of them
 
 ```
@@ -434,6 +481,10 @@ python3 evaluate_touches.py --candidates <dir>/<clip>_distance_touches.csv \
                             --truth ground_truth/<clip>_touches.csv
 ```
 
+`python3 measure_framing.py` writes `results_current/framing.csv`, which the coverage and
+framing figures read. `python3 evaluate_pose.py` and `python3 evaluate_closing_share.py` both
+default to `results_current/` and need no flags.
+
 `--stabilise` and `--no-fixed-scale` reproduce the two directories named for them.
 `--pose-stride 1` reproduces `results_pose/`. The clip 4 variants were built by the
 script recorded in B1i, which derives its mask boundary from the detection histogram
@@ -441,12 +492,15 @@ rather than from a chosen pixel row.
 
 ## Which numbers to quote
 
-`results_after/` for anything about touch detection or the summaries, because that is
-the set the evaluation was run on. `results_fixed/` or `results_pose/` for anything about
-movement, because only those have the raw position columns the reliable metrics are
-derived from. Do not quote movement figures from `results_after/`: they come from the
-cumulative-difference fallback, which TODO B1g measured as 24 m adrift.
+**`results_current/` for everything the report quotes.** It is the only directory holding
+all nine clips, and since the `distance_bbox_m` column was added to the pipeline it is the
+only one that supports every evaluation, the pose comparison included. One reference set,
+not two.
 
-`results_posecmp/` for the pose-against-box comparison only. It is the same pipeline as
-`results_current/` plus one extra column, so its other figures should agree; quote them from
-`results_current/` anyway, so there is one reference set and not two.
+The rest are kept because entries above cite them, and none of them should be quoted now.
+`results_after/` and the directories named for a flag predate the set growing to nine and
+hold four clips. Do not quote movement figures from `results_after/` at all: they come from
+the cumulative-difference fallback, which TODO B1g measured as 24 m adrift. `results_posecmp/`
+holds the superseded four-clip pose comparison, whose interval excludes zero where the
+six-clip one does not; `evaluate_pose.py` used to default to it, which meant the documented
+command reproduced the superseded answer.

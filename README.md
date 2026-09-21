@@ -51,7 +51,7 @@ interrupts a running job.
 ### Tests
 
 ```bash
-cd code/prototype && python3 -m pytest -q                  # pipeline: 443
+cd code/prototype && python3 -m pytest -q                  # pipeline: 451
 cd code/backend   && python3 -m pytest -q -m "not slow"   # API: 196
 cd code/backend   && python3 -m pytest -q test_end_to_end.py  # slow, loads models: 2
 cd code/frontend  && npm test                             # interface: 150
@@ -87,7 +87,8 @@ python3 evaluate_touches.py --truth ground_truth/fencing_clip3_touches.csv \
 python3 evaluate_lunges.py --csv results_pose/fencing_clip3_distance.csv \
                            --bout results_pose:fencing_clip3   # calibration vs transfer
 python3 evaluate_closing_share.py --power        # what the metric can and cannot resolve
-python3 evaluate_pose.py --results results_posecmp   # pose against the bounding box
+python3 evaluate_pose.py                         # pose against the bounding box
+python3 measure_framing.py                       # fencer size and tracking loss, per clip
 python3 audit_summary.py --summary results_current/fencing_clip3_distance_summary.md
 python3 touch_features.py --results results_current  # labelled candidates, and the ceiling
 python3 train_touch.py --results results_current --curve --ablation   # learned proposer vs rule
@@ -95,7 +96,8 @@ python3 train_touch.py --results results_current --curve --ablation   # learned 
 `train_touch.py` needs `scikit-learn`, which nothing in the running system imports:
 the shipped detector is the hand-set rule, because the comparison found the rule
 better. `evaluate_pose.py` needs a results directory carrying the `distance_bbox_m`
-column, which means a run of `run_detection.py` from this version onwards.
+column, which means a run of `run_detection.py` from this version onwards; it defaults to
+`results_current`, the only such directory holding the whole set.
 
 ### The `results_*` directories
 

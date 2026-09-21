@@ -31,6 +31,18 @@ TOTAL_CAP = 10500
 UNCOUNTED = ("References", "Appendices")
 
 
+# The brief requires each chapter title to carry its own word count, as in
+# "1. Introduction (783/1000 words)". That makes the heading a number that goes
+# stale on every edit, in the most visible place in the document, so it is
+# written by --stamp rather than by hand and checked by check_claims.py.
+STAMP = re.compile(r"\s*\(\s*[\d,]+\s*/\s*[\d,]+\s*words\s*\)\s*$", re.I)
+
+
+def bare(title):
+    """A chapter title without any stamped word count."""
+    return STAMP.sub("", title).strip()
+
+
 def split_chapters(text):
     out, current, buf = {}, None, []
     for line in text.split("\n"):
@@ -38,7 +50,7 @@ def split_chapters(text):
         if m:
             if current:
                 out[current] = "\n".join(buf)
-            current, buf = m.group(1), []
+            current, buf = bare(m.group(1)), []
             continue
         if current:
             buf.append(line)
@@ -82,6 +94,29 @@ def counts(body):
     return raw, prose
 
 
+def stamp(path):
+    """Write each chapter's word count into its own heading, as the brief asks.
+
+    Rewrites rather than appends, so running it twice does not produce
+    "(985/1000 words) (985/1000 words)". Only chapters with a cap are stamped:
+    the appendices and references have no limit to state.
+    """
+    text = open(path).read()
+    chapters = split_chapters(text)
+    out = []
+    for line in text.split("\n"):
+        m = re.match(r"^## (.+?)\s*$", line)
+        if m:
+            name = bare(m.group(1))
+            if name in CAPS and chapters.get(name) is not None:
+                prose = counts(chapters[name])[1]
+                line = f"## {name} ({prose}/{CAPS[name]} words)"
+        out.append(line)
+    open(path, "w").write("\n".join(out))
+    print(f"stamped word counts into the chapter headings of {path}")
+    return 0
+
+
 def main(path):
     chapters = split_chapters(open(path).read())
     total_prose = total_raw = 0
@@ -105,4 +140,6 @@ def main(path):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "final/final_report.md"))
+    args = [a for a in sys.argv[1:] if a != "--stamp"]
+    target = args[0] if args else "final/final_report.md"
+    sys.exit(stamp(target) if "--stamp" in sys.argv else main(target))
