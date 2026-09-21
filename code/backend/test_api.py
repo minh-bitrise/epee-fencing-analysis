@@ -951,3 +951,69 @@ class TestGreenLampSide:
         os.makedirs(root)
         (root / "b.json").write_text('{"bout_id": "b", "touch_states": {}}')
         assert AnnotationStore(str(root)).load("b")["green_is"] is None
+
+
+class TestDeletingAJobDoesNotDeleteTheEvaluationSet:
+    """The worst defect found on this project, and the only one that destroyed
+    data rather than producing a wrong number.
+
+    A summary job sets output_dir to the directory holding the metrics CSV. For
+    an evaluation bout that is a shared results directory containing every other
+    bout, so deleting the job card ran shutil.rmtree over the whole reference
+    set: nine bouts, from one click. It was recoverable only because most of
+    those files were in version control.
+    """
+
+    def _app(self, tmp_path, monkeypatch, out_dir):
+        import app as app_module
+        monkeypatch.setattr(app_module, "UPLOAD_ROOT", str(tmp_path / "uploads"))
+        monkeypatch.setattr(app_module, "UPLOAD_RESULTS_ROOT",
+                            str(tmp_path / "results_uploads"))
+        job = {"job_id": "j1", "state": "done", "output_dir": str(out_dir)}
+        monkeypatch.setattr(app_module.job_store, "load", lambda i: job)
+        monkeypatch.setattr(app_module.job_store, "delete", lambda i: None)
+        return app_module
+
+    def test_a_shared_results_directory_survives(self, tmp_path, monkeypatch):
+        shared = tmp_path / "results_current"
+        shared.mkdir()
+        (shared / "fencing_clip3_distance.csv").write_text("frame,time_s\n")
+        app_module = self._app(tmp_path, monkeypatch, shared)
+        app_module.delete_job("j1")
+        assert shared.exists(), "deleting a job removed the evaluation set"
+        assert (shared / "fencing_clip3_distance.csv").exists()
+
+    def test_the_job_s_own_output_is_still_removed(self, tmp_path, monkeypatch):
+        owned = tmp_path / "results_uploads" / "upload_j1"
+        owned.mkdir(parents=True)
+        (owned / "out.csv").write_text("x")
+        app_module = self._app(tmp_path, monkeypatch, owned)
+        app_module.delete_job("j1")
+        assert not owned.exists(), "a job must still clean up after itself"
+
+
+class TestPlaybackSurvivesALostRender:
+    """The annotated render is large and not in version control; the browser
+    transcode is small and is what actually gets served. When a render was
+    destroyed, every bout reported no video although a playable copy of each was
+    sitting on disk. Refusing to play a file that is there is a self-inflicted
+    failure.
+    """
+
+    def test_a_cached_copy_is_found_when_the_render_is_gone(self, tmp_path, monkeypatch):
+        import app as app_module
+        wv = tmp_path / "web_video"
+        wv.mkdir()
+        (wv / "results_current__fencing_clip3_annotated.h264.mp4").write_bytes(b"x")
+        monkeypatch.setattr(app_module, "WEB_VIDEO_DIR", str(wv))
+        assert app_module._cached_playable("results_current:fencing_clip3")
+
+    def test_nothing_is_invented_when_there_is_no_copy(self, tmp_path, monkeypatch):
+        import app as app_module
+        monkeypatch.setattr(app_module, "WEB_VIDEO_DIR", str(tmp_path / "empty"))
+        assert app_module._cached_playable("results_current:fencing_clip3") == ""
+
+    def test_a_malformed_bout_id_is_not_treated_as_a_path(self, tmp_path, monkeypatch):
+        import app as app_module
+        monkeypatch.setattr(app_module, "WEB_VIDEO_DIR", str(tmp_path))
+        assert app_module._cached_playable("no-colon-here") == ""

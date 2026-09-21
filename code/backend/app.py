@@ -177,6 +177,22 @@ app = FastAPI(title="Epee Bout Analysis", version="0.2.0", lifespan=lifespan)
 _bouts_cache = {"key": None, "value": None}
 
 
+def _cached_playable(bout_id):
+    """An existing browser copy for this bout, when the render it came from has
+    gone.
+
+    The annotated render is large and is not in version control; the transcode
+    is small and is what actually gets served. Losing the render therefore need
+    not mean losing playback, and refusing to play a file that is sitting on
+    disk would be a self-inflicted failure. Returns "" when there is none.
+    """
+    parent, _, stem = bout_id.partition(":")
+    if not stem:
+        return ""
+    out = os.path.join(WEB_VIDEO_DIR, f"{parent}__{stem}_annotated.h264.mp4")
+    return out if os.path.exists(out) else ""
+
+
 def _bouts():
     # Uploaded bouts are discovered by scanning rather than from a fixed list,
     # because unlike the evaluation set their number is not known in advance.
@@ -277,7 +293,7 @@ def list_bouts():
             "label": _bout_label(bout_id),
             "has_touches": bool(b.touches_csv),
             "has_summary": bool(b.summary_md),
-            "has_video": bool(b.video),
+            "has_video": bool(b.video) or bool(_cached_playable(bout_id)),
             "progress": store.review_progress(bout_id, proposed),
         })
     return {"bouts": out}
@@ -704,9 +720,12 @@ def get_video(bout_id: str):
     survive that.
     """
     b = _get_bout(bout_id)
-    if not b.video:
-        raise HTTPException(404, "no annotated video for this bout")
-    return FileResponse(_web_playable(b.video), media_type="video/mp4")
+    if b.video:
+        return FileResponse(_web_playable(b.video), media_type="video/mp4")
+    cached = _cached_playable(bout_id)
+    if cached:
+        return FileResponse(cached, media_type="video/mp4")
+    raise HTTPException(404, "no annotated video for this bout")
 
 
 # --- the four annotation actions ---------------------------------------
@@ -1498,7 +1517,25 @@ def delete_job(job_id: str):
     if job["state"] not in TERMINAL_STATES and job["state"] != AWAITING_PISTE:
         raise HTTPException(
             409, f"job is {job['state']}; cancel it before deleting")
-    for path in (os.path.join(UPLOAD_ROOT, job_id), job.get("output_dir")):
+    # ONLY DIRECTORIES THIS JOB CREATED. A job's output_dir is not always its
+    # own: a summary job sets it to the directory holding the metrics CSV, which
+    # for an evaluation bout is a shared results directory containing every
+    # other bout as well. Deleting such a job therefore used to rmtree the whole
+    # reference set, nine bouts at once, from a single click on a job card.
+    #
+    # That happened. It is the worst defect found on this project, it destroys
+    # data rather than producing a wrong number, and the only reason it was
+    # recoverable is that most of those files were in version control.
+    #
+    # The test is ownership, not the path the job happens to carry: a job owns
+    # its upload directory and its own output under the uploads root, and
+    # nothing else.
+    owned = [os.path.join(UPLOAD_ROOT, job_id)]
+    out = job.get("output_dir")
+    if out and os.path.abspath(out).startswith(
+            os.path.abspath(UPLOAD_RESULTS_ROOT) + os.sep):
+        owned.append(out)
+    for path in owned:
         if path and os.path.isdir(path):
             shutil.rmtree(path, ignore_errors=True)
     for path in (job.get("log_path"), job.get("web_video_path")):

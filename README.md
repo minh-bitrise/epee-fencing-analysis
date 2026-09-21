@@ -52,7 +52,7 @@ interrupts a running job.
 
 ```bash
 cd code/prototype && python3 -m pytest -q                  # pipeline: 443
-cd code/backend   && python3 -m pytest -q -m "not slow"   # API: 189
+cd code/backend   && python3 -m pytest -q -m "not slow"   # API: 194
 cd code/backend   && python3 -m pytest -q test_end_to_end.py  # slow, loads models: 2
 cd code/frontend  && npm test                             # interface: 149
 ```

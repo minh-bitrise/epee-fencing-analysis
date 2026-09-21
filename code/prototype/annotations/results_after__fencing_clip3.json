@@ -3,7 +3,8 @@
   "touch_states": {
     "p0": {
       "state": "confirmed",
-      "updated": 1787008024.041166
+      "updated": 1789990771.013068,
+      "scorer": "right"
     },
     "p2": {
       "state": "rejected",
@@ -11,11 +12,13 @@
     },
     "p1": {
       "state": "confirmed",
-      "updated": 1787008092.714679
+      "updated": 1789990780.045728,
+      "scorer": "left"
     },
     "p3": {
       "state": "confirmed",
-      "updated": 1787008093.317307
+      "updated": 1789990783.431732,
+      "scorer": "left"
     },
     "p4": {
       "state": "confirmed",
@@ -23,11 +26,13 @@
     },
     "p5": {
       "state": "confirmed",
-      "updated": 1787008094.5241
+      "updated": 1789990784.258231,
+      "scorer": "double"
     },
     "p6": {
       "state": "confirmed",
-      "updated": 1787008095.1253262
+      "updated": 1789990784.92282,
+      "scorer": "left"
     },
     "p7": {
       "state": "confirmed",
@@ -35,7 +40,8 @@
     },
     "p8": {
       "state": "confirmed",
-      "updated": 1787008096.328504
+      "updated": 1789990787.3447292,
+      "scorer": "left"
     },
     "p9": {
       "state": "confirmed",
@@ -60,5 +66,8 @@
   },
   "added_touches": [],
   "unreliable_segments": [],
-  "reanchors": []
+  "reanchors": [],
+  "lunges": [],
+  "sessions": [],
+  "green_is": "right"
 }
