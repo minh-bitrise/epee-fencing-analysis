@@ -65,3 +65,5 @@ code/prototype/fencing_clip*.mp4
 /TODO.md
 /MY_TASKS.md
 /PROJECT_CONTEXT.md
+/RESTORE_AFTER_DEMO.md
+code/prototype/.demo_backup_*

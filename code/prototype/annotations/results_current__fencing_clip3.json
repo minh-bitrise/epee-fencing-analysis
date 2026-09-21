@@ -1,74 +1,6 @@
 {
   "bout_id": "results_current:fencing_clip3",
-  "touch_states": {
-    "p0": {
-      "state": "confirmed",
-      "updated": 1789754275.938036,
-      "scorer": "right"
-    },
-    "p1": {
-      "state": "confirmed",
-      "updated": 1789754283.1509912,
-      "scorer": "left"
-    },
-    "p2": {
-      "state": "confirmed",
-      "updated": 1789754284.093899,
-      "scorer": "right"
-    },
-    "p3": {
-      "state": "confirmed",
-      "updated": 1789754285.0198379,
-      "scorer": "left"
-    },
-    "p4": {
-      "state": "confirmed",
-      "updated": 1789746821.94908
-    },
-    "p5": {
-      "state": "confirmed",
-      "updated": 1789754286.750564,
-      "scorer": "right"
-    },
-    "p6": {
-      "state": "rejected",
-      "updated": 1789746878.194857
-    },
-    "p7": {
-      "state": "rejected",
-      "updated": 1789746880.922713
-    },
-    "p8": {
-      "state": "confirmed",
-      "updated": 1789754288.435709,
-      "scorer": "left"
-    },
-    "p9": {
-      "state": "confirmed",
-      "updated": 1789754289.293728,
-      "scorer": "right"
-    },
-    "p10": {
-      "state": "confirmed",
-      "updated": 1789754291.3508968,
-      "scorer": "double"
-    },
-    "p11": {
-      "state": "confirmed",
-      "updated": 1789754292.4347231,
-      "scorer": "double"
-    },
-    "p12": {
-      "state": "confirmed",
-      "updated": 1789754293.189496,
-      "scorer": "double"
-    },
-    "p13": {
-      "state": "confirmed",
-      "updated": 1789754293.8041239,
-      "scorer": "double"
-    }
-  },
+  "touch_states": {},
   "added_touches": [],
   "unreliable_segments": [],
   "reanchors": [],
@@ -214,18 +146,6 @@
       "created": 1789749017.235452
     }
   ],
-  "sessions": [
-    {
-      "id": "s0",
-      "mode": "assisted",
-      "elapsed_s": 123.0,
-      "decisions": 7,
-      "seconds_per_decision": 17.6,
-      "touches_after": 12,
-      "lunges_after": 20,
-      "note": "",
-      "created": 1789749032.3313658
-    }
-  ],
-  "green_is": "right"
+  "sessions": [],
+  "green_is": null
 }
