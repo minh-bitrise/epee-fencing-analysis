@@ -84,3 +84,16 @@ code/prototype/.demo_backup_*
 /preliminary/prelim_demo_video_script.md
 /preliminary/prelim_demo_video_script.docx
 /final/DEMO_VIDEO_SCRIPT.md
+
+# The draft submission and the working checklists. The draft was marked and is
+# superseded by the final report; the checklists are the author's own working
+# documents. All kept locally.
+/final/draft_report.md
+/final/draft_report.docx
+/final/draft_report.pdf
+/final/CLAIM_AUDIT.md
+/final/TESTING_CHECKLIST.md
+/final/report_reference.docx
+
+# Editor and tooling backups.
+*.prefix-backup
