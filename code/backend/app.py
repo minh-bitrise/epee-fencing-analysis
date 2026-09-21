@@ -324,7 +324,7 @@ def get_touches(bout_id: str):
     return {
         "bout_id": bout_id,
         "duration_s": duration_s,
-        "has_video": bool(b.video),
+        "has_video": bool(b.video) or bool(_cached_playable(bout_id)),
         "proposed": proposed,
         "added": data["added_touches"],
         "unreliable_segments": data["unreliable_segments"],
