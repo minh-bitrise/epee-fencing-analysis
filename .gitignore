@@ -67,3 +67,20 @@ code/prototype/fencing_clip*.mp4
 /PROJECT_CONTEXT.md
 /RESTORE_AFTER_DEMO.md
 code/prototype/.demo_backup_*
+
+# University course materials: the exam paper, the mock, the syllabus, the
+# templates and the assignment briefs. They are the university's copyright, not
+# this project's work, and an exam paper in particular has no business in a
+# public repository. Kept locally, since the report's word caps and the exam
+# prep are checked against them.
+/uni_modules/
+/final/EXAM_PREP.md
+/final/feedback/
+
+# Speaking scripts for the recorded submissions. They are notes to the author
+# for delivery on the day, not deliverables, and a reader of the project gets
+# nothing from them that the recordings do not already show.
+/proposal/pitch_script.docx
+/preliminary/prelim_demo_video_script.md
+/preliminary/prelim_demo_video_script.docx
+/final/DEMO_VIDEO_SCRIPT.md

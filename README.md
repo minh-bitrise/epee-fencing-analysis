@@ -115,7 +115,6 @@ code/prototype/   The AI pipeline: detection, tracking, pose, distance, touches,
 code/backend/     FastAPI application: upload, job runner, annotation API
 code/frontend/    React client (Vite), with its own test suite
 code/var/         Runtime data: uploads, job records, their outputs (gitignored)
-uni_modules/      Read-only university materials
 proposal/         Project proposal submission deliverables
 preliminary/      Preliminary report submission deliverables
 final/            Final report submission (in progress), its figures, and the checking tools
