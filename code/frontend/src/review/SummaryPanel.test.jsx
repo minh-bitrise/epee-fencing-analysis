@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SummaryPanel from './SummaryPanel.jsx'
 
@@ -71,5 +71,36 @@ describe('SummaryPanel', () => {
     render(<SummaryPanel boutId="b" />)
     await waitFor(() => expect(screen.getByText('Distance')).toBeInTheDocument())
     expect(screen.getByText('well').tagName).toBe('B')
+  })
+})
+
+describe('generating a summary without leaving the panel', () => {
+  it('waits for the job and shows the summary in place', async () => {
+    // The button used to queue the job and say "watch it on the upload tab,
+    // then reload this bout". Pressing it appeared to do nothing and the
+    // summary turned up later somewhere else, which is an accurate description
+    // of the plumbing and a poor description of what the user wanted.
+    let summaryExists = false
+    global.fetch = vi.fn((url, opts) => {
+      const ok = (b) => Promise.resolve({ ok: true, json: () => Promise.resolve(b) })
+      if (url.endsWith('/summary') && (opts?.method || 'GET') === 'GET') {
+        return ok(summaryExists
+          ? { exists: true, markdown: 'Fencer 1 led throughout.', model: 'm',
+              generated_from: 'x', stale: false }
+          : { exists: false })
+      }
+      if (url.includes('/summary/generate')) {
+        summaryExists = true
+        return ok({ job_id: 'j9', touches_used: 'the touches you confirmed' })
+      }
+      if (url === '/api/jobs') return ok({ jobs: [{ job_id: 'j9', state: 'done' }] })
+      return ok({})
+    })
+
+    render(<SummaryPanel boutId="results_current:fencing_clip3" />)
+    const btn = await screen.findByText('Generate a summary')
+    fireEvent.click(btn)
+    expect(await screen.findByText(/Fencer 1 led throughout/, {}, { timeout: 5000 }))
+      .toBeInTheDocument()
   })
 })

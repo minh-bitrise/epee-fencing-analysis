@@ -1,0 +1,96 @@
+{
+  "cache_key": "ec2d8f37c55ce18173e270492197b1e20256e0fe4b768199bf2e994e91cafb4f",
+  "model": "claude-opus-4-8",
+  "stats": {
+    "duration_s": 180.0,
+    "frames_total": 5246,
+    "coverage_pct": 97.4,
+    "pose_method_pct": 26.8,
+    "distance_m": {
+      "mean": 2.53,
+      "min": 0.04,
+      "max": 5.02,
+      "std": 0.81
+    },
+    "time_in_zone_pct": {
+      "close_infighting_under_1.5m": 9.4,
+      "lunge_distance_1.5_to_2.6m": 45.2,
+      "advance_lunge_2.6_to_3.5m": 34.7,
+      "out_of_distance_over_3.5m": 10.8
+    },
+    "movement_basis": {
+      "source": "raw per-frame positions",
+      "closing_share_is_window_dependent": true,
+      "closing_share_note": "Measured on unsmoothed positions. A 1-to-121 frame median smoothing sweep moved this figure from 52.4 to 60.9 per cent on one clip, so read it as approximate to a few points rather than exact."
+    },
+    "fencer_1": {
+      "net_displacement_m": 3.43,
+      "closing_share_pct": 52.4
+    },
+    "fencer_2": {
+      "net_displacement_m": 0.43,
+      "closing_share_pct": 52.0
+    },
+    "touches": {
+      "count": 14,
+      "times_s": [
+        19.7,
+        35.9,
+        43.8,
+        48.0,
+        64.0,
+        89.8,
+        99.4,
+        102.3,
+        107.1,
+        113.0,
+        131.1,
+        140.6,
+        155.3,
+        172.2
+      ],
+      "provenance": "automatic_detector",
+      "reset_excluded_s": 6.0
+    },
+    "in_play_only": {
+      "share_of_recording_pct": 56.8,
+      "mean_distance_m": 2.24,
+      "fencer_1": {
+        "net_forward_movement_m": 9.47,
+        "closing_share_pct": 50.3
+      },
+      "fencer_2": {
+        "net_forward_movement_m": 11.95,
+        "closing_share_pct": 52.9
+      }
+    },
+    "tempo": {
+      "touches": 14,
+      "duration_s": 180.0,
+      "touches_per_minute": 4.67,
+      "time_between_touches_s": {
+        "mean": 11.73,
+        "median": 9.61,
+        "min": 2.89,
+        "max": 25.77,
+        "std": 6.51
+      },
+      "exchange_duration_s": {
+        "mean": 10.03,
+        "median": 10.1,
+        "min": 1.85,
+        "max": 19.77,
+        "std": 5.87
+      },
+      "reset_assumed_s": 6.0,
+      "tempo_trend": {
+        "first_half_mean_gap_s": 13.29,
+        "second_half_mean_gap_s": 10.4,
+        "change_s": -2.89,
+        "direction": "quickening"
+      },
+      "scorer_counts": null,
+      "note": "touch source has no scorer column, so per-scorer tempo metrics are omitted rather than inferred"
+    }
+  }
+}

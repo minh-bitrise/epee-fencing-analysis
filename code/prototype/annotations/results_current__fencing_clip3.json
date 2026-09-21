@@ -1,6 +1,43 @@
 {
   "bout_id": "results_current:fencing_clip3",
-  "touch_states": {},
+  "touch_states": {
+    "p0": {
+      "state": "confirmed",
+      "updated": 1789995415.2485209,
+      "scorer": "right"
+    },
+    "p1": {
+      "state": "confirmed",
+      "updated": 1789995429.150366,
+      "scorer": "right"
+    },
+    "p2": {
+      "state": "confirmed",
+      "updated": 1789995429.934494,
+      "scorer": "left"
+    },
+    "p3": {
+      "state": "confirmed",
+      "updated": 1789995427.4093618,
+      "scorer": "right"
+    },
+    "p4": {
+      "state": "rejected",
+      "updated": 1789995377.9924438
+    },
+    "p5": {
+      "state": "rejected",
+      "updated": 1789995382.17977
+    },
+    "p6": {
+      "state": "confirmed",
+      "updated": 1789995383.99317
+    },
+    "p7": {
+      "state": "confirmed",
+      "updated": 1789995385.027545
+    }
+  },
   "added_touches": [],
   "unreliable_segments": [],
   "reanchors": [],
@@ -157,7 +194,18 @@
       "lunges_after": 20,
       "note": "",
       "created": 1789994765.424208
+    },
+    {
+      "id": "s1",
+      "mode": "assisted",
+      "elapsed_s": 39.0,
+      "decisions": 8,
+      "seconds_per_decision": 4.9,
+      "touches_after": 6,
+      "lunges_after": 20,
+      "note": "",
+      "created": 1789995386.798531
     }
   ],
-  "green_is": null
+  "green_is": "right"
 }

@@ -686,8 +686,8 @@ wrong.
 
 ### Testing
 
-The system is supported by 790 automated tests: 443 over the pipeline, 198 over the application
-layer and 149 over the interface, plus two end-to-end tests driving the real pipeline on a
+The system is supported by 791 automated tests: 443 over the pipeline, 198 over the application
+layer and 150 over the interface, plus two end-to-end tests driving the real pipeline on a
 synthetic video. The end-to-end pair exists for what unit tests structurally cannot reach: the
 stages are joined by filename conventions rather than return values, and a bout identifier is
 assembled in one module and taken apart in another. It found two defects on its first run.

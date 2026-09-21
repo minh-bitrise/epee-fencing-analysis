@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api, boutPath } from '../api.js'
 
 /**
@@ -40,6 +40,7 @@ function bold(text) {
 
 export default function SummaryPanel({ boutId }) {
   const [state, setState] = useState({ loading: true })
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -48,7 +49,9 @@ export default function SummaryPanel({ boutId }) {
       .then((r) => { if (!cancelled) setState({ loading: false, data: r }) })
       .catch((e) => { if (!cancelled) setState({ loading: false, error: e.message }) })
     return () => { cancelled = true }
-  }, [boutId])
+  }, [boutId, reloadKey])
+
+  const refresh = useCallback(() => setReloadKey((k) => k + 1), [])
 
   if (state.loading) return <div className="mini">Loading.</div>
   if (state.error) return <div className="note err">{state.error}</div>
@@ -59,7 +62,7 @@ export default function SummaryPanel({ boutId }) {
       <div className="note">
         No summary for this bout yet. Generating one costs a paid API call, so
         it happens only when you ask for it.
-        <Generate boutId={boutId} />
+        <Generate boutId={boutId} onDone={refresh} />
       </div>
     )
   }
@@ -79,7 +82,7 @@ export default function SummaryPanel({ boutId }) {
       <div className="mini" style={{ marginTop: 8, color: 'var(--muted)' }}>
         {r.model || 'unknown model'}, from {r.generated_from}
       </div>
-      {r.stale && <Generate boutId={boutId} force />}
+      {r.stale && <Generate boutId={boutId} force onDone={refresh} />}
     </>
   )
 }
@@ -97,10 +100,19 @@ export default function SummaryPanel({ boutId }) {
  * running in the same single-slot queue as everything else and may be behind a
  * detection run.
  */
-function Generate({ boutId, force = false }) {
+function Generate({ boutId, force = false, onDone }) {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState(null)
 
+  // WAIT HERE RATHER THAN SENDING THE USER AWAY. Queueing the job is all the
+  // request does, and this panel used to say so and stop: "watch it on the
+  // upload tab, then reload this bout". That is an accurate description of the
+  // plumbing and a poor description of what the user wanted, which was a
+  // summary. Pressing the button appeared to do nothing, and the summary turned
+  // up later somewhere else.
+  //
+  // The work still runs in the same single-slot queue, and the panel simply
+  // watches for it and reloads itself when it lands.
   const go = async () => {
     setBusy(true)
     setNote(null)
@@ -108,8 +120,27 @@ function Generate({ boutId, force = false }) {
       const r = await api(
         `${boutPath(boutId)}/summary/generate${force ? '?force=true' : ''}`,
         { method: 'POST' })
-      setNote(`Queued, using ${r.touches_used}. Watch it on the upload tab, `
-              + 'then reload this bout.')
+      setNote(`Writing the summary from ${r.touches_used}. This takes a few `
+              + 'seconds and costs one API call.')
+      const id = r.job_id
+      const deadline = Date.now() + 120000
+      while (id && Date.now() < deadline) {
+        await new Promise((res) => setTimeout(res, 1500))
+        const jobs = await api('/api/jobs')
+        const job = jobs.jobs.find((j) => j.job_id === id)
+        if (!job) break
+        if (job.state === 'done') {
+          setNote(null)
+          onDone?.()
+          return
+        }
+        if (job.state === 'failed' || job.error) {
+          setNote(job.error || 'the summary job failed')
+          return
+        }
+      }
+      setNote('Still running. It will appear here when it finishes; '
+              + 'the upload tab shows its progress.')
     } catch (e) {
       setNote(e.message)
     } finally {
@@ -120,7 +151,7 @@ function Generate({ boutId, force = false }) {
   return (
     <div style={{ marginTop: 9 }}>
       <button className="primary" disabled={busy} onClick={go}>
-        {force ? 'Regenerate the summary' : 'Generate a summary'}
+        {busy ? 'Writing...' : (force ? 'Regenerate the summary' : 'Generate a summary')}
       </button>
       {note && <div className="mini" style={{ marginTop: 6 }}>{note}</div>}
     </div>
