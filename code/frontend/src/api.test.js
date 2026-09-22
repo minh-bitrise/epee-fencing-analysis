@@ -1,10 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api, boutPath, postJSON } from './api.js'
 
-/* The wrapper exists mainly for the error path. `fetch` treats a 400 as a perfectly good
-   response, and several of this backend's errors are ones the user genuinely needs to read:
-   that an export would have been empty, that no touches are confirmed yet, that no API key was
-   found. */
+/* The wrapper exists mainly for the error path. */
 
 afterEach(() => { delete global.fetch })
 

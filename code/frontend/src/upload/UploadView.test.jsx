@@ -2,9 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import UploadView from './UploadView.jsx'
 
-/* The entry point. Everything else in the application depends on a bout having been processed,
-   so a failure here is a failure to start, and it is the one screen a first-time user cannot
-   route around. */
+/* The entry point. */
 
 const job = (over = {}) => ({
   job_id: 'abc123def456', filename: 'bout.mp4', state: 'done', stage: 'detect',
@@ -86,8 +84,7 @@ describe('UploadView', () => {
   })
 
   it('carries the piste choice into the upload', async () => {
-    // The checkbox decides whether the run stops to ask about the region. If it
-    // did not reach the request the setting would look respected and be ignored.
+    // The checkbox decides whether the run stops to ask about the region.
     stub()
     const { container } = render(<UploadView onOpenBout={vi.fn()} />)
     await waitFor(() => expect(globalThis.__api).toHaveBeenCalled())
@@ -98,9 +95,7 @@ describe('UploadView', () => {
   })
 
   it('shows an upload failure instead of silently doing nothing', async () => {
-    /* The failure this guards. A rejected upload left the page exactly as it was, which is
-       indistinguishable from a slow one, and the user's response to each is opposite: wait, or
-       try again. */
+    /* The failure this guards. */
     stub({ uploadFails: 'that file is not a video the pipeline can read' })
     const { container } = render(<UploadView onOpenBout={vi.fn()} />)
     await waitFor(() => expect(globalThis.__api).toHaveBeenCalled())
@@ -166,8 +161,7 @@ describe('UploadView', () => {
   })
 
   it('explains the piste region without printing the explanation', async () => {
-    // Folded behind a disclosure: it is a paragraph, and the upload screen is
-    // three controls.
+    // Folded behind a disclosure: it is a paragraph, and the upload screen is three controls.
     stub()
     const { container } = render(<UploadView onOpenBout={vi.fn()} />)
     await waitFor(() => expect(globalThis.__api).toHaveBeenCalled())

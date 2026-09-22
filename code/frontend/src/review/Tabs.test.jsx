@@ -13,8 +13,7 @@ describe('Tabs', () => {
   })
 
   it('does not remount the active tab when the parent re-renders', async () => {
-    // The defect this exists for. The caller builds its `tabs` object inline, so those arrow
-    // functions are new objects on every parent render.
+    // The defect this exists for.
     const mounted = vi.fn()
 
     function Panel() {

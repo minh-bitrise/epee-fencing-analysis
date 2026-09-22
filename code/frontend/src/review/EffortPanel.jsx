@@ -23,9 +23,7 @@ function Mode({ label, stats }) {
   )
 }
 
-// An empty mode rather than a crash. This panel is fed by a network response, and it sits in
-// the same column as the review table: a response missing the shape it expects used to take
-// the whole review screen down, which is the same failure the video play() guard exists for.
+// An empty mode rather than a crash.
 const EMPTY = { runs: 0, total_decisions: 0, mean_seconds_per_decision: null }
 
 export default function EffortPanel({ sessions }) {

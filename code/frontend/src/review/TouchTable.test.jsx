@@ -20,10 +20,7 @@ const handlers = { onSelect: vi.fn(), onDecide: vi.fn(), onDelete: vi.fn() }
 
 describe('TouchTable', () => {
   it('shows what a proposal rests on, not just that it exists', () => {
-    // A guess presented without its basis is an assertion. A low-confidence
-    // proposal beside a large separation is a different thing to judge.
-    // The two figures are labelled inline now rather than sitting under column
-    // headings, so they are matched inside the row's evidence line.
+    // A guess presented without its basis is an assertion.
     const { container } = render(
       <TouchTable rows={[proposed()]} selIdx={0} {...handlers} />)
     const basis = container.querySelector('.basis').textContent
@@ -38,18 +35,14 @@ describe('TouchTable', () => {
   })
 
   it('offers only removal for a touch the user added themselves', () => {
-    // Offering to "reject" a hand-added touch would be asking the user to
-    // overrule themselves.
+    // Offering to "reject" a hand-added touch would be asking the user to overrule themselves.
     render(<TouchTable rows={[added()]} selIdx={0} {...handlers} />)
     expect(screen.getByRole('button', { name: 'remove' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'confirm' })).toBeNull()
   })
 
   it('marks a proposed scorer as a suggestion, not a decision', () => {
-    // The lamp reading is evidence. Showing it identically to a scorer the user
-    // confirmed would let the system's guess be mistaken for their judgement.
-    // Confirmed, because the lamp is only read for touches the user has
-    // confirmed, so that is the only state a suggestion can appear in.
+    // The lamp reading is evidence.
     render(<TouchTable rows={[proposed({ state: 'confirmed' })]} selIdx={0}
                        {...handlers}
                        scorerProposals={[{ time_s: 43.9, proposed: 'left',
@@ -60,9 +53,8 @@ describe('TouchTable', () => {
   })
 
   it('does not attach a proposal to a different touch', () => {
-    // Proposals are matched on time because they are made against the confirmed
-    // list, which uses different ids. A loose match would attribute a scorer to
-    // the wrong touch.
+    // Proposals are matched on time because they are made against the confirmed list, which
+    // uses different ids.
     render(<TouchTable rows={[proposed()]} selIdx={0} {...handlers}
                        scorerProposals={[{ time_s: 120.0, proposed: 'right',
                                            green_delta: 9, red_delta: 4 }]} />)
@@ -150,9 +142,8 @@ describe('the lamp reading stays visible after the user answers', () => {
   })
 
   it('marks disagreement, which is the case worth finding', () => {
-    // These rows are the evidence behind the attribution figures: where the
-    // lamp reading and the person's judgement part company. Hiding the reading
-    // once answered would hide exactly the cases worth looking at.
+    // These rows are the evidence behind the attribution figures: where the lamp reading and
+    // the person's judgement part company.
     render(<TouchTable rows={[row({ scorer: 'right' })]} selIdx={0} onSelect={() => {}}
                        onDecide={() => {}} onScorer={onScorer} scorerProposals={lamp} />)
     const chip = screen.getByText(/lamp left/)

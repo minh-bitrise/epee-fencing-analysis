@@ -2,9 +2,8 @@ import { useState } from 'react'
 import { formatTime } from './time.js'
 import { api, boutPath, del } from '../api.js'
 
-// Scored or missed is derived, not asked for. A lunge that scored is one whose
-// peak sits shortly before an awarded touch. One second is generous on purpose:
-// the question here is which lunges to compare against, not precise attribution.
+// Scored or missed is derived, not asked for. A lunge that scored is one whose peak sits
+// shortly before an awarded touch.
 const SCORED_WINDOW_S = 1.0
 
 export default function LungePanel({ boutId, lunges, touchTimes, onChanged,
@@ -24,10 +23,8 @@ export default function LungePanel({ boutId, lunges, touchTimes, onChanged,
   const scored = (l) => touchTimes.some(
     (t) => t >= l.time_s - 0.2 && t <= l.time_s + SCORED_WINDOW_S)
 
-  // With no confirmed touches there is nothing to derive from, and every lunge
-  // would be reported as "missed". That is not the same as unknown, and showing
-  // it would be a quiet falsehood of exactly the kind this project keeps finding
-  // in its own metrics, so say so instead.
+  // With no confirmed touches there is nothing to derive from, and every lunge would be
+  // reported as "missed".
   const canDerive = touchTimes.length > 0
   const label = (l) => (!canDerive ? 'scored?' : scored(l) ? 'scored' : 'missed')
 
@@ -87,9 +84,8 @@ export default function LungePanel({ boutId, lunges, touchTimes, onChanged,
         <div className="stat" key={l.id}>
           <span>{formatTime(l.time_s)} - F{l.slot + 1} {label(l)}</span>
           <button onClick={async () => {
-            // Guarded here rather than left to bubble: this is a delete, and a
-            // silent failure looks exactly like a successful one until the list
-            // fails to change.
+            // Guarded here rather than left to bubble: this is a delete, and a silent failure
+            // looks exactly like a successful one until the list fails to change.
             try {
               await api(`${boutPath(boutId)}/lunges/${l.id}`, del)
               await onChanged()

@@ -31,8 +31,7 @@ describe('ScorePanel', () => {
   })
 
   it('gives the level time its own share of the bar', () => {
-    // The two leads plus the level stretch are the whole bout. Without the
-    // middle segment the bar would show 100 per cent led and be a lie.
+    // The two leads plus the level stretch are the whole bout.
     const { container } = render(<ScorePanel score={score({
       time_leading_pct: { 1: 40, 2: 20 },
     })} zones={zones()} />)
@@ -110,9 +109,7 @@ describe('ScorePanel', () => {
   })
 
   it('says the split is unknown rather than printing zero twice', () => {
-    // results_after:fencing_clip3 is this bout: twelve touches, none with a
-    // recorded scorer. "0.00 and 0.00 per fencer" reads as two fencers who
-    // scored nothing, which is the one reading the data cannot support.
+    // results_after:fencing_clip3 is this bout: twelve touches, none with a recorded scorer.
     render(<ScorePanel score={score()} pace={{
       available: true, duration_s: 180.0, touches: 12, per_min: 4.0,
       fencer_1_per_min: null, fencer_2_per_min: null, unattributed: 12,
@@ -123,7 +120,6 @@ describe('ScorePanel', () => {
 
   it('does not print 0-0 when no touch has been attributed', () => {
     // Three confirmed touches and no scorers is an unknown score, not a draw.
-    // The module computing it already says so in a comment; the panel did not.
     render(<ScorePanel score={score({
       final: { fencer_1: 0, fencer_2: 0 }, unattributed: 3,
     })} />)

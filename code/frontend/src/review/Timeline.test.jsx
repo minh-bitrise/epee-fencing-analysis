@@ -21,8 +21,7 @@ const setup = (props = {}) => {
 
 describe('Timeline', () => {
   it('places a marker at its share of the bout', () => {
-    // 30 s of 180 is a sixth of the way along. A marker in the wrong place is
-    // worse than no marker: the user clicks it and lands somewhere else.
+    // 30 s of 180 is a sixth of the way along.
     const { container } = setup()
     expect(container.querySelector('.mk').style.left)
       .toBe(`${(100 * 30) / 180}%`)
@@ -69,9 +68,7 @@ describe('Timeline', () => {
   })
 
   it('moves the playhead by writing to the node, not by re-rendering', () => {
-    // `timeupdate` fires several times a second. Re-rendering the whole strip
-    // at that rate to move one element a few pixels made the marker list
-    // flicker on every tick.
+    // `timeupdate` fires several times a second.
     const { container, rerender } = setup()
     rerender(
       <Timeline duration={180} rows={[row()]} segments={[]} selIdx={0}

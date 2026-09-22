@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { api, del } from '../api.js'
 import PisteConfirm from './PisteConfirm.jsx'
 
-// What each stage is called for someone who did not write the pipeline. The
-// stage names are the runner's internal ones and mean little on their own.
+// What each stage is called for someone who did not write the pipeline.
 const STAGE_LABELS = {
   piste: 'Measuring the piste region',
   detect: 'Detecting and tracking fencers',

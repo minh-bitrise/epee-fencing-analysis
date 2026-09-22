@@ -13,10 +13,7 @@ import Disclosure from './Disclosure.jsx'
 import SummaryPanel from './SummaryPanel.jsx'
 import LungePanel from './LungePanel.jsx'
 
-// The clips are 30 fps. Hard-coded because the API does not report frame rate
-// and this only drives the step size of a keyboard nudge, so being slightly off
-// on a 25 fps clip costs nothing: the label records the timestamp the video
-// actually reached, not this constant.
+// The clips are 30 fps.
 const FRAME_S = 1 / 30
 
 export default function ReviewView({ initialBoutId }) {
@@ -31,20 +28,14 @@ export default function ReviewView({ initialBoutId }) {
   const [listError, setListError] = useState(null)
   const [outcomes, setOutcomes] = useState(null)
   const [scorers, setScorers] = useState(null)
-  // The queue owns the keyboard and the playhead while it is open. Held here
-  // rather than inside it so the rest of the screen can stand down: two things
-  // binding "c" to different actions is the kind of conflict that only shows up
-  // when a user presses it at the wrong moment.
+  // The queue owns the keyboard and the playhead while it is open.
   const [queue, setQueue] = useState(null)
-  // Manual mode withholds the proposals. Its purpose is to be the control
-  // condition for the effort claim, not to be a better way to work.
+  // Manual mode withholds the proposals.
   const [manual, setManual] = useState(null)
   const [sessions, setSessions] = useState(null)
   const [sessionNote, setSessionNote] = useState(null)
   const videoRef = useRef(null)
-  // Guards against keystrokes arriving mid-request. A ref rather than state
-  // because the keyboard handler has to read the current value at the moment the
-  // key is pressed, and a state variable captured in a closure would be stale.
+  // Guards against keystrokes arriving mid-request.
   const busy = useRef(false)
 
   const { data, metrics, error, metricsError, reload } = useBout(boutId)
@@ -70,8 +61,6 @@ export default function ReviewView({ initialBoutId }) {
   useEffect(() => { if (initialBoutId) setBoutId(initialBoutId) }, [initialBoutId])
 
   // Whether corrections already applied to this bout actually changed anything.
-  // Fetched per bout rather than folded into the touches payload because it is a
-  // property of how this bout was PRODUCED, not of the review in progress.
   useEffect(() => {
     if (!boutId) return
     let cancelled = false
@@ -81,10 +70,7 @@ export default function ReviewView({ initialBoutId }) {
     return () => { cancelled = true }
   }, [boutId])
 
-  // Move the cursor to the first undecided proposal, but only when the bout
-  // changes. Recomputing it on every refresh made keyboard review skip
-  // proposals, because each decision triggered a reload that moved the cursor
-  // out from under the next keystroke.
+  // Move the cursor to the first undecided proposal, but only when the bout changes.
   useEffect(() => {
     setSelIdx(0)
     setExportOut(null)
@@ -106,14 +92,10 @@ export default function ReviewView({ initialBoutId }) {
   const seek = useCallback((t) => {
     const v = videoRef.current
     if (!v) return
-    // Land a little before the moment rather than on it. A touch is judged from
-    // the approach that produced it, and starting playback on the frame of
-    // contact shows the aftermath instead.
+    // Land a little before the moment rather than on it.
     v.currentTime = Math.max(0, t - 1.5)
-    // play() returns a promise in modern browsers and undefined in older ones,
-    // and calling .catch on undefined throws. Guarded because the throw would
-    // happen inside a keyboard handler, killing the rest of the review loop over
-    // a autoplay rejection that is itself harmless.
+    // play() returns a promise in modern browsers and undefined in older ones, and calling
+    // .catch on undefined throws.
     const started = v.play()
     if (started && typeof started.catch === 'function') started.catch(() => {})
   }, [])
@@ -125,10 +107,7 @@ export default function ReviewView({ initialBoutId }) {
 
   // --- the four annotation actions ---------------------------------------
 
-  // Record who scored a confirmed touch. Separate from `decide`, which says
-  // whether the touch happened at all: confirming a touch and attributing it
-  // are two different judgements and the user makes them at different moments,
-  // often on a second pass once the lamp proposals are in.
+  // Record who scored a confirmed touch.
   const setScorer = useCallback(async (touchId, scorer) => {
     if (busy.current) return
     busy.current = true
@@ -170,11 +149,7 @@ export default function ReviewView({ initialBoutId }) {
     }
   }, [boutId, reload, rows, seek])
 
-  // Every action routes its failures here. Without it a rejected call became an
-  // unhandled promise rejection: the keyboard shortcuts were the worst case,
-  // because pressing "a" to add a touch or "1" to label a lunge against a
-  // failing server did nothing at all and said nothing, which is
-  // indistinguishable from the key not being bound.
+  // Every action routes its failures here.
   const guard = useCallback(async (fn) => {
     try {
       await fn()
@@ -227,10 +202,7 @@ export default function ReviewView({ initialBoutId }) {
     } catch (err) { setListError(err.message) }
   }, [boutId, reload])
 
-  // Action 4. Arming rather than prompting, because the correction is a POSITION
-  // and the only sane way to express it is to point at the fencer. The video is
-  // paused on arming so the frame cannot move between the click and the
-  // timestamp recorded with it.
+  // Action 4.
   const armAnchor = (slot) => {
     setArmedSlot(slot)
     videoRef.current?.pause()
@@ -244,18 +216,15 @@ export default function ReviewView({ initialBoutId }) {
     ev.preventDefault()
     const v = ev.currentTarget
 
-    // Before metadata arrives videoWidth is 0, which would make the scale
-    // infinite and silently record the correction at the origin. Refusing is the
-    // only safe option: a correction placed at (0, 0) is worse than no
-    // correction, because it looks deliberate.
+    // Before metadata arrives videoWidth is 0, which would make the scale infinite and
+    // silently record the correction at the origin.
     if (!v.videoWidth || !v.videoHeight) {
       disarm('the video has not loaded its size yet, nothing recorded. Try again once it plays.')
       return
     }
     const r = v.getBoundingClientRect()
-    // A collapsed element gives a zero scale, and dividing by it yields NaN,
-    // which passes every comparison in the bounds check below. Guard the scale,
-    // not just the result: a check that silently accepts NaN is worse than none.
+    // A collapsed element gives a zero scale, and dividing by it yields NaN, which passes
+    // every comparison in the bounds check below.
     if (r.width <= 0 || r.height <= 0) {
       disarm('the video is not visible, nothing recorded')
       return
@@ -289,9 +258,8 @@ export default function ReviewView({ initialBoutId }) {
   }, [armedSlot, boutId, reload])
 
   // --- keyboard review ---------------------------------------------------
-  //
-  // The effort claim depends on a decision costing one keystroke, so the review
-  // loop is jump, watch, judge, without touching the mouse.
+  // The effort claim depends on a decision costing one keystroke, so the review loop is jump,
+  // watch, judge, without touching the mouse.
 
   useEffect(() => {
     const onKey = async (e) => {
@@ -300,9 +268,8 @@ export default function ReviewView({ initialBoutId }) {
       // table's selected row from one keystroke.
       if (queue) return
       const t = e.target
-      // Guard the type as well as the selector: the event target is not always
-      // an Element, and calling matches() on one that is not would throw and
-      // silently kill every shortcut.
+      // Guard the type as well as the selector: the event target is not always an Element, and
+      // calling matches() on one that is not would throw and silently kill every shortcut.
       if (t && typeof t.matches === 'function'
           && t.matches('input,select,textarea')) return
 
@@ -318,18 +285,13 @@ export default function ReviewView({ initialBoutId }) {
       else if (k === 'c' && cur?.kind === 'proposed') await decide(cur.id, 'confirmed', true)
       else if (k === 'x' && cur?.kind === 'proposed') await decide(cur.id, 'rejected', true)
       else if (k === 'a' && v) await addTouchAtPlayhead()
-      // Frame stepping. Finding the peak of a lunge needs single-frame control:
-      // at 30 fps a lunge lasts about ten frames, so scrubbing by the second is
-      // useless for it and the label would land on whatever frame the mouse hit.
+      // Frame stepping.
       else if ((k === ',' || k === '.') && v) {
         v.pause()
         v.currentTime = Math.max(0, v.currentTime + (k === '.' ? FRAME_S : -FRAME_S))
       }
       else if ((k === '1' || k === '2') && v) {
-        // Say so on screen. The lunge list lives on the Tools tab, so labelling
-        // from any other tab produced a keystroke, a network request and no
-        // visible change whatsoever, which is indistinguishable from the
-        // shortcut not working at all.
+        // Say so on screen.
         await guard(async () => {
           const at = +v.currentTime.toFixed(3)
           await api(`${boutPath(boutId)}/lunges`, postJSON({
@@ -357,10 +319,7 @@ export default function ReviewView({ initialBoutId }) {
     } catch (e) { setExportOut({ error: e.message }) }
   }
 
-  // Applying tracking corrections used to end in a command line for the user to
-  // go and type. Action 4 changes tracking rather than interpretation, so it can
-  // only take effect on a reprocess, and until the job runner existed there was
-  // nowhere for that reprocess to happen but a terminal.
+  // Applying tracking corrections used to end in a command line for the user to go and type.
   const reprocess = async () => {
     setAnchorOut({ text: 'starting...' })
     try {
@@ -371,10 +330,7 @@ export default function ReviewView({ initialBoutId }) {
     } catch (e) { setAnchorOut({ error: e.message }) }
   }
 
-  // Read the scoring lamps and propose who scored each confirmed touch. Which
-  // fencer the green lamp belongs to has to come from the user: nothing in the
-  // image says it, and guessing would be wrong half the time in a way that looks
-  // authoritative.
+  // Read the scoring lamps and propose who scored each confirmed touch.
   const proposeScorers = useCallback(async (greenIs) => {
     setScorers({ loading: true })
     try {
@@ -408,9 +364,7 @@ export default function ReviewView({ initialBoutId }) {
   useEffect(() => { loadSessions() }, [loadSessions])
 
   const recordSession = useCallback(async (mode, elapsed_s, decisions) => {
-    // Nothing to record from an abandoned run. A zero-decision session would
-    // enter the comparison with no rate and pull the run count up without
-    // contributing to the figure it is counting runs for.
+    // Nothing to record from an abandoned run.
     if (!decisions || elapsed_s <= 0) return null
     try {
       const r = await api(`${boutPath(boutId)}/sessions`,
@@ -456,9 +410,7 @@ export default function ReviewView({ initialBoutId }) {
       await api(`${boutPath(boutId)}/touches/${item.id}/decision`,
                 postJSON({ state: decision }))
     } else if (decision !== 'rejected') {
-      // A rejected lunge proposal records nothing. There is no store of things
-      // the user said were not lunges, and inventing one here would mean the
-      // queue wrote a kind of record nothing else in the system reads.
+      // A rejected lunge proposal records nothing.
       await api(`${boutPath(boutId)}/lunges`,
                 postJSON({ time_s: item.time_s, slot: decision }))
     }
@@ -474,9 +426,8 @@ export default function ReviewView({ initialBoutId }) {
     }
   }, [recordSession])
 
-  // Both baselines are captured at the start, because the count that matters is
-  // what this RUN produced. Without them a second manual pass would be credited
-  // with everything the first one logged and would look twice as fast.
+  // Both baselines are captured at the start, because the count that matters is what this RUN
+  // produced.
   const startManual = useCallback(() => {
     setManual({
       startedAt: Date.now(),
@@ -489,9 +440,8 @@ export default function ReviewView({ initialBoutId }) {
   const finishManual = useCallback(async () => {
     if (!manual) return null
     const elapsed = (Date.now() - manual.startedAt) / 1000
-    // Decisions in manual mode are the entries the user CREATED, not proposals
-    // answered, because in this condition there are none. Seconds per decision
-    // is the figure the two modes share.
+    // Decisions in manual mode are the entries the user CREATED, not proposals answered,
+    // because in this condition there are none.
     const decisions =
       Math.max(0, rows.filter((r) => r.kind === 'added').length - manual.touchesFrom)
       + Math.max(0, (data?.lunges?.length ?? 0) - manual.lungesFrom)
@@ -538,10 +488,7 @@ export default function ReviewView({ initialBoutId }) {
     .map((r) => r.at)
   const pendingCount = rows.filter(
     (r) => r.kind === 'proposed' && r.state === 'pending').length
-  // Manual mode withholds the detector's proposals entirely. Dimming them or
-  // collapsing them would not do: the condition being measured is labelling
-  // WITHOUT the system's suggestions, and a visible suggestion has already
-  // been read by the time the user decides to ignore it.
+  // Manual mode withholds the detector's proposals entirely.
   const visibleRows = manual ? rows.filter((r) => r.kind === 'added') : rows
 
   return (

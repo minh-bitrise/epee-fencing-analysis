@@ -16,9 +16,8 @@ afterEach(() => { delete global.fetch })
 
 describe('SummaryPanel', () => {
   it('does not turn model output into markup', async () => {
-    // Treating generated text as trusted markup is how a prompt injection
-    // becomes a script tag. React escapes children, so the guarantee comes from
-    // never reaching for dangerouslySetInnerHTML; this asserts that it holds.
+    // Treating generated text as trusted markup is how a prompt injection becomes a script
+    // tag.
     respond({ exists: true, stale: false, model: 'test',
               generated_from: 'touch data',
               markdown: 'Fencer 1 <img src=x onerror="alert(1)"> closed well' })
@@ -29,9 +28,7 @@ describe('SummaryPanel', () => {
   })
 
   it('warns loudly when the summary predates its own numbers', async () => {
-    // The dangerous case is not the missing summary, it is the stale one. This
-    // project has already shipped one piece of confident prose describing
-    // numbers that no longer existed.
+    // The dangerous case is not the missing summary, it is the stale one.
     respond({ exists: true, stale: true,
               stale_reason: 'the metrics changed after this was written',
               markdown: '## Summary\nSomething confident.',
@@ -51,8 +48,7 @@ describe('SummaryPanel', () => {
   })
 
   it('says which model wrote it and what it was built from', async () => {
-    // Both qualify the text. A summary built from unreviewed detector output is
-    // a different claim to one built from touches the user confirmed.
+    // Both qualify the text.
     respond({ exists: true, stale: false, markdown: 'Body.',
               model: 'claude-x', generated_from: 'the whole recording, no touch data' })
     render(<SummaryPanel boutId="b" />)
@@ -72,10 +68,8 @@ describe('SummaryPanel', () => {
 
 describe('generating a summary without leaving the panel', () => {
   it('waits for the job and shows the summary in place', async () => {
-    // The button used to queue the job and say "watch it on the upload tab,
-    // then reload this bout". Pressing it appeared to do nothing and the
-    // summary turned up later somewhere else, which is an accurate description
-    // of the plumbing and a poor description of what the user wanted.
+    // The button used to queue the job and say "watch it on the upload tab, then reload this
+    // bout".
     let summaryExists = false
     global.fetch = vi.fn((url, opts) => {
       const ok = (b) => Promise.resolve({ ok: true, json: () => Promise.resolve(b) })

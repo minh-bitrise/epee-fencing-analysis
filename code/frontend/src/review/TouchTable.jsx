@@ -6,21 +6,15 @@ const SIDES = [['left', 'F1', 'Fencer 1 scored'],
                ['right', 'F2', 'Fencer 2 scored'],
                ['double', 'both', 'both scored, a double']]
 
-/* The proposals, with what each one rests on. Confidence and the separation that triggered the
-   proposal are shown beside every row because the user is being asked to adjudicate the
-   system's guess, and a guess presented without its basis is just an assertion. */
+/* The proposals, with what each one rests on. */
 export default function TouchTable({ rows, selIdx, onSelect, onDecide, onDelete,
                                      scorerProposals, onScorer }) {
-  // Proposed scorers, keyed by the time they belong to. Matched on time rather
-  // than id because the proposal is made against the CONFIRMED touch list, which
-  // merges detector proposals and hand-added touches under different ids.
+  // Proposed scorers, keyed by the time they belong to.
   const proposedFor = (at) => scorerProposals?.find(
     (p) => Math.abs(p.time_s - at) < 0.3)
   const selRef = useRef(null)
 
-  // Keep the cursor visible during a keyboard walk. Without this the selection
-  // moves off the bottom of the panel after a few decisions and the user is
-  // reviewing a row they cannot see.
+  // Keep the cursor visible during a keyboard walk.
   useEffect(() => {
     selRef.current?.scrollIntoView({ block: 'nearest' })
   }, [selIdx])

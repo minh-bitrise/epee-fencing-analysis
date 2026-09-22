@@ -13,10 +13,8 @@ describe('ErrorBoundary', () => {
   })
 
   it('names the panel and keeps the message instead of blanking', () => {
-    // The real failure: a reprocess job recorded its piste region as a boolean,
-    // one card indexed it as an array, and the whole interface went blank. A
-    // blank page destroys the evidence, so the requirement is that the thing
-    // that broke is named and the error survives on screen.
+    // The real failure: a reprocess job recorded its piste region as a boolean, one card
+    // indexed it as an array, and the whole interface went blank.
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     render(<ErrorBoundary label="The upload view"><Boom /></ErrorBoundary>)
     expect(screen.getByText(/The upload view could not be displayed/)).toBeInTheDocument()

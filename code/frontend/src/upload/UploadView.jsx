@@ -3,15 +3,10 @@ import { api, uploadVideo } from '../api.js'
 import JobCard from './JobCard.jsx'
 import Disclosure from '../review/Disclosure.jsx'
 
-// How often to ask the server what the jobs are doing. Two seconds is chosen
-// against what is being watched rather than by habit: the pipeline reports
-// progress every hundred frames, which on this machine is a few seconds apart,
-// so polling faster returns the same numbers repeatedly and polling slower makes
-// the bar visibly lag the work.
+// How often to ask the server what the jobs are doing.
 const POLL_MS = 2000
 
-// Polling stops when nothing can change. Without this the page would keep asking
-// about a queue of finished jobs for as long as it was left open.
+// Polling stops when nothing can change.
 const LIVE_STATES = ['queued', 'running', 'awaiting_piste']
 
 export default function UploadView({ onOpenBout }) {
@@ -40,17 +35,12 @@ export default function UploadView({ onOpenBout }) {
     let cancelled = false
     let timer = null
 
-    // Chained timeouts rather than an interval. An interval fires on a fixed
-    // schedule regardless of whether the previous request has come back, so a
-    // slow response makes them pile up; this waits for each answer before asking
-    // again.
+    // Chained timeouts rather than an interval.
     const tick = async () => {
       const jobs = await refresh()
       if (cancelled) return
       const live = jobs && jobs.some((j) => LIVE_STATES.includes(j.state))
-      // Keep polling while jobs are live. When nothing is, poll slowly anyway,
-      // because a job can be started from another tab or a terminal and this
-      // page should notice.
+      // Keep polling while jobs are live.
       timer = setTimeout(tick, live ? POLL_MS : POLL_MS * 5)
     }
     tick()

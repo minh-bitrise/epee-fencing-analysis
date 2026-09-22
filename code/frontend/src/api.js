@@ -19,8 +19,7 @@ export const del = { method: 'DELETE' }
 
 export const boutPath = (boutId) => `/api/bouts/${encodeURIComponent(boutId)}`
 
-/* Upload a video, reporting progress as it goes. XMLHttpRequest rather than fetch, which is
-   the whole reason this is not a one-line call. */
+/* Upload a video, reporting progress as it goes. */
 export function uploadVideo(file, { confirmPiste = true, poseStride = 0,
                                     onProgress } = {}) {
   return new Promise((resolve, reject) => {

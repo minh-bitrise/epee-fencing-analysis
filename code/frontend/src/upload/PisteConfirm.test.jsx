@@ -27,9 +27,7 @@ const job = (over = {}) => ({
 
 describe('PisteConfirm', () => {
   it('shows the measurement the region was derived from', () => {
-    // The whole point of measuring rather than asking the user to draw. Without
-    // the numbers they are confirming a picture, which is the same act as
-    // drawing one by eye.
+    // The whole point of measuring rather than asking the user to draw.
     render(<PisteConfirm job={job()} onDecided={vi.fn()} />)
     expect(screen.getByText(/600 sampled frames/)).toBeInTheDocument()
     expect(screen.getByText(/1200 fencer detections/)).toBeInTheDocument()

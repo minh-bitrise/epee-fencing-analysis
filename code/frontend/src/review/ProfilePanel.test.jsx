@@ -2,8 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ProfilePanel from './ProfilePanel.jsx'
 
-/* The profile panel. Its risk is not that it breaks, it is that it draws a confident shape out
-   of data that does not support one. */
+/* The profile panel. */
 
 const axis = (key, label, v1, s1, v2, s2, unit = '') => ({
   key, label, unit, explains: 'why this axis exists',
@@ -47,8 +46,7 @@ describe('ProfilePanel', () => {
   })
 
   it('shows the measured value beside every axis, not only the shape', async () => {
-    // A radar with no numbers is a picture. The values are what makes it a
-    // reading, and they are the part a marker can check against the data.
+    // A radar with no numbers is a picture.
     stub(body())
     render(<ProfilePanel boutId="b" boutPath="/api/bouts/b" refreshKey="0:0" />)
     await waitFor(() => expect(screen.getByText('2.26 m')).toBeInTheDocument())
@@ -60,14 +58,12 @@ describe('ProfilePanel', () => {
     stub(body())
     render(<ProfilePanel boutId="b" boutPath="/api/bouts/b" refreshKey="0:0" />)
     await waitFor(() => expect(screen.getByText('10.0 /min')).toBeInTheDocument())
-    // The percentage sign closes up against the number; every other unit does
-    // not. Both fencers are at parity on the scoring axis in this fixture.
+    // The percentage sign closes up against the number; every other unit does not.
     expect(screen.getAllByText('50.0%').length).toBe(2)
   })
 
   it('names an unmeasured axis rather than showing it as a zero', async () => {
-    /* The distinction the whole panel turns on. A fencer with no confirmed lunges has not been
-       measured lunging rarely; they have not been measured. */
+    /* The distinction the whole panel turns on. */
     stub(body())
     render(<ProfilePanel boutId="b" boutPath="/api/bouts/b" refreshKey="0:0" />)
     await waitFor(() => expect(screen.getByText('not measured')).toBeInTheDocument())
@@ -85,8 +81,7 @@ describe('ProfilePanel', () => {
   })
 
   it('refuses to draw anything when the tracker swapped the fencers', async () => {
-    // Clip 4 swapped 14 times. A radar drawn there describes the tracker and
-    // looks exactly as convincing as a real one, so there must be no radar.
+    // Clip 4 swapped 14 times.
     stub({
       available: false, swaps: 14, left_share_pct: 26.9,
       reason: 'the tracker exchanged the two fencers 14 times on this bout',

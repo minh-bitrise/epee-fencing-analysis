@@ -32,8 +32,7 @@ export default function ReviewQueue({ items, kind, onDecide, onExit, onSeek,
 
   const elapsed = Math.max(0, (now - begun.current) / 1000)
 
-  // Seek whenever the cursor lands on an item, including the first. The queue
-  // owns the playhead while it is open: that is the whole point of it.
+  // Seek whenever the cursor lands on an item, including the first.
   useEffect(() => {
     if (item && onSeek) onSeek(item.time_s)
   }, [item, onSeek])
@@ -52,9 +51,7 @@ export default function ReviewQueue({ items, kind, onDecide, onExit, onSeek,
       await onDecide(item, decision)
       advance(true)
     } catch (e) {
-      // Left on the same item deliberately. Advancing past a decision that did
-      // not persist would silently drop it, and the user would have no way to
-      // know which one they lost.
+      // Left on the same item deliberately.
       setError(e.message)
     } finally {
       setBusy(false)
@@ -77,9 +74,7 @@ export default function ReviewQueue({ items, kind, onDecide, onExit, onSeek,
         else if (k === 'x') answer('rejected')
         else return
       } else {
-        // A lunge proposal answers two questions at once: is it a lunge, and
-        // whose. One key does both, because splitting them would double the
-        // keystrokes on the item type there are most of.
+        // A lunge proposal answers two questions at once: is it a lunge, and whose.
         if (k === '1') answer(0)
         else if (k === '2') answer(1)
         else if (k === 'x') answer('rejected')

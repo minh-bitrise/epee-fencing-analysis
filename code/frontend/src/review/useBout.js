@@ -12,10 +12,7 @@ export function useBout(boutId) {
   const reload = useCallback(async () => {
     if (!boutId) return
     setLoading(true)
-    // Fetched INDEPENDENTLY, not with Promise.all. Metrics can legitimately be unavailable
-    // while touches are fine: a bout where the tracker never held both fencers at once has no
-    // distance samples and so no statistics, which happens on footage shot from behind the
-    // piste.
+    // Fetched INDEPENDENTLY, not with Promise.all.
     const [touches, m] = await Promise.allSettled([
       api(`${boutPath(boutId)}/touches`),
       api(`${boutPath(boutId)}/metrics`),
@@ -37,9 +34,7 @@ export function useBout(boutId) {
   return { data, metrics, error, metricsError, loading, reload }
 }
 
-/* Proposed and hand-added touches merged into one time-ordered list. The interface treats them
-   as one sequence because the user reviews them as one: the keyboard walk moves through
-   everything on the timeline in order. */
+/* Proposed and hand-added touches merged into one time-ordered list. */
 export function mergeRows(data) {
   if (!data) return []
   return [

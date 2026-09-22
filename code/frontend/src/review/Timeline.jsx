@@ -7,10 +7,8 @@ export default function Timeline({ duration, rows, segments, selIdx,
                                    currentTime, onSelect, onSeek }) {
   const ref = useRef(null)
 
-  // The playhead is moved by writing to the DOM node rather than by re-rendering
-  // with the current time in state. `timeupdate` fires several times a second,
-  // and re-rendering the whole timeline at that rate to move one element by a
-  // few pixels makes the marker list flicker on every tick.
+  // The playhead is moved by writing to the DOM node rather than by re-rendering with the
+  // current time in state.
   const cursorRef = useRef(null)
   useEffect(() => {
     if (cursorRef.current && duration) {

@@ -32,9 +32,7 @@ const fmt = (v, unit) => {
   return unit ? `${n}${unit === '%' ? '' : ' '}${unit}` : n
 }
 
-/* `scoreOnly` renders the scoreline without the radar. The two are computed by the same
-   request but answer different questions, and they belong in different places: the score is
-   part of what happened in this bout, the radar is a characterisation of the two fencers. */
+/* `scoreOnly` renders the scoreline without the radar. */
 export default function ProfilePanel({ boutId, boutPath, refreshKey,
                                        scoreOnly = false }) {
   const [data, setData] = useState(null)

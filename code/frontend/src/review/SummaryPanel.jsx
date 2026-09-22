@@ -83,8 +83,7 @@ function Generate({ boutId, force = false, onDone }) {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState(null)
 
-  // WAIT HERE RATHER THAN SENDING THE USER AWAY. Queueing the job is all the request does, and
-  // this panel used to say so and stop: "watch it on the upload tab, then reload this bout".
+  // WAIT HERE RATHER THAN SENDING THE USER AWAY.
   const go = async () => {
     setBusy(true)
     setNote(null)

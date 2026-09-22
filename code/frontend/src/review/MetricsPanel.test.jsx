@@ -37,9 +37,8 @@ describe('MetricsPanel', () => {
   })
 
   it('never displays cumulative push and pull totals', () => {
-    // Re-measuring the same footage under smoothing windows from 1 to 121 frames
-    // moved these from 161 m to 34 m with no asymptote. A number on screen beside
-    // a real measurement reads as one, so they are absent by design.
+    // Re-measuring the same footage under smoothing windows from 1 to 121 frames moved these
+    // from 161 m to 34 m with no asymptote.
     const { container } = render(<MetricsPanel metrics={metrics()} />)
     const text = container.textContent.toLowerCase()
     expect(text).not.toContain('advance')
@@ -48,9 +47,8 @@ describe('MetricsPanel', () => {
   })
 
   it('says which derivation the movement figures came from', () => {
-    // The position route and the differenced route disagreed by 3.5 m of net
-    // displacement on the club clip, so a figure without its provenance is not
-    // interpretable.
+    // The position route and the differenced route disagreed by 3.5 m of net displacement on
+    // the club clip, so a figure without its provenance is not interpretable.
     render(<MetricsPanel metrics={metrics()} />)
     expect(screen.getByText(/raw per-frame positions/)).toBeInTheDocument()
   })

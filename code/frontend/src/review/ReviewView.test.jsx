@@ -46,9 +46,7 @@ const metrics = () => ({
 
 let posted
 
-// A second bout, so a test can actually CHANGE the dropdown. React fires no
-// change event when the chosen value is the one already selected, and with a
-// single-bout list there is nothing else to pick.
+// A second bout, so a test can actually CHANGE the dropdown.
 const OTHER_BOUT = 'results_current:fencing_clip2'
 
 function stubFetch({ failTouchDecision = false, touchesBody = null,
@@ -115,8 +113,7 @@ describe('ReviewView', () => {
   })
 
   it('confirms a touch on a single keystroke', async () => {
-    // The effort claim depends on this. If a decision costs a mouse trip, the
-    // corrections figures in the report describe a workflow nobody would use.
+    // The effort claim depends on this.
     stubFetch()
     render(<ReviewView initialBoutId={BOUT} />)
     await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())
@@ -155,8 +152,7 @@ describe('ReviewView', () => {
   })
 
   it('ignores shortcuts while the user is typing in a field', async () => {
-    // The add-a-touch form takes a time in seconds. Without this guard, typing
-    // "c" anywhere near it would confirm a touch.
+    // The add-a-touch form takes a time in seconds.
     stubFetch()
     render(<ReviewView initialBoutId={BOUT} />)
     await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())
@@ -195,9 +191,8 @@ describe('ReviewView', () => {
   })
 
   it('disables re-running until there is a correction to apply', async () => {
-    // A reprocess with no corrections is a multi-minute job that changes
-    // nothing, so the button should not invite it. It lives in Tools now: it is
-    // used rarely and never during a review pass.
+    // A reprocess with no corrections is a multi-minute job that changes nothing, so the
+    // button should not invite it.
     stubFetch()
     render(<ReviewView initialBoutId={BOUT} />)
     await waitFor(() => expect(screen.getByText('0:19.0')).toBeInTheDocument())

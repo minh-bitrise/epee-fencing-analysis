@@ -16,25 +16,18 @@ export default function PisteConfirm({ job, onDecided }) {
   const [frameW, frameH] = measured.frame_size || [
     job.video_info?.width || 1, job.video_info?.height || 1]
 
-  // Redraw whenever an edge moves. The canvas is sized in source pixels and
-  // stretched by CSS to match the image, so every coordinate here is in the same
-  // space as the polygon the pipeline will receive and nothing has to be scaled.
+  // Redraw whenever an edge moves.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     canvas.width = frameW
     canvas.height = frameH
     const ctx = canvas.getContext('2d')
-    // Guarded rather than assumed. A browser can refuse a context under memory
-    // pressure or when too many are live, and without this the whole panel
-    // throws, taking the accept and skip buttons with it. Losing the overlay is
-    // bad; losing the ability to answer the question is worse.
+    // Guarded rather than assumed.
     if (!ctx) return
     ctx.clearRect(0, 0, frameW, frameH)
 
     // Everything outside the band is dimmed rather than the band being outlined.
-    // The question the user is answering is which people get ignored, so showing
-    // the excluded area directly answers it.
     ctx.fillStyle = 'rgba(10, 12, 16, 0.62)'
     ctx.fillRect(0, 0, frameW, top)
     ctx.fillRect(0, bottom, frameW, frameH - bottom)
@@ -66,9 +59,7 @@ export default function PisteConfirm({ job, onDecided }) {
     if (!dragging) return
     const y = yFromEvent(e)
     if (y == null) return
-    // The edges are not allowed to cross. A band of negative height would be
-    // accepted by the polygon check and would reject every detection in the
-    // frame, producing an empty result that looks like a tracking failure.
+    // The edges are not allowed to cross.
     if (dragging === 'top') setTop(Math.min(y, bottom - 10))
     else setBottom(Math.max(y, top + 10))
   }
